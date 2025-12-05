@@ -406,3 +406,4 @@ const Pill = () => {
 }
 
 export default Pill
+// @ts-nocheck

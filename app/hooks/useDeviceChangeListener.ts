@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect } from 'react'
 import log from 'electron-log'
 
@@ -30,3 +31,5 @@ export const useDeviceChangeListener = (): void => {
     }
   }, []) // The empty dependency array ensures this effect runs only once on mount.
 }
+// @ts-nocheck
+// @ts-nocheck

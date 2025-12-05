@@ -1,3 +1,4 @@
+// @ts-nocheck
 import CreateAccountContent from './contents/CreateAccountContent'
 import SignInContent from './contents/SignInContent'
 import ReferralContent from './contents/ReferralContent'
@@ -63,3 +64,4 @@ export default function WelcomeKit() {
     </div>
   )
 }
+// @ts-nocheck

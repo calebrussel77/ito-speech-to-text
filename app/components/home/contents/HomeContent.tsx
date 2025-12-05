@@ -50,15 +50,19 @@ const StatCard = ({
   icon: React.ReactNode
 }) => {
   return (
-    <div className="flex flex-col p-4 w-1/3 border-2 border-neutral-100 rounded-xl gap-4">
+    <div className="flex flex-col p-4 w-1/3 border border-border bg-card/40 backdrop-blur-sm rounded-xl gap-4 shadow-sm transition-all duration-300 hover:bg-card/60">
       <div className="flex flex-row items-center">
         <div className="flex flex-col gap-1">
-          <div>{title}</div>
-          <div className="font-bold">{value}</div>
+          <div className="text-sm font-medium text-muted-foreground">
+            {title}
+          </div>
+          <div className="font-heading font-bold text-lg text-foreground">
+            {value}
+          </div>
         </div>
         <div className="flex flex-col items-end flex-1">{icon}</div>
       </div>
-      <div className="w-full text-neutral-400">{description}</div>
+      <div className="w-full text-xs text-muted-foreground">{description}</div>
     </div>
   )
 }
@@ -492,7 +496,7 @@ export default function HomeContent({
       <div className="flex-shrink-0 px-24">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-medium">
+            <h1 className="text-3xl font-heading font-semibold tracking-tight text-foreground">
               Welcome back{firstName ? `, ${firstName}!` : '!'}
             </h1>
           </div>
@@ -545,16 +549,16 @@ export default function HomeContent({
         </div>
 
         {/* Dictation Info Box */}
-        <div className="bg-slate-100 rounded-xl p-6 flex items-center justify-between mb-10">
+        <div className="glass-card rounded-xl p-6 flex items-center justify-between mb-10 transition-all duration-300 hover:shadow-md">
           <div>
-            <div className="text-base font-medium mb-1">
+            <div className="text-base font-medium mb-1 font-heading text-foreground">
               Voice dictation in any app
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               <span key="hold-down">Hold down the trigger key </span>
               {keyboardShortcut.map((key, index) => (
                 <React.Fragment key={index}>
-                  <span className="bg-slate-50 px-1 py-0.5 rounded text-xs font-mono shadow-sm">
+                  <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono shadow-sm border border-border text-foreground">
                     {getKeyDisplay(key as KeyName, platform, {
                       showDirectionalText: false,
                       format: 'label',
@@ -567,7 +571,7 @@ export default function HomeContent({
             </div>
           </div>
           <button
-            className="bg-gray-900 text-white px-6 py-3 rounded-full font-semibold hover:bg-gray-800 cursor-pointer"
+            className="bg-primary text-primary-foreground px-6 py-3 rounded-full font-semibold hover:opacity-90 transition-all duration-300 shadow-md transform hover:scale-105 cursor-pointer"
             onClick={() =>
               window.api?.invoke('web-open-url', EXTERNAL_LINKS.WEBSITE)
             }
@@ -577,7 +581,7 @@ export default function HomeContent({
         </div>
 
         {/* Recent Activity Header */}
-        <div className="text-sm text-muted-foreground mb-6">
+        <div className="text-sm font-medium text-muted-foreground mb-4 pl-1">
           Recent activity
         </div>
       </div>
@@ -585,13 +589,13 @@ export default function HomeContent({
       {/* Scrollable Recent Activity Section */}
       <div className="flex-1 px-24 overflow-y-auto scrollbar-hide">
         {loading ? (
-          <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-gray-500">
+          <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             Loading recent activity...
           </div>
         ) : interactions.length === 0 ? (
-          <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-gray-500">
+          <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             <p className="text-sm">No interactions yet</p>
-            <p className="text-xs mt-1">
+            <p className="text-xs mt-1 opacity-70">
               Try using voice dictation by pressing{' '}
               {keyboardShortcut.join(' + ')}
             </p>
@@ -600,22 +604,24 @@ export default function HomeContent({
           Object.entries(groupedInteractions).map(
             ([dateLabel, dateInteractions]) => (
               <div key={dateLabel} className="mb-6">
-                <div className="text-xs text-gray-500 mb-4">{dateLabel}</div>
-                <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-200">
+                <div className="text-xs font-semibold text-muted-foreground mb-3 pl-1 tracking-wider uppercase">
+                  {dateLabel}
+                </div>
+                <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
 
                     return (
                       <div
                         key={interaction.id}
-                        className="flex items-center justify-between px-4 py-4 gap-10 hover:bg-gray-50 transition-colors duration-200 group"
+                        className="flex items-center justify-between px-6 py-4 gap-10 hover:bg-secondary/40 transition-colors duration-200 group"
                       >
                         <div className="flex items-center gap-10">
-                          <div className="text-gray-600 min-w-[60px]">
+                          <div className="text-muted-foreground text-xs min-w-[60px] font-medium">
                             {formatTime(interaction.created_at)}
                           </div>
                           <div
-                            className={`${displayInfo.isError ? 'text-gray-600' : 'text-gray-900'} flex items-center gap-1`}
+                            className={`${displayInfo.isError ? 'text-destructive' : 'text-foreground'} flex items-center gap-2`}
                           >
                             {displayInfo.text}
                             {displayInfo.tooltip && (
@@ -632,9 +638,7 @@ export default function HomeContent({
                         </div>
 
                         {/* Copy, Download, and Play buttons - only show on hover or when playing */}
-                        <div
-                          className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        >
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                           {/* Copy button */}
                           {!displayInfo.isError && (
                             <Tooltip
@@ -724,7 +728,7 @@ export default function HomeContent({
                           >
                             <TooltipTrigger asChild>
                               <button
-                                className="p-1.5 hover:bg-gray-200 rounded transition-colors cursor-pointer text-red-600"
+                                className="p-1.5 hover:bg-destructive/10 rounded transition-colors cursor-pointer text-destructive/80 hover:text-destructive"
                                 onClick={() =>
                                   handleDeleteInteraction(interaction.id)
                                 }

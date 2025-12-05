@@ -18,16 +18,22 @@ export function NavItem({
 }: NavItemProps) {
   const navContent = (
     <div
-      className={`flex items-center px-3 py-3 rounded cursor-pointer ${
-        isActive ? 'bg-slate-200 font-medium' : 'hover:bg-slate-200'
+      className={`flex items-center px-3 py-2.5 mb-1 rounded-lg cursor-pointer transition-all duration-200 group ${
+        isActive
+          ? 'bg-primary text-primary-foreground shadow-sm font-medium'
+          : 'text-muted-foreground hover:bg-secondary hover:text-secondary-foreground'
       }`}
       onClick={onClick}
     >
-      <div className="w-6 flex items-center justify-center">{icon}</div>
+      <div
+        className={`w-6 flex items-center justify-center transition-colors ${isActive ? 'text-primary-foreground' : 'text-foreground/70 group-hover:text-foreground'}`}
+      >
+        {icon}
+      </div>
       <span
-        className={`transition-opacity duration-100 ${
-          showText ? 'opacity-100' : 'opacity-0'
-        } ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
+        className={`whitespace-nowrap transition-all duration-300 ${
+          showText ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
+        } ${showText ? 'ml-3' : 'w-0 overflow-hidden'}`}
       >
         {label}
       </span>

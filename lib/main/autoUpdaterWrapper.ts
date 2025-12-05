@@ -3,7 +3,6 @@ import log from 'electron-log'
 import { autoUpdater } from 'electron-updater'
 import { mainWindow } from './app'
 import { hardKillAll, teardown } from './teardown'
-import { ITO_ENV } from './env'
 
 export interface UpdateStatus {
   updateAvailable: boolean

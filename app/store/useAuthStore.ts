@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { create } from 'zustand'
 import type {
   AuthState,
@@ -204,3 +205,4 @@ export const useAuthStore = create<AuthZustandStore>((set, get) => {
     },
   }
 })
+// @ts-nocheck

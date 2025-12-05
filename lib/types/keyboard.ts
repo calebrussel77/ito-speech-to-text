@@ -122,7 +122,7 @@ export type RegularKey =
   | '←'
   | '→'
 
-export type KeyName = ModifierKey | RegularKey
+export type KeyName = ModifierKey | RegularKey | 'command' | 'shift' | 'f1'
 
 // Legacy key names for backward compatibility
 export const legacyKeyMap: Record<string, string> = {

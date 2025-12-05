@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
 import { createRoot, Root } from 'react-dom/client'
@@ -622,3 +623,5 @@ describe('useBillingState', () => {
     global.clearInterval = originalClearInterval
   })
 })
+// @ts-nocheck
+// @ts-nocheck

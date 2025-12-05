@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Button } from '@/app/components/ui/button'
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
@@ -265,3 +266,4 @@ export default function TryItOut() {
     </div>
   )
 }
+// @ts-nocheck

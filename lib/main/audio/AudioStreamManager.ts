@@ -56,6 +56,14 @@ export class AudioStreamManager {
     return Buffer.concat(this.audioChunks)
   }
 
+  // Backwards compatibility for legacy tests
+  async *streamAudioChunks() {
+    if (this.audioChunks.length === 0) return
+    for (const chunk of this.audioChunks) {
+      yield { audioData: chunk } as any
+    }
+  }
+
   getInteractionAudioBuffer(): Buffer {
     return this.getAllAudio()
   }

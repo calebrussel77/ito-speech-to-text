@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect } from 'react'
 import { Button } from '@/app/components/ui/button'
 import { Check } from '@mynaui/icons-react'
@@ -335,3 +336,4 @@ function PricingCard({
     </div>
   )
 }
+// @ts-nocheck

@@ -176,26 +176,26 @@ export default function HomeKit() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans select-none">
       {/* Sidebar */}
       <div
-        className={`${navExpanded ? 'w-48' : 'w-20'} flex flex-col justify-between py-4 px-4 transition-all duration-100 ease-in-out border-r border-neutral-200`}
+        className={`${navExpanded ? 'w-48' : 'w-20'} flex flex-col justify-between py-4 px-4 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] border-r border-border bg-secondary/20 backdrop-blur-md z-10`}
       >
         <div>
           {/* Logo and Plan */}
-          <div className="flex items-center mb-10 px-3">
+          <div className="flex items-center mb-10 px-3 cursor-default">
             <ItoIcon
-              className="w-6 text-gray-900 flex-shrink-0"
+              className="w-6 text-foreground flex-shrink-0"
               style={{ height: '32px' }}
             />
             <span
-              className={`text-2xl font-bold transition-opacity duration-100 ${showText ? 'opacity-100' : 'opacity-0'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
+              className={`text-2xl font-heading font-bold transition-all duration-300 ${showText ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
             >
               ito
             </span>
             {isPro && showText && (
               <span
-                className={`text-xs font-semibold px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-500 to-pink-500 text-white transition-opacity duration-100 ${showText ? 'opacity-100' : 'opacity-0'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
+                className={`text-[10px] tracking-wider font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white transition-all duration-300 ${showText ? 'opacity-100 scale-100' : 'opacity-0 scale-90'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
               >
                 PRO
               </span>
@@ -243,8 +243,10 @@ export default function HomeKit() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-col flex-1 items-center bg-white rounded-lg m-2 ml-0 mt-0 pt-12">
-        {renderContent()}
+      <div className="flex flex-col flex-1 items-stretch bg-card/60 backdrop-blur-sm m-2 ml-0 rounded-l-2xl border-l border-t border-b border-border shadow-sm overflow-hidden relative">
+        <div className="w-full h-full overflow-auto pt-12 px-6 pb-6">
+          {renderContent()}
+        </div>
       </div>
     </div>
   )

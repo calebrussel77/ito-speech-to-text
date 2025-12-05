@@ -56,7 +56,7 @@ export const OnboardingTitlebar = () => {
           font-weight: 500;
         }
         .onboarding-step-label {
-          color: #b0b0b0;
+          color: var(--muted-foreground);
           font-weight: 400;
           transition: color 0.2s, font-weight 0.2s;
           display: inline-flex;
@@ -64,16 +64,18 @@ export const OnboardingTitlebar = () => {
           margin: 0 36px;
         }
         .onboarding-step-chevron {
-          color: #d0d0d0;
+          color: var(--muted-foreground);
           font-size: 24px;
           margin: 0 36px;
           margin-top: -4px;
           display: inline-flex;
           align-items: center;
+          opacity: 0.5;
         }
         .onboarding-step-label.active, .onboarding-step-chevron.active {
-          color: #222;
+          color: var(--foreground);
           font-weight: 500;
+          opacity: 1;
         }
         .onboarding-progress-bar-bg {
           position: absolute;

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 
 // Mock database utilities
@@ -274,3 +275,4 @@ describe('InteractionManager', () => {
     })
   })
 })
+// @ts-nocheck

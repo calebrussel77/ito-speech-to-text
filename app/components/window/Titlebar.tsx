@@ -103,10 +103,10 @@ export const Titlebar = () => {
           }}
         >
           <div
-            className={`h-full border-r border-neutral-200 transition-all duration-100 ease-in-out ${navExpanded ? 'w-48' : 'w-20'}`}
+            className={`h-full transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] ${navExpanded ? 'w-48' : 'w-20'}`}
           ></div>
           <div
-            className="titlebar-action-btn hover:bg-slate-200 border-l border-neutral-200 ml-2"
+            className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground ml-2 transition-colors"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -145,9 +145,9 @@ export const Titlebar = () => {
         >
           {isUpdateAvailable && (
             <button
-              className={`titlebar-action-btn bg-sky-800 text-white px-3 py-1 rounded-md font-semibold ${
+              className={`titlebar-action-btn bg-primary text-primary-foreground px-3 py-1 rounded-md font-semibold text-xs shadow-sm hover:opacity-90 transition-opacity ${
                 isUpdateDownloaded
-                  ? 'hover:bg-sky-700 cursor-pointer'
+                  ? 'cursor-pointer'
                   : 'cursor-not-allowed opacity-70'
               }`}
               disabled={!isUpdateDownloaded}
@@ -161,12 +161,12 @@ export const Titlebar = () => {
                 }
               }}
             >
-              {isUpdateDownloaded ? 'Install Update' : 'Downloading Update...'}
+              {isUpdateDownloaded ? 'Update Ready' : 'Downloading...'}
             </button>
           )}
           <div className="relative">
             <div
-              className="titlebar-action-btn hover:bg-slate-200"
+              className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -188,17 +188,18 @@ export const Titlebar = () => {
 
             {/* User Dropdown Menu */}
             {showUserDropdown && (
-              <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+              <div className="absolute top-full right-4 mt-2 w-48 glass-card rounded-lg overflow-hidden animate-fade-in z-50">
                 <button
                   onClick={handleSettingsClick}
-                  className="w-full px-2 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 rounded-t-lg cursor-pointer"
+                  className="w-full px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-secondary/50 hover:text-foreground flex items-center gap-3 transition-colors cursor-pointer"
                 >
                   <CogFour className="w-4 h-4" />
                   Settings
                 </button>
+                <div className="h-px bg-border/50 mx-2"></div>
                 <button
                   onClick={handleSignOutClick}
-                  className="w-full px-2 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 rounded-b-lg cursor-pointer"
+                  className="w-full px-4 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-3 transition-colors cursor-pointer"
                 >
                   <Logout className="w-4 h-4" />
                   Sign Out

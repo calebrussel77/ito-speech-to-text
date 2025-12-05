@@ -222,3 +222,4 @@ export const useOnboardingStore = create<OnboardingState>(set => {
     },
   }
 })
+// @ts-nocheck

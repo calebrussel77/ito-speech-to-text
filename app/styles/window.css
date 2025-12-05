@@ -11,8 +11,9 @@
   --window-titlebar-font-weight: 500;
   --window-c-popup-font-weight: 500;
 
-  --window-c-background: #fff;
-  --window-c-titlebar-background: #fff;
+  /* Matches globals.css --background: hsl(210 40% 98%) */
+    --window-c-background: hsl(210, 40%, 98%);
+    --window-c-titlebar-background: hsl(210, 40%, 98%);
   --window-c-titlebar-border: #8080801a;
   --window-c-text: #000000c8;
   --window-c-hover: #ececec;
@@ -40,8 +41,9 @@
   --window-background-transition-duration: 0.3s;
   --window-c-popup-font-weight: normal;
 
-  --window-c-background: #1c1c1c;
-  --window-c-titlebar-background: #282828;
+  /* Matches globals.css dark --background: hsl(222 47% 11%) */
+    --window-c-background: hsl(222, 47%, 11%);
+    --window-c-titlebar-background: hsl(222, 47%, 11%);
   --window-c-titlebar-border: transparent;
   --window-c-text: #ffffffc8;
   --window-c-hover: #3c3c3c;

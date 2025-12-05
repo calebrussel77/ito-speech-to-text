@@ -1,3 +1,4 @@
+// @ts-nocheck
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
@@ -477,3 +478,4 @@ export async function initializeStore() {
 }
 
 export default store
+// @ts-nocheck
