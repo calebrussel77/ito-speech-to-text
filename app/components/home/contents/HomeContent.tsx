@@ -50,8 +50,10 @@ const StatCard = ({
   icon: React.ReactNode
 }) => {
   return (
-    <div className="flex flex-col p-4 w-1/3 border border-border bg-card/40 backdrop-blur-sm rounded-xl gap-4 shadow-sm transition-all duration-300 hover:bg-card/60">
-      <div className="flex flex-row items-center">
+    <div className="flex flex-col p-4 w-1/3 border border-border bg-card/50 backdrop-blur-sm rounded-xl gap-4 shadow-sm transition-all duration-300 hover:bg-card/80 hover:shadow-lg hover:border-border/80 hover:-translate-y-0.5 relative overflow-hidden group">
+      {/* Subtle gradient overlay on hover */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+      <div className="flex flex-row items-center relative z-10">
         <div className="flex flex-col gap-1">
           <div className="text-sm font-medium text-muted-foreground">
             {title}
@@ -62,7 +64,9 @@ const StatCard = ({
         </div>
         <div className="flex flex-col items-end flex-1">{icon}</div>
       </div>
-      <div className="w-full text-xs text-muted-foreground">{description}</div>
+      <div className="w-full text-xs text-muted-foreground relative z-10">
+        {description}
+      </div>
     </div>
   )
 }
@@ -511,10 +515,10 @@ export default function HomeContent({
                 getStreakLevel(stats.streakDays),
               )}
               icon={
-                <div className="p-2 bg-blue-50 rounded-md">
+                <div className="p-2.5 bg-blue-500/10 dark:bg-blue-500/15 rounded-xl">
                   <ChartNoAxesColumn
-                    className="w-6 h-6 text-blue-400 border-2 p-1 rounded-full"
-                    strokeWidth={4}
+                    className="w-5 h-5 text-blue-500 dark:text-blue-400"
+                    strokeWidth={2.5}
                   />
                 </div>
               }
@@ -527,8 +531,8 @@ export default function HomeContent({
                 getSpeedLevel(stats.averageWPM),
               )}
               icon={
-                <div className="p-2 bg-green-50 rounded-md">
-                  <SpeedIcon />
+                <div className="p-2.5 bg-emerald-500/10 dark:bg-emerald-500/15 rounded-xl">
+                  <SpeedIcon className="text-emerald-500 dark:text-emerald-400" />
                 </div>
               }
             />
@@ -540,8 +544,8 @@ export default function HomeContent({
                 getTotalWordsLevel(stats.totalWords),
               )}
               icon={
-                <div className="p-2 bg-orange-50 rounded-md">
-                  <TotalWordsIcon />
+                <div className="p-2.5 bg-amber-500/10 dark:bg-amber-500/15 rounded-xl">
+                  <TotalWordsIcon className="text-amber-500 dark:text-amber-400" />
                 </div>
               }
             />
@@ -549,8 +553,10 @@ export default function HomeContent({
         </div>
 
         {/* Dictation Info Box */}
-        <div className="glass-card rounded-xl p-6 flex items-center justify-between mb-10 transition-all duration-300 hover:shadow-md">
-          <div>
+        <div className="glass-card rounded-xl p-6 flex items-center justify-between mb-10 transition-all duration-300 hover:shadow-lg relative overflow-hidden group">
+          {/* Subtle gradient glow on hover */}
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+          <div className="relative z-10">
             <div className="text-base font-medium mb-1 font-heading text-foreground">
               Voice dictation in any app
             </div>
@@ -558,7 +564,7 @@ export default function HomeContent({
               <span key="hold-down">Hold down the trigger key </span>
               {keyboardShortcut.map((key, index) => (
                 <React.Fragment key={index}>
-                  <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono shadow-sm border border-border text-foreground">
+                  <span className="bg-muted/80 dark:bg-muted px-1.5 py-0.5 rounded text-xs font-mono shadow-sm border border-border/50 dark:border-border text-foreground">
                     {getKeyDisplay(key as KeyName, platform, {
                       showDirectionalText: false,
                       format: 'label',
@@ -571,7 +577,7 @@ export default function HomeContent({
             </div>
           </div>
           <button
-            className="bg-primary text-primary-foreground px-6 py-3 rounded-full font-semibold hover:opacity-90 transition-all duration-300 shadow-md transform hover:scale-105 cursor-pointer"
+            className="relative z-10 bg-foreground dark:bg-white/95 text-background dark:text-[hsl(225_15%_10%)] px-6 py-2.5 rounded-full font-semibold text-sm hover:opacity-90 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] cursor-pointer"
             onClick={() =>
               window.api?.invoke('web-open-url', EXTERNAL_LINKS.WEBSITE)
             }
@@ -662,10 +668,10 @@ export default function HomeContent({
                             >
                               <TooltipTrigger asChild>
                                 <button
-                                  className={`p-1.5 hover:bg-gray-200 rounded transition-colors cursor-pointer ${
+                                  className={`p-1.5 hover:bg-secondary rounded transition-colors cursor-pointer ${
                                     copiedItems.has(interaction.id)
-                                      ? 'text-green-600'
-                                      : 'text-gray-600'
+                                      ? 'text-emerald-500'
+                                      : 'text-muted-foreground hover:text-foreground'
                                   }`}
                                   onClick={() =>
                                     copyToClipboard(
@@ -703,7 +709,7 @@ export default function HomeContent({
                             >
                               <TooltipTrigger asChild>
                                 <button
-                                  className="p-1.5 hover:bg-gray-200 rounded transition-colors cursor-pointer text-gray-600"
+                                  className="p-1.5 hover:bg-secondary rounded transition-colors cursor-pointer text-muted-foreground hover:text-foreground"
                                   onClick={() =>
                                     handleAudioDownload(interaction)
                                   }

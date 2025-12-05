@@ -26,6 +26,7 @@ interface SettingsState {
   muteAudioWhenDictating: boolean
   microphoneDeviceId: string
   microphoneName: string
+  theme: 'light' | 'dark' | 'system'
   keyboardShortcuts: KeyboardShortcutConfig[]
   setShareAnalytics: (share: boolean) => void
   setLaunchAtLogin: (launch: boolean) => void
@@ -34,6 +35,7 @@ interface SettingsState {
   setInteractionSounds: (enabled: boolean) => void
   setMuteAudioWhenDictating: (enabled: boolean) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
+  setTheme: (theme: 'light' | 'dark' | 'system') => void
   createKeyboardShortcut: (mode: ItoMode) => ShortcutResult
   removeKeyboardShortcut: (shortcutId: string) => void
   getItoModeShortcuts: (mode: ItoMode) => KeyboardShortcutConfig[]
@@ -43,7 +45,7 @@ interface SettingsState {
   ) => Promise<ShortcutResult>
 }
 
-type SettingCategory = 'general' | 'audio&mic' | 'keyboard' | 'account'
+type SettingCategory = 'general' | 'audio&mic' | 'keyboard' | 'account' | 'ui'
 
 // Initialize from electron store
 const getInitialState = () => {
@@ -58,6 +60,7 @@ const getInitialState = () => {
     muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? false,
     microphoneDeviceId: storedSettings?.microphoneDeviceId ?? 'default',
     microphoneName: storedSettings?.microphoneName ?? 'Default Microphone',
+    theme: storedSettings?.theme ?? 'dark',
     keyboardShortcuts: storedSettings?.keyboardShortcuts ?? [
       {
         keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.EDIT],
@@ -75,8 +78,6 @@ const getInitialState = () => {
     email: storedSettings?.email ?? '',
   }
 }
-
-// --- START: CORRECTED CODE ---
 
 // Sync to electron store
 const syncToStore = (state: Partial<SettingsState>) => {
@@ -187,6 +188,7 @@ export const useSettingsStore = create<SettingsState>(set => {
       set(partialState)
       syncToStore(partialState)
     },
+    setTheme: createSetter('theme', 'ui'),
     createKeyboardShortcut: (mode: ItoMode): ShortcutResult => {
       const currentShortcuts = useSettingsStore.getState().keyboardShortcuts
 

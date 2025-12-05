@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { Titlebar, TitlebarProps } from './Titlebar'
 import { TitlebarContextProvider } from './TitlebarContext'
+import { useSettingsStore } from '@/app/store/useSettingsStore'
 
 const WindowContext = createContext<WindowContextProps | undefined>(undefined)
 
@@ -9,6 +10,7 @@ export const WindowContextProvider = ({
   titlebar,
 }: WindowContextProviderProps) => {
   const [initProps, setInitProps] = useState<WindowInitProps | undefined>()
+  const { theme } = useSettingsStore()
 
   const defaultTitlebar: TitlebarProps = {
     title: 'Ito',
@@ -18,6 +20,23 @@ export const WindowContextProvider = ({
 
   // Merge default titlebar props with user defined props
   titlebar = { ...defaultTitlebar, ...titlebar }
+
+  // Apply theme to document element
+  useEffect(() => {
+    const root = window.document.documentElement
+    root.classList.remove('light', 'dark')
+
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+        .matches
+        ? 'dark'
+        : 'light'
+      root.classList.add(systemTheme)
+      return
+    }
+
+    root.classList.add(theme)
+  }, [theme])
 
   useEffect(() => {
     // Load window init props

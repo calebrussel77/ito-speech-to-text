@@ -22,3 +22,13 @@ body,
   margin: 0;
   line-height: 1.4;
 }
+
+/* Premium Font Classes */
+.font-heading {
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+}

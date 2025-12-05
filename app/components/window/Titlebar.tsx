@@ -106,23 +106,12 @@ export const Titlebar = () => {
             className={`h-full transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] ${navExpanded ? 'w-48' : 'w-20'}`}
           ></div>
           <div
-            className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground ml-2 transition-colors"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 36,
-              height: 30,
-              border: 'none',
-              cursor: 'pointer',
-              borderRadius: 6,
-              padding: 0,
-            }}
+            className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors w-9 h-7 flex items-center justify-center rounded-md cursor-pointer ml-1"
             aria-label="Open Panel"
             tabIndex={0}
             onClick={toggleNavExpanded}
           >
-            <PanelLeft style={{ width: 20, height: 20 }} />
+            <PanelLeft style={{ width: 18, height: 18 }} />
           </div>
         </div>
       )}
@@ -139,7 +128,8 @@ export const Titlebar = () => {
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            gap: '2px',
+            gap: '8px',
+            paddingRight: '12px',
             zIndex: 10,
           }}
         >
@@ -166,24 +156,12 @@ export const Titlebar = () => {
           )}
           <div className="relative">
             <div
-              className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 36,
-                height: 30,
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: 6,
-                padding: 0,
-                marginRight: 12,
-              }}
+              className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors w-9 h-7 flex items-center justify-center rounded-md cursor-pointer"
               aria-label="Account"
               tabIndex={0}
               onClick={toggleUserDropdown}
             >
-              <UserCircle style={{ width: 20, height: 20 }} />
+              <UserCircle style={{ width: 18, height: 18 }} />
             </div>
 
             {/* User Dropdown Menu */}
