@@ -802,6 +802,18 @@ export function registerIPC() {
     return result
   })
 
+  handleIPC('test-groq-api-key', async (_e, apiKey: string) => {
+    const { localTranscriptionService } = await import(
+      '../main/transcription/LocalTranscriptionService'
+    )
+    try {
+      const result = await localTranscriptionService.testConnection(apiKey)
+      return result
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
   // Server health check
   handleIPC('check-server-health', async () => {
     try {

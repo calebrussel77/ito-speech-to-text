@@ -1,50 +1,18 @@
-import { AudioChunkSchema } from '@/app/generated/ito_pb'
-import { create } from '@bufbuild/protobuf'
 import { audioRecorderService } from '../../media/audio'
 
 export class AudioStreamManager {
   private isStreaming = false
-  private audioChunkQueue: Buffer[] = []
-  private resolveNewChunk: ((value: void | PromiseLike<void>) => void) | null =
-    null
-  private audioChunksForInteraction: Buffer[] = []
+  private audioChunks: Buffer[] = []
   private currentSampleRate: number = 16000
-
-  async *streamAudioChunks() {
-    // Stream audio chunks as they arrive
-    while (this.isStreaming || this.audioChunkQueue.length > 0) {
-      if (this.audioChunkQueue.length === 0) {
-        if (this.isStreaming) {
-          await new Promise<void>(resolve => {
-            this.resolveNewChunk = resolve
-          })
-        } else {
-          break
-        }
-      }
-
-      while (this.audioChunkQueue.length > 0) {
-        const chunk = this.audioChunkQueue.shift()
-        if (chunk) {
-          yield create(AudioChunkSchema, { audioData: chunk })
-        }
-      }
-    }
-  }
 
   initialize() {
     this.isStreaming = true
-    this.audioChunkQueue = []
-    this.audioChunksForInteraction = []
+    this.audioChunks = []
     this.setupListeners()
   }
 
   stopStreaming() {
     this.isStreaming = false
-    if (this.resolveNewChunk) {
-      this.resolveNewChunk()
-      this.resolveNewChunk = null
-    }
     this.removeListeners()
   }
 
@@ -78,18 +46,18 @@ export class AudioStreamManager {
     if (!this.isStreaming) {
       return
     }
+    this.audioChunks.push(chunk)
+  }
 
-    this.audioChunkQueue.push(chunk)
-    this.audioChunksForInteraction.push(chunk)
-
-    if (this.resolveNewChunk) {
-      this.resolveNewChunk()
-      this.resolveNewChunk = null
-    }
+  /**
+   * Returns all buffered audio for the current interaction.
+   */
+  getAllAudio(): Buffer {
+    return Buffer.concat(this.audioChunks)
   }
 
   getInteractionAudioBuffer(): Buffer {
-    return Buffer.concat(this.audioChunksForInteraction)
+    return this.getAllAudio()
   }
 
   setAudioConfig(config: { sampleRate?: number; channels?: number }) {
@@ -107,16 +75,16 @@ export class AudioStreamManager {
   }
 
   clearInteractionAudio() {
-    this.audioChunksForInteraction = []
+    this.audioChunks = []
   }
 
   getAudioDurationMs(): number {
-    const totalBytes = this.audioChunksForInteraction.reduce(
+    const totalBytes = this.audioChunks.reduce(
       (sum, chunk) => sum + chunk.length,
       0,
     )
-    // 16-bit PCM mono -> 2 bytes per sample
-    const totalSamples = totalBytes / 2
+    const bytesPerSample = 2 // 16-bit PCM mono
+    const totalSamples = totalBytes / bytesPerSample
     const durationSeconds = totalSamples / this.currentSampleRate
     return Math.floor(durationSeconds * 1000)
   }

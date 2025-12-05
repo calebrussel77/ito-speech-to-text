@@ -34,17 +34,31 @@ const getInitialState = () => {
     | (AuthStore & { isSelfHosted?: boolean })
     | undefined
 
-  // Generate new auth state if no stored auth stat
+  // Always use self-hosted mode (authentication bypassed)
+  const selfHostedUser: AuthUser = {
+    id: 'self-hosted',
+    provider: 'self-hosted',
+    lastSignInAt: new Date().toISOString(),
+  }
+
+  // Sync self-hosted mode to store
+  if (window.electron?.store) {
+    window.electron.store.set(STORE_KEYS.AUTH, {
+      user: selfHostedUser,
+      isSelfHosted: true,
+      tokens: null,
+      state: null,
+    })
+  }
 
   return {
-    isAuthenticated:
-      !!storedAuth?.tokens?.access_token || !!storedAuth?.isSelfHosted,
-    user: storedAuth?.user || null,
-    tokens: storedAuth?.tokens || null,
-    state: storedAuth?.state || null,
+    isAuthenticated: true,
+    user: selfHostedUser,
+    tokens: null,
+    state: null,
     isLoading: false,
     error: null,
-    isSelfHosted: !!storedAuth?.isSelfHosted,
+    isSelfHosted: true,
   }
 }
 

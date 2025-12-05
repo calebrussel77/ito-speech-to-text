@@ -1,4 +1,3 @@
-import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { resolve } from 'path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -23,7 +22,6 @@ export default defineConfig({
     },
     plugins: [
       externalizeDepsPlugin(),
-      sentryVitePlugin({ org: 'demox-labs', project: 'ito' }),
     ],
   },
 
@@ -45,7 +43,6 @@ export default defineConfig({
     },
     plugins: [
       externalizeDepsPlugin(),
-      sentryVitePlugin({ org: 'demox-labs', project: 'ito' }),
     ],
   },
 
@@ -69,7 +66,6 @@ export default defineConfig({
     plugins: [
       tailwindcss(),
       react(),
-      sentryVitePlugin({ org: 'demox-labs', project: 'ito' }),
     ],
   },
 })

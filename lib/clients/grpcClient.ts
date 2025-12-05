@@ -47,13 +47,21 @@ import { Auth0Config } from '../auth/config'
 import { getActiveWindow } from '../media/active-application'
 
 class GrpcClient {
-  private client: ReturnType<typeof createClient<typeof ItoService>>
-  private timingClient: ReturnType<typeof createClient<typeof TimingService>>
+  private client: ReturnType<typeof createClient<typeof ItoService>> | null
+  private timingClient: ReturnType<typeof createClient<typeof TimingService>> | null
   private authToken: string | null = null
   private mainWindow: BrowserWindow | null = null
   private isRefreshingTokens: boolean = false
+  private isLocalMode = false
 
   constructor() {
+    this.isLocalMode = getCurrentUserId() === 'self-hosted'
+    if (this.isLocalMode || !import.meta.env.VITE_GRPC_BASE_URL) {
+      console.log('Running in local mode, gRPC client disabled')
+      this.client = null
+      this.timingClient = null
+      return
+    }
     const transport = createConnectTransport({
       baseUrl: import.meta.env.VITE_GRPC_BASE_URL,
       httpVersion: '1.1',
@@ -104,6 +112,9 @@ class GrpcClient {
   }
 
   private async getHeadersWithMetadata(mode: ItoMode) {
+    if (this.isLocalMode) {
+      return new Headers()
+    }
     const headers = this.getHeaders()
 
     try {
@@ -272,6 +283,9 @@ class GrpcClient {
   }
 
   async transcribeStream(stream: AsyncIterable<AudioChunk>, mode: ItoMode) {
+    if (this.isLocalMode || !this.client) {
+      throw new Error('gRPC client disabled in local mode')
+    }
     return this.withRetry(async () => {
       const response = await this.client.transcribeStream(stream, {
         headers: await this.getHeadersWithMetadata(mode),
@@ -284,6 +298,9 @@ class GrpcClient {
     stream: AsyncIterable<TranscribeStreamRequest>,
     signal?: AbortSignal,
   ) {
+    if (this.isLocalMode || !this.client) {
+      throw new Error('gRPC client disabled in local mode')
+    }
     return this.withRetry(async () => {
       const response = await this.client.transcribeStreamV2(stream, {
         headers: this.getHeaders(),
@@ -298,6 +315,7 @@ class GrpcClient {
   // =================================================================
 
   async createNote(note: Note) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(CreateNoteRequestSchema, {
         id: note.id,
@@ -311,6 +329,7 @@ class GrpcClient {
   }
 
   async updateNote(note: Note) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(UpdateNoteRequestSchema, {
         id: note.id,
@@ -323,6 +342,7 @@ class GrpcClient {
   }
 
   async deleteNote(note: Note) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(DeleteNoteRequestSchema, {
         id: note.id,
@@ -334,6 +354,7 @@ class GrpcClient {
   }
 
   async listNotesSince(since?: string): Promise<NotePb[]> {
+    if (!this.client) return []
     return this.withRetry(async () => {
       const request = create(ListNotesRequestSchema, {
         sinceTimestamp: since ?? '',
@@ -346,6 +367,7 @@ class GrpcClient {
   }
 
   async createInteraction(interaction: Interaction) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       // Convert Buffer to Uint8Array for protobuf
       let uint8AudioData: Uint8Array
@@ -379,6 +401,7 @@ class GrpcClient {
   }
 
   async updateInteraction(interaction: Interaction) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(UpdateInteractionRequestSchema, {
         id: interaction.id,
@@ -391,6 +414,7 @@ class GrpcClient {
   }
 
   async deleteInteraction(interaction: Interaction) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(DeleteInteractionRequestSchema, {
         id: interaction.id,
@@ -402,6 +426,7 @@ class GrpcClient {
   }
 
   async listInteractionsSince(since?: string): Promise<InteractionPb[]> {
+    if (!this.client) return []
     return this.withRetry(async () => {
       const request = create(ListInteractionsRequestSchema, {
         sinceTimestamp: since ?? '',
@@ -414,6 +439,7 @@ class GrpcClient {
   }
 
   async createDictionaryItem(item: DictionaryItem) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(CreateDictionaryItemRequestSchema, {
         id: item.id,
@@ -427,6 +453,7 @@ class GrpcClient {
   }
 
   async updateDictionaryItem(item: DictionaryItem) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(UpdateDictionaryItemRequestSchema, {
         id: item.id,
@@ -440,6 +467,7 @@ class GrpcClient {
   }
 
   async deleteDictionaryItem(item: DictionaryItem) {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(DeleteDictionaryItemRequestSchema, {
         id: item.id,
@@ -451,6 +479,7 @@ class GrpcClient {
   }
 
   async listDictionaryItemsSince(since?: string): Promise<DictionaryItemPb[]> {
+    if (!this.client) return []
     return this.withRetry(async () => {
       const request = create(ListDictionaryItemsRequestSchema, {
         sinceTimestamp: since ?? '',
@@ -463,6 +492,7 @@ class GrpcClient {
   }
 
   async deleteUserData() {
+    if (!this.client) throw new Error('gRPC client disabled')
     return this.withRetry(async () => {
       const request = create(DeleteUserDataRequestSchema, {})
       return await this.client.deleteUserData(request, {
@@ -526,6 +556,7 @@ class GrpcClient {
   }
 
   async submitTimingReports(reports: TimingReport[]) {
+    if (!this.timingClient) return
     return this.withRetry(async () => {
       const request = create(SubmitTimingReportsRequestSchema, {
         reports,

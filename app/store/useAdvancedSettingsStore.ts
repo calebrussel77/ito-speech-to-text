@@ -17,12 +17,22 @@ interface AdvancedSettingsState {
   llm: LlmSettings
   grammarServiceEnabled: boolean
   macosAccessibilityContextEnabled: boolean
+  groqApiKey: string
   setLlmSettings: (settings: Partial<LlmSettings>) => void
   setGrammarServiceEnabled: (enabled: boolean) => void
   setMacosAccessibilityContextEnabled: (enabled: boolean) => void
+  setGroqApiKey: (apiKey: string) => void
 }
 
 // Initialize from electron store
+const DECOMMISSIONED_MODELS: Record<string, string> = {
+  'llama3-8b-8192': 'llama-3.1-8b-instant',
+  'openai/gpt-oss-120b': 'llama-3.1-8b-instant',
+}
+
+const mapModel = (model: string) =>
+  DECOMMISSIONED_MODELS[model] ? DECOMMISSIONED_MODELS[model] : model
+
 const getInitialState = () => {
   const storedAdvancedSettings = window.electron.store.get(
     STORE_KEYS.ADVANCED_SETTINGS,
@@ -34,7 +44,7 @@ const getInitialState = () => {
       asrModel: storedAdvancedSettings.llm.asrModel,
       asrPrompt: storedAdvancedSettings.llm.asrPrompt,
       llmProvider: storedAdvancedSettings.llm.llmProvider,
-      llmModel: storedAdvancedSettings.llm.llmModel,
+      llmModel: mapModel(storedAdvancedSettings.llm.llmModel),
       llmTemperature: storedAdvancedSettings.llm.llmTemperature,
       transcriptionPrompt: storedAdvancedSettings.llm.transcriptionPrompt,
       editingPrompt: storedAdvancedSettings.llm.editingPrompt,
@@ -44,6 +54,7 @@ const getInitialState = () => {
       storedAdvancedSettings.grammarServiceEnabled ?? false,
     macosAccessibilityContextEnabled:
       storedAdvancedSettings.macosAccessibilityContextEnabled ?? false,
+    groqApiKey: storedAdvancedSettings.groqApiKey || '',
   }
 }
 
@@ -86,6 +97,13 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>(set => {
     setMacosAccessibilityContextEnabled: (enabled: boolean) => {
       set(() => {
         const partialState = { macosAccessibilityContextEnabled: enabled }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setGroqApiKey: (apiKey: string) => {
+      set(() => {
+        const partialState = { groqApiKey: apiKey }
         syncToStore(partialState)
         return partialState
       })

@@ -91,20 +91,15 @@ export class InteractionsTable {
     }
 
     const query = `
-      INSERT INTO interactions (id, user_id, title, asr_output, llm_output, raw_audio, raw_audio_id, duration_ms, sample_rate, created_at, updated_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO interactions (id, user_id, title, asr_output, llm_output, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
-    // Note: SQLite doesn't have a dedicated JSON type, so we stringify complex objects
     const params = [
       newInteraction.id,
       newInteraction.user_id,
       newInteraction.title,
       JSON.stringify(newInteraction.asr_output),
       JSON.stringify(newInteraction.llm_output),
-      newInteraction.raw_audio,
-      newInteraction.raw_audio_id,
-      newInteraction.duration_ms,
-      newInteraction.sample_rate,
       newInteraction.created_at,
       newInteraction.updated_at,
       newInteraction.deleted_at,
@@ -124,8 +119,8 @@ export class InteractionsTable {
 
   static async findAll(user_id?: string): Promise<Interaction[]> {
     const query = user_id
-      ? 'SELECT * FROM interactions WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC'
-      : 'SELECT * FROM interactions WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC'
+      ? 'SELECT * FROM interactions WHERE (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL ORDER BY created_at DESC'
+      : 'SELECT * FROM interactions WHERE deleted_at IS NULL ORDER BY created_at DESC'
     const params = user_id ? [user_id] : []
     const rows = await all<Interaction>(query, params)
 
@@ -159,15 +154,12 @@ export class InteractionsTable {
 
   static async upsert(interaction: Interaction): Promise<void> {
     const query = `
-      INSERT INTO interactions (id, user_id, title, asr_output, llm_output, raw_audio, duration_ms, sample_rate, created_at, updated_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO interactions (id, user_id, title, asr_output, llm_output, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         asr_output = excluded.asr_output,
         llm_output = excluded.llm_output,
-        raw_audio = excluded.raw_audio,
-        duration_ms = excluded.duration_ms,
-        sample_rate = excluded.sample_rate,
         updated_at = excluded.updated_at,
         deleted_at = excluded.deleted_at;
     `
@@ -177,9 +169,6 @@ export class InteractionsTable {
       interaction.title,
       JSON.stringify(interaction.asr_output),
       JSON.stringify(interaction.llm_output),
-      interaction.raw_audio,
-      interaction.duration_ms,
-      interaction.sample_rate,
       interaction.created_at,
       interaction.updated_at,
       interaction.deleted_at,

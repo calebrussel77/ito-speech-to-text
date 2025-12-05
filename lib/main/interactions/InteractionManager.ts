@@ -45,14 +45,7 @@ export class InteractionManager {
 
     try {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
-      const userId = userProfile?.id
-
-      if (!userId) {
-        log.warn(
-          '[InteractionManager] No user ID found, not creating interaction.',
-        )
-        return
-      }
+      const userId = userProfile?.id || 'self-hosted'
 
       // Calculate interaction duration
       const interactionEndTime = Date.now()
@@ -84,7 +77,7 @@ export class InteractionManager {
         title,
         asr_output: asrOutput,
         llm_output: errorMessage ? { error: errorMessage } : {},
-        raw_audio: audioBuffer.length > 0 ? audioBuffer : null,
+        raw_audio: null, // Do not persist audio in local-only mode
         raw_audio_id: null,
         duration_ms: durationMs,
         sample_rate: sampleRate,
@@ -106,6 +99,10 @@ export class InteractionManager {
       })
     } catch (error) {
       log.error('[InteractionManager] Failed to create interaction:', error)
+      console.error('[InteractionManager] interaction data that failed:', {
+        id: this.currentInteractionId,
+        hasTranscript: !!transcript,
+      })
       // Clear timing on error
       if (this.currentInteractionId) {
         timingCollector.clearInteraction(this.currentInteractionId)

@@ -199,6 +199,8 @@ const api = {
   updateAdvancedSettings: (advancedSettings: AdvancedSettings) => {
     return ipcRenderer.invoke('update-advanced-settings', advancedSettings)
   },
+  testGroqApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-groq-api-key', apiKey),
 
   // Check if the local server is healthy and accessible
   checkServerHealth: () => {

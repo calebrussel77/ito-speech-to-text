@@ -4,6 +4,7 @@ import {
 } from '@/app/store/useAdvancedSettingsStore'
 import { ChangeEvent, useEffect, useRef, useState } from 'react'
 import { useWindowContext } from '@/app/components/window/WindowContext'
+import ApiKeySettings from './ApiKeySettings'
 
 type LlmSettingConfig = {
   name: keyof LlmSettings
@@ -261,6 +262,7 @@ export default function AdvancedSettingsContent() {
     <div className="max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-500 scrollbar-track-transparent">
       {/* LLM Settings Section */}
       <div className="space-y-6">
+        <ApiKeySettings />
         <div>
           <h3 className="text-md font-medium text-slate-900 mb-3 ml-1">
             LLM Settings

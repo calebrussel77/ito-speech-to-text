@@ -72,6 +72,11 @@ export class SyncService {
 
     try {
       const user = mainStore.get(STORE_KEYS.USER_PROFILE) as any
+      if (user?.id === 'self-hosted') {
+        console.log('Self-hosted mode: sync disabled')
+        this.isSyncing = false
+        return
+      }
       if (!user?.id) {
         console.log(
           'No user logged in or user profile is missing ID. Skipping sync.',

@@ -6,6 +6,7 @@ import { ItoMode } from '@/app/generated/ito_pb.js'
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
+import { safeStorage } from 'electron'
 
 export interface KeyboardShortcutConfig {
   id: string
@@ -71,6 +72,7 @@ export interface AdvancedSettings {
   llm: LlmSettings
   grammarServiceEnabled: boolean
   macosAccessibilityContextEnabled: boolean
+  groqApiKey?: string
 }
 
 interface AppStore {
@@ -155,6 +157,7 @@ export const defaultValues: AppStore = {
       editingPrompt: DEFAULT_ADVANCED_SETTINGS.editingPrompt,
       noSpeechThreshold: DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
+    groqApiKey: '',
   },
   openMic: false,
   selectedAudioInput: null,
@@ -209,6 +212,28 @@ function deepSet(obj: any, pathParts: string[], value: any): any {
 
 async function persistTopLevelKey(key: string) {
   try {
+    if (key === STORE_KEYS.ADVANCED_SETTINGS) {
+      const value = cache[key] || {}
+      const toPersist: any = { ...value }
+      if (toPersist.groqApiKey) {
+        try {
+          if (safeStorage.isEncryptionAvailable()) {
+            toPersist.groqApiKeyEncrypted = safeStorage
+              .encryptString(toPersist.groqApiKey)
+              .toString('base64')
+          } else {
+            toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
+          }
+        } catch (err) {
+          console.warn('[store] Failed to encrypt Groq API key, storing as-is')
+          toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
+        }
+      }
+      delete toPersist.groqApiKey
+      await KeyValueStore.set(key, JSON.stringify(toPersist))
+      return
+    }
+
     await KeyValueStore.set(key, JSON.stringify(cache[key]))
   } catch (err) {
     console.error('[store] Failed to persist key', key, err)
@@ -273,6 +298,20 @@ const migrations: Migration[] = [
       if ('keyboardShortcut' in settings) {
         delete settings.keyboardShortcut
         s.set('settings', settings)
+      }
+    },
+  },
+  {
+    id: '2025-12-05-llm-model-migration',
+    run: s => {
+      const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
+      const model = advanced.llm?.llmModel
+      if (model === 'llama3-8b-8192' || model === 'openai/gpt-oss-120b') {
+        advanced.llm = {
+          ...advanced.llm,
+          llmModel: 'llama-3.1-8b-instant',
+        }
+        s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
       }
     },
   },
@@ -353,6 +392,29 @@ export async function initializeStore() {
           cache[key] = JSON.parse(str)
         } catch {
           cache[key] = str
+        }
+
+        if (key === STORE_KEYS.ADVANCED_SETTINGS) {
+          const stored = cache[key] as any
+          let decrypted = ''
+          if (stored?.groqApiKeyEncrypted) {
+            try {
+              if (safeStorage.isEncryptionAvailable()) {
+                decrypted = safeStorage.decryptString(
+                  Buffer.from(stored.groqApiKeyEncrypted, 'base64'),
+                )
+              } else {
+                decrypted = stored.groqApiKeyEncrypted
+              }
+            } catch (err) {
+              console.warn('[store] Failed to decrypt Groq API key', err)
+            }
+          }
+          cache[key] = {
+            ...stored,
+            groqApiKey: decrypted || stored?.groqApiKey || '',
+          }
+          delete (cache[key] as any).groqApiKeyEncrypted
         }
       }
     } catch (err) {

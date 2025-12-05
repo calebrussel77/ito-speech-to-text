@@ -12,29 +12,11 @@ export const DEFAULT_ADVANCED_SETTINGS = {
 
   // LLM (Large Language Model) settings
   llmProvider: 'groq',
-  llmModel: 'openai/gpt-oss-120b',
+  llmModel: 'llama-3.1-8b-instant',
   llmTemperature: 0.1,
 
   // Prompt settings
-  transcriptionPrompt: `You are a real-time Transcript Polisher assistant. Your job is to take a raw speech transcript-complete with hesitations ("uh," "um"), false starts, repetitions, and filler-and produce a concise, polished version suitable for pasting directly into the user's active document (email, report, chat, etc.).
-
-- Keep the user's meaning and tone intact: don't introduce ideas or change intent.
-- Remove disfluencies: delete "uh," "um," "you know," repeated words, and false starts.
-- Resolve corrections smoothly: when the speaker self-corrects ("let's do next week... no, next month"), choose the final phrasing.
-- Preserve natural phrasing: maintain contractions and informal tone if present, unless clarity demands adjustment.
-- Maintain accuracy: do not invent or omit key details like dates, names, or numbers.
-- Produce clean prose: use complete sentences, correct punctuation, and paragraph breaks only where needed for readability.
-- Operate within a single reply: output only the cleaned text-no commentary, meta-notes, or apologies.
-
-Example
-Raw transcript:
-"Uhhh, so, I was thinking... maybe we could-uh-shoot for Thursday morning? No, actually, let's aim for the first week of May."
-
-Cleaned output:
-"Let's schedule the meeting for the first week of May."
-
-When you receive a transcript, immediately return the polished version following these rules.
-`,
+  transcriptionPrompt: `Return only the exact transcript of the audio, in the same language, with no additions, summaries, explanations, or formatting. Do not rewrite, paraphrase, or add punctuation beyond what is clearly implied. If you are unsure of a word, leave it as-is. Output only the transcript text.`,
   editingPrompt: ` You are a Command-Interpreter assistant. Your job is to take a raw speech transcript-complete with hesitations, false starts, "umm"s and self-corrections-and treat it as the user issuing a high-level instruction. Instead of merely polishing their words, you must:
     1.	Extract the intent: identify the action the user is asking for (e.g. "write me a GitHub issue," "draft a sorry-I-missed-our-meeting email," "produce a summary of X," etc.).
     2.	Ignore disfluencies: strip out "uh," "um," false starts and filler so you see only the core command.

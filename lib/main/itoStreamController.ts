@@ -1,88 +1,40 @@
-import {
-  ItoMode,
-  TranscribeStreamRequest,
-  TranscribeStreamRequestSchema,
-  StreamConfigSchema,
-  ContextInfoSchema,
-  LlmSettingsSchema,
-} from '@/app/generated/ito_pb'
-import { create } from '@bufbuild/protobuf'
-import { grpcClient } from '../clients/grpcClient'
-import { AudioStreamManager } from './audio/AudioStreamManager'
-import { ContextData } from './context/ContextGrabber'
+import { ItoMode } from '@/app/generated/ito_pb'
 import log from 'electron-log'
+import { AudioStreamManager } from './audio/AudioStreamManager'
+import { localAudioProcessor } from './transcription/LocalAudioProcessor'
+import {
+  localTranscriptionService,
+  LocalTranscriptionError,
+} from './transcription/LocalTranscriptionService'
+import { contextGrabber } from './context/ContextGrabber'
+import { getAdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
-import { interactionManager } from './interactions/InteractionManager'
+
+export interface LocalTranscriptionResult {
+  transcript: string
+  audioBuffer: Buffer
+  sampleRate: number
+  durationMs: number
+}
 
 /**
- * ItoStreamController manages the lifecycle of a transcription stream using TranscribeStreamV2.
- * It allows sending metadata/config, streaming audio, and updating settings during the stream.
+ * ItoStreamController now runs a fully local transcription pipeline.
+ * It buffers audio, prepares a WAV, calls Groq directly, and returns the transcript.
  */
 export class ItoStreamController {
   private audioStreamManager = new AudioStreamManager()
-
-  private hasStartedGrpc = false
   private currentMode: ItoMode = ItoMode.TRANSCRIBE
-  private isCancelled = false
-  private configQueue: TranscribeStreamRequest[] = []
-  private abortController: AbortController | null = null
 
   public async initialize(mode: ItoMode): Promise<boolean> {
-    // Guard against multiple concurrent transcriptions
     if (this.audioStreamManager.isCurrentlyStreaming()) {
       log.warn('[ItoStreamController] Stream already in progress.')
       return false
     }
 
     this.audioStreamManager.initialize()
-    this.hasStartedGrpc = false
     this.currentMode = mode
-    this.isCancelled = false
-    this.configQueue = []
-    this.abortController = null
-    console.log('[ItoStreamController] Starting new interaction stream.')
-
+    console.log('[ItoStreamController] Starting new local interaction stream.')
     return true
-  }
-
-  /**
-   * Starts the gRPC stream immediately without waiting for minimum audio duration.
-   * Returns a promise that resolves with the transcription response and audio data.
-   */
-  public async startGrpcStream(): Promise<{
-    response: any
-    audioBuffer: Buffer
-    sampleRate: number
-  }> {
-    if (this.hasStartedGrpc) {
-      log.warn('[ItoStreamController] gRPC stream already started')
-      throw new Error('Stream already started')
-    }
-
-    console.log('[ItoStreamController] Starting gRPC stream immediately')
-    this.hasStartedGrpc = true
-    this.abortController = new AbortController()
-    const abortSignal = this.abortController.signal
-    const timingEventName =
-      this.currentMode === ItoMode.EDIT
-        ? TimingEventName.SERVER_EDITING
-        : TimingEventName.SERVER_DICTATION
-
-    const response = await timingCollector.timeAsync(
-      timingEventName,
-      async () =>
-        await grpcClient.transcribeStreamV2(
-          this.createStreamGenerator(),
-          abortSignal,
-        ),
-    )
-
-    // Return response along with the audio data collected during the stream
-    return {
-      response,
-      audioBuffer: this.audioStreamManager.getInteractionAudioBuffer(),
-      sampleRate: this.audioStreamManager.getCurrentSampleRate(),
-    }
   }
 
   public getCurrentMode(): ItoMode {
@@ -90,48 +42,8 @@ export class ItoStreamController {
   }
 
   public setMode(mode: ItoMode) {
-    if (!this.audioStreamManager.isCurrentlyStreaming()) {
-      log.warn('[ItoStreamController] Cannot change mode - no active stream')
-      return
-    }
-
     this.currentMode = mode
-    console.log(`[ItoStreamController] Mode changed to ${mode}`)
-
-    // Send mode update to stream
-    this.sendModeUpdate(mode)
-  }
-
-  public scheduleConfigUpdate(context: ContextData) {
-    if (!this.audioStreamManager.isCurrentlyStreaming()) {
-      log.warn('[ItoStreamController] Cannot send config - no active stream')
-      return
-    }
-
-    console.log('[ItoStreamController] Queueing config update')
-    const config = this.buildStreamConfig(context)
-    this.configQueue.push(config)
-  }
-
-  private sendModeUpdate(mode: ItoMode) {
-    console.log(`[ItoStreamController] Sending mode update: ${mode}`)
-
-    // Create a minimal config with just the mode
-    // IMPORTANT: Only set the mode field, leave others undefined so server merge works correctly
-    const contextInfo = create(ContextInfoSchema, {})
-    contextInfo.mode = mode
-    // Don't set windowTitle, appName, or contextText - let server keep existing values
-
-    const modeUpdate = create(TranscribeStreamRequestSchema, {
-      payload: {
-        case: 'config',
-        value: create(StreamConfigSchema, {
-          context: contextInfo,
-        }),
-      },
-    })
-
-    this.configQueue.push(modeUpdate)
+    console.log(`[ItoStreamController] Mode set to ${mode}`)
   }
 
   public endInteraction() {
@@ -151,10 +63,8 @@ export class ItoStreamController {
     }
 
     console.log('[ItoStreamController] Cancelling transcription')
-    this.isCancelled = true
-    this.abortController?.abort()
-
     this.stopStreaming()
+    this.audioStreamManager.clearInteractionAudio()
   }
 
   public getAudioDurationMs(): number {
@@ -169,76 +79,73 @@ export class ItoStreamController {
     this.audioStreamManager.clearInteractionAudio()
   }
 
-  private async *createStreamGenerator(): AsyncGenerator<TranscribeStreamRequest> {
-    console.log(
-      '[ItoStreamController] Starting stream generator (audio-first mode)',
-    )
-
-    // Stream audio chunks and interleave config updates
-    for await (const audioChunk of this.audioStreamManager.streamAudioChunks()) {
-      if (this.isCancelled) {
-        console.log(
-          '[ItoStreamController] Stream cancelled, stopping generator',
-        )
-        break
-      }
-
-      // Send any pending config updates before this audio chunk
-      while (this.configQueue.length > 0) {
-        const configMessage = this.configQueue.shift()!
-        console.log('[ItoStreamController] Sending config update from queue')
-        yield configMessage
-      }
-
-      // Send audio chunk
-      yield create(TranscribeStreamRequestSchema, {
-        payload: {
-          case: 'audioData',
-          value: audioChunk.audioData,
-        },
-      })
-    }
-
-    // Send any remaining config messages at the end
-    while (this.configQueue.length > 0) {
-      const configMessage = this.configQueue.shift()!
-      console.log(
-        '[ItoStreamController] Sending final config update from queue',
-      )
-      yield configMessage
-    }
+  public getBufferedAudio(): Buffer {
+    return this.audioStreamManager.getAllAudio()
   }
 
-  private buildStreamConfig(context: ContextData): TranscribeStreamRequest {
-    const interactionId = interactionManager.getCurrentInteractionId()
-    // Build gRPC config message from the provided context data
-    return create(TranscribeStreamRequestSchema, {
-      payload: {
-        case: 'config',
-        value: create(StreamConfigSchema, {
-          context: create(ContextInfoSchema, {
-            windowTitle: context.windowTitle,
-            appName: context.appName,
-            contextText: context.contextText,
-            mode: this.currentMode,
-          }),
-          llmSettings: create(LlmSettingsSchema, {
-            asrModel: context.advancedSettings.llm.asrModel,
-            asrProvider: context.advancedSettings.llm.asrProvider,
-            asrPrompt: context.advancedSettings.llm.asrPrompt,
-            noSpeechThreshold: context.advancedSettings.llm.noSpeechThreshold,
-            llmProvider: context.advancedSettings.llm.llmProvider,
-            llmModel: context.advancedSettings.llm.llmModel,
-            llmTemperature: context.advancedSettings.llm.llmTemperature,
-            transcriptionPrompt:
-              context.advancedSettings.llm.transcriptionPrompt,
-            editingPrompt: context.advancedSettings.llm.editingPrompt,
-          }),
+  // Backwards-compatible no-ops for legacy tests
+  public async scheduleConfigUpdate(_context: any) {
+    return
+  }
+
+  public async startGrpcStream() {
+    return this.processLocalTranscription()
+  }
+
+  /**
+   * Process the buffered audio through Groq and return the final transcript.
+   */
+  public async processLocalTranscription(): Promise<LocalTranscriptionResult> {
+    const rawAudio = this.audioStreamManager.getAllAudio()
+    const sampleRate = this.audioStreamManager.getCurrentSampleRate()
+
+    const { wavAudio, durationMs } = localAudioProcessor.prepareAudioForTranscription(
+      rawAudio,
+      { sampleRate },
+    )
+
+    const context = await contextGrabber.gatherContext(this.currentMode)
+    const advancedSettings = getAdvancedSettings()
+    const timingEvent =
+      this.currentMode === ItoMode.EDIT
+        ? TimingEventName.LOCAL_EDIT
+        : TimingEventName.LOCAL_TRANSCRIBE
+
+    try {
+      localTranscriptionService.initialize(advancedSettings.groqApiKey || '')
+    } catch (error) {
+      if (error instanceof LocalTranscriptionError) {
+        throw error
+      }
+      throw new Error(
+        error instanceof Error ? error.message : 'Groq API key missing',
+      )
+    }
+
+    const transcript = await timingCollector.timeAsync(
+      timingEvent,
+      async () =>
+        await localTranscriptionService.transcribeAudio(wavAudio, {
+          asrModel: advancedSettings.llm.asrModel,
           vocabulary: context.vocabularyWords,
-          interactionId: interactionId || undefined,
+          noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+          fileType: 'wav',
         }),
-      },
-    })
+    )
+
+    const adjusted = await localTranscriptionService.adjustTranscript(
+      transcript,
+      this.currentMode,
+      context,
+      advancedSettings,
+    )
+
+    return {
+      transcript: adjusted,
+      audioBuffer: Buffer.alloc(0), // We intentionally avoid persisting audio
+      sampleRate,
+      durationMs,
+    }
   }
 }
 

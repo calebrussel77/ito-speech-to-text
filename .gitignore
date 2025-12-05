@@ -21,3 +21,5 @@ server/deploy-dev.sh
 .electron-builder-cache
 .npm-cache
 .cache
+.history
+.mcp.json

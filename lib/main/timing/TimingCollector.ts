@@ -14,9 +14,9 @@ export enum TimingEventName {
   // Core interaction events
   INTERACTION_ACTIVE = 'interaction_active',
 
-  // Server communication
-  SERVER_DICTATION = 'server_transcribe',
-  SERVER_EDITING = 'server_editing',
+  // Local transcription pipeline
+  LOCAL_TRANSCRIBE = 'local_transcribe',
+  LOCAL_EDIT = 'local_edit',
 
   // Context and processing
   SELCTED_TEXT_GATHER = 'selected_text_gather',

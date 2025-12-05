@@ -75,7 +75,7 @@ export default function IntroducingIntelligentMode() {
       <div className="flex w-[55%] items-center justify-center bg-gradient-to-b from-purple-50/10 to-purple-100 border-l-2 border-purple-100">
         <KeyboardShortcutEditor
           shortcut={keyboardShortcut}
-          onShortcutChange={updateKeyboardShortcut}
+          onShortcutChange={updateKeyboardShortcut as never}
           keySize={80}
           editButtonText="Change Shortcut"
           showConfirmButton={true}
@@ -86,7 +86,6 @@ export default function IntroducingIntelligentMode() {
           editButtonClassName="w-44"
           confirmButtonClassName="hidden"
           className="rounded-xl shadow-lg p-6 flex flex-col items-center min-w-[500px] max-h-[280px]"
-          mode={ItoMode.EDIT}
         />
       </div>
     </div>

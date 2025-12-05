@@ -49,18 +49,13 @@ export default function WelcomeKit() {
       })
   }, [setAccessibilityEnabled, setMicrophoneEnabled])
 
-  // Show signin/signup based on whether user has previous auth data
-  if (!isAuthenticated) {
-    if (user) {
-      // Returning user who needs to sign back in
-      return <SignInContent />
-    } else {
-      // New user who needs to create an account
-      return <CreateAccountContent />
-    }
-  }
+  // Authentication bypassed - skip directly to onboarding
+  // Remove CreateAccountContent from the onboarding flow since we're always authenticated
+  const onboardingStepOrderFiltered = onboardingStepOrder.filter(
+    component => component !== CreateAccountContent
+  )
 
-  const CurrentComponent = onboardingStepOrder[onboardingStep]
+  const CurrentComponent = onboardingStepOrderFiltered[onboardingStep]
 
   return (
     <div className="w-full h-full bg-background">

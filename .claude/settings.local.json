@@ -19,9 +19,15 @@
       "Bash(cargo clean:*)",
       "Bash(awk:*)",
       "WebFetch(domain:connectrpc.com)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(dir \"C:\\Labs\\ito\\server\")",
+      "mcp__exa__get_code_context_exa"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "shadcn",
+    "exa"
+  ]
 }
