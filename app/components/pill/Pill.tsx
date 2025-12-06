@@ -10,7 +10,6 @@ import { AudioBars } from './contents/AudioBars'
 import { PreviewAudioBars } from './contents/PreviewAudioBars'
 import { LoadingAnimation } from './contents/LoadingAnimation'
 import { useAudioStore } from '@/app/store/useAudioStore'
-import { TooltipButton } from './contents/TooltipButton'
 import { analytics, ANALYTICS_EVENTS } from '../analytics'
 import type {
   RecordingStatePayload,
@@ -18,19 +17,50 @@ import type {
 } from '@/lib/types/ipc'
 import { ItoMode } from '@/app/generated/ito_pb'
 
+// Premium Dark Theme Colors (matching globals.css Refined Obsidian palette)
+const THEME = {
+  // Base colors
+  background: {
+    primary: 'hsl(225, 15%, 8%)',
+    elevated: 'hsl(225, 15%, 10%)',
+    hover: 'hsl(225, 12%, 16%)',
+    glass: 'hsla(225, 15%, 12%, 0.85)',
+  },
+  border: {
+    subtle: 'hsla(210, 20%, 96%, 0.08)',
+    hover: 'hsla(210, 20%, 96%, 0.15)',
+    active: 'hsla(263, 70%, 55%, 0.4)',
+    recording: 'hsla(0, 72%, 51%, 0.5)',
+  },
+  glow: {
+    idle: '0 4px 12px hsla(0, 0%, 0%, 0.4), 0 1px 4px hsla(0, 0%, 0%, 0.3)',
+    hover:
+      '0 8px 24px hsla(263, 70%, 55%, 0.12), 0 4px 12px hsla(0, 0%, 0%, 0.4)',
+    recording:
+      '0 0 24px hsla(0, 80%, 55%, 0.25), 0 4px 16px hsla(0, 0%, 0%, 0.5)',
+    processing:
+      '0 0 24px hsla(263, 70%, 55%, 0.2), 0 4px 16px hsla(0, 0%, 0%, 0.5)',
+  },
+  accent: {
+    violet: 'hsl(263, 70%, 55%)',
+    amber: 'hsl(38, 95%, 55%)',
+    red: 'hsl(0, 72%, 51%)',
+    foreground: 'hsl(210, 20%, 96%)',
+  },
+}
+
 const globalStyles = `
   html, body, #app {
     height: 100%;
     margin: 0;
-    overflow: hidden; /* Prevent scrollbars */
+    overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
-    /* These styles are key to anchoring the pill to the bottom center */
-    /* of its transparent window, allowing it to expand upwards. */
     display: flex;
     align-items: flex-end;
     justify-content: center;
+    padding-bottom: 8px;
 
     pointer-events: none;
 
@@ -43,19 +73,46 @@ const globalStyles = `
       Roboto,
       sans-serif;
   }
+
+  @keyframes pulseGlow {
+    0%, 100% {
+      box-shadow: ${THEME.glow.recording};
+    }
+    50% {
+      box-shadow: 0 0 32px hsla(0, 80%, 55%, 0.35), 0 8px 24px hsla(0, 0%, 0%, 0.6);
+    }
+  }
+
+  @keyframes subtleBreathe {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+  }
+
+  @keyframes recordingPulse {
+    0%, 100% {
+      border-color: hsla(0, 72%, 51%, 0.5);
+    }
+    50% {
+      border-color: hsla(0, 72%, 51%, 0.8);
+    }
+  }
 `
 
 const BAR_UPDATE_INTERVAL = 64
 
-// Color mapping for different recording modes
+// Premium color mapping for different recording modes
 const getAudioBarColor = (mode: ItoMode | undefined): string => {
   switch (mode) {
     case ItoMode.TRANSCRIBE:
-      return 'white'
+      return THEME.accent.foreground
     case ItoMode.EDIT:
-      return '#FFCF40'
+      return THEME.accent.amber
     default:
-      return 'white' // Default to white for transcribe mode
+      return THEME.accent.foreground
   }
 }
 
@@ -189,17 +246,17 @@ const Pill = () => {
     }
   }, [volumeHistory, lastVolumeUpdate, recordingMode])
 
-  // Define dimensions for different states
-  const idleWidth = 36
-  const idleHeight = 8
-  const hoveredWidth = 84
-  const hoveredHeight = 32
-  const recordingWidth = 84
-  const recordingHeight = 32
-  const manualRecordingWidth = 112
-  const manualRecordingHeight = 32
-  const processingWidth = 84
-  const processingHeight = 32
+  // Premium dimensions for different states
+  const idleWidth = 40
+  const idleHeight = 10
+  const hoveredWidth = 100
+  const hoveredHeight = 38
+  const recordingWidth = 100
+  const recordingHeight = 38
+  const manualRecordingWidth = 200
+  const manualRecordingHeight = 46
+  const processingWidth = 100
+  const processingHeight = 38
 
   // Determine current state
   const anyRecording = isRecording || isManualRecording
@@ -208,31 +265,45 @@ const Pill = () => {
       onboardingCompleted) &&
     (anyRecording || isProcessing || showItoBarAlways || isHovered)
 
-  // Calculate dimensions based on state
+  // Calculate dimensions and styling based on state
   let currentWidth = idleWidth
   let currentHeight = idleHeight
-  let backgroundColor = 'rgba(128, 128, 128, 0.65)'
+  let backgroundColor = THEME.background.glass
+  let borderColor = THEME.border.subtle
+  let boxShadow = THEME.glow.idle
+  let animationName = 'none'
 
   if (isManualRecording) {
     currentWidth = manualRecordingWidth
     currentHeight = manualRecordingHeight
-    backgroundColor = '#000000'
+    backgroundColor = THEME.background.primary
+    borderColor = THEME.border.recording
+    boxShadow = THEME.glow.recording
+    animationName =
+      'pulseGlow 2s ease-in-out infinite, recordingPulse 1.5s ease-in-out infinite'
   } else if (anyRecording) {
     currentWidth = recordingWidth
     currentHeight = recordingHeight
-    backgroundColor = '#000000'
+    backgroundColor = THEME.background.primary
+    borderColor = THEME.border.recording
+    boxShadow = THEME.glow.recording
+    animationName = 'pulseGlow 2s ease-in-out infinite'
   } else if (isProcessing) {
     currentWidth = processingWidth
     currentHeight = processingHeight
-    backgroundColor = '#000000'
+    backgroundColor = THEME.background.primary
+    borderColor = THEME.border.active
+    boxShadow = THEME.glow.processing
+    animationName = 'subtleBreathe 2s ease-in-out infinite'
   } else if (isHovered) {
     currentWidth = hoveredWidth
     currentHeight = hoveredHeight
-    backgroundColor = '#404040'
+    backgroundColor = THEME.background.elevated
+    borderColor = THEME.border.hover
+    boxShadow = THEME.glow.hover
   }
 
-  // A single, unified style for the pill. Its properties will be
-  // smoothly transitioned by CSS.
+  // Premium pill style with glassmorphism and refined aesthetics
   const pillStyle: React.CSSProperties = {
     // Flex properties to center the content inside
     display: 'flex',
@@ -243,27 +314,42 @@ const Pill = () => {
     width: `${currentWidth}px`,
     height: `${currentHeight}px`,
     backgroundColor,
-    border: '1px solid #A9A9A9',
+    border: `1px solid ${borderColor}`,
+    boxShadow,
 
-    // Show/hide animation using opacity and scale instead of display none/flex
+    // Show/hide animation using opacity and scale
     opacity: shouldShow ? 1 : 0,
-    transform: shouldShow ? 'scale(1)' : 'scale(0.8)',
+    transform: shouldShow ? 'scale(1)' : 'scale(0.85)',
     transformOrigin: 'bottom center',
     visibility: shouldShow ? 'visible' : 'hidden',
 
-    // Static styles
-    borderRadius: '21px',
+    // Premium pill shape with generous border radius
+    borderRadius: '100px',
     boxSizing: 'border-box',
     overflow: 'hidden',
+
+    // Glassmorphism backdrop blur effect
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
 
     // Enable pointer events for this element
     pointerEvents: 'auto',
     cursor: isHovered && !anyRecording ? 'pointer' : 'default',
 
-    // The transition property makes the magic happen!
-    // We animate width, height, color, opacity, and scale changes over 0.3 seconds.
-    transition:
-      'width 0.3s ease, height 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease',
+    // Smooth transitions for all state changes
+    transition: `
+      width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.3s ease,
+      transform 0.3s ease,
+      visibility 0.3s ease
+    `,
+
+    // Recording/processing animations
+    animation: animationName,
   }
 
   // Handle mouse enter - enable mouse events for the pill window and set hover state
@@ -318,6 +404,21 @@ const Pill = () => {
     })
   }
 
+  // Premium button style for action buttons
+  const actionButtonStyle: React.CSSProperties = {
+    background: 'hsla(210, 20%, 96%, 0.08)',
+    border: '1px solid hsla(210, 20%, 96%, 0.12)',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px',
+    transition: 'all 0.2s ease',
+    backdropFilter: 'blur(4px)',
+    flexShrink: 0,
+  }
+
   const renderContent = () => {
     if (isManualRecording) {
       return (
@@ -327,25 +428,94 @@ const Pill = () => {
             alignItems: 'center',
             width: '100%',
             justifyContent: 'space-between',
-            padding: '0 8px',
+            padding: '0 18px',
+            gap: '12px',
           }}
         >
-          <TooltipButton
-            onClick={handleCancel}
-            icon={<X width={14} height={14} color="white" />}
-            tooltip="Cancel"
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleCancel}
+                style={{ ...actionButtonStyle, marginLeft: '3px' }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'hsla(210, 20%, 96%, 0.12)'
+                  e.currentTarget.style.borderColor = 'hsla(210, 20%, 96%, 0.2)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'hsla(210, 20%, 96%, 0.06)'
+                  e.currentTarget.style.borderColor = 'hsla(210, 20%, 96%, 0.1)'
+                }}
+              >
+                <X
+                  width={16}
+                  height={16}
+                  color={THEME.accent.foreground}
+                  style={{ opacity: 0.85 }}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              style={{
+                backgroundColor: THEME.background.primary,
+                color: THEME.accent.foreground,
+                padding: '6px 10px',
+                fontSize: '12px',
+                marginBottom: '8px',
+                borderRadius: '6px',
+                border: `1px solid ${THEME.border.subtle}`,
+                boxShadow: THEME.glow.idle,
+              }}
+              className="border-none"
+            >
+              Cancel
+            </TooltipContent>
+          </Tooltip>
 
           <AudioBars
             volumeHistory={volumeHistory}
             barColor={getAudioBarColor(recordingMode)}
           />
 
-          <TooltipButton
-            onClick={handleStop}
-            icon={<StopSquare width={14} height={14} color="#ef4444" />}
-            tooltip="Stop and paste"
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleStop}
+                style={{
+                  ...actionButtonStyle,
+                  marginRight: '3px',
+                  background: 'hsla(0, 72%, 51%, 0.15)',
+                  borderColor: 'hsla(0, 72%, 51%, 0.3)',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'hsla(0, 72%, 51%, 0.25)'
+                  e.currentTarget.style.borderColor = 'hsla(0, 72%, 51%, 0.5)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'hsla(0, 72%, 51%, 0.15)'
+                  e.currentTarget.style.borderColor = 'hsla(0, 72%, 51%, 0.3)'
+                }}
+              >
+                <StopSquare width={16} height={16} color={THEME.accent.red} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              style={{
+                backgroundColor: THEME.background.primary,
+                color: THEME.accent.foreground,
+                padding: '6px 10px',
+                fontSize: '12px',
+                marginBottom: '8px',
+                borderRadius: '6px',
+                border: `1px solid ${THEME.border.subtle}`,
+                boxShadow: THEME.glow.idle,
+              }}
+              className="border-none"
+            >
+              Stop and paste
+            </TooltipContent>
+          </Tooltip>
         </div>
       )
     }
@@ -388,14 +558,18 @@ const Pill = () => {
           <TooltipContent
             side="top"
             style={{
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              color: 'white',
-              padding: '6px 8px',
-              fontSize: '14px',
-              marginBottom: '6px',
+              backgroundColor: THEME.background.primary,
+              color: THEME.accent.foreground,
+              padding: '8px 12px',
+              fontSize: '13px',
+              marginBottom: '8px',
               borderRadius: '8px',
+              border: `1px solid ${THEME.border.subtle}`,
+              boxShadow: THEME.glow.hover,
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
             }}
-            className="border-none rounded-md"
+            className="border-none"
           >
             Click and start speaking
           </TooltipContent>
@@ -406,4 +580,3 @@ const Pill = () => {
 }
 
 export default Pill
-// @ts-nocheck

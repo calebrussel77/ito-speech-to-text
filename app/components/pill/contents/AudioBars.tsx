@@ -1,30 +1,50 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { AudioBarsBase, BAR_COUNT } from './AudioBarsBase'
 
-// A new component to very basic audio visualization
+// Premium audio visualization component with smooth animations
 export const AudioBars = ({
   volumeHistory,
-  barColor = 'white',
+  barColor = 'hsl(210, 20%, 96%)',
 }: {
   volumeHistory: number[]
   barColor?: string
 }) => {
-  // Base heights for visual variety
-  const bars = Array(BAR_COUNT).fill(1)
   const [activeBarIndex, setActiveBarIndex] = useState(0)
 
   useEffect(() => {
-    setActiveBarIndex(prevIndex => (prevIndex + 1) % bars.length)
-  }, [volumeHistory, bars.length])
+    setActiveBarIndex(prevIndex => (prevIndex + 1) % BAR_COUNT)
+  }, [volumeHistory])
 
-  // Calculate dynamic heights based on volume and active bar
-  const dynamicHeights = bars.map((baseHeight, index) => {
-    const volume = volumeHistory[volumeHistory.length - index - 1] || 0
-    const scale = Math.max(0.05, Math.min(1, volume * 20))
-    const activeBarHeight = index === activeBarIndex ? 2 : 0
-    const height = activeBarHeight + baseHeight * 20 * scale
-    return Math.min(Math.max(height, 1), 16)
-  })
+  // Calculate dynamic heights with smooth wave-like interpolation
+  const dynamicHeights = useMemo(() => {
+    return Array(BAR_COUNT)
+      .fill(1)
+      .map((_, index) => {
+        // Get volume from history with mirrored effect from center
+        const centerIndex = Math.floor(BAR_COUNT / 2)
+        const distanceFromCenter = Math.abs(index - centerIndex)
+        const historyIndex = volumeHistory.length - distanceFromCenter - 1
+
+        const volume = volumeHistory[Math.max(0, historyIndex)] || 0
+
+        // Smooth scaling with exponential curve for more dynamic response
+        const normalizedVolume = Math.max(0.03, Math.min(1, volume * 18))
+        const scale = Math.pow(normalizedVolume, 0.85)
+
+        // Add subtle wave motion based on position
+        const waveOffset = Math.sin((index / BAR_COUNT) * Math.PI) * 0.3
+        const activeBoost = index === activeBarIndex ? 1.15 : 1
+
+        // Calculate final height with minimum visibility
+        const baseHeight = 2
+        const maxHeight = 20
+        const height =
+          (baseHeight + scale * (maxHeight - baseHeight) + waveOffset) *
+          activeBoost
+
+        return Math.min(Math.max(height, 2), maxHeight)
+      })
+  }, [volumeHistory, activeBarIndex])
 
   return <AudioBarsBase heights={dynamicHeights} barColor={barColor} />
 }

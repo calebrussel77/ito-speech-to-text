@@ -1,10 +1,12 @@
 import { AudioBarsBase } from './AudioBarsBase'
 
+// Premium preview heights - create a smooth wave pattern for idle state
 export const PreviewAudioBars = () => {
-  // Create varied static heights for a nice preview effect
+  // Create a smooth sine-wave inspired pattern for elegant preview
   const staticHeights = [
-    3, 7, 4, 9, 12, 6, 8, 11, 5, 14, 6, 1, 1, 9, 15, 11, 7, 13, 9, 3, 2,
+    3, 5, 7, 9, 11, 13, 14, 13, 11, 9, 12, 15, 12, 10, 12, 14, 12, 9, 7, 5, 3,
   ]
 
-  return <AudioBarsBase heights={staticHeights} barColor="#FFFFFF" />
+  // Use a subtle off-white for the preview to differentiate from active recording
+  return <AudioBarsBase heights={staticHeights} barColor="hsla(210, 20%, 96%, 0.7)" />
 }

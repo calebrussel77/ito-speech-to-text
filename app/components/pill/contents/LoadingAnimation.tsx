@@ -1,11 +1,19 @@
 import React from 'react'
 
+// Premium theme constants
+const THEME = {
+  accent: {
+    foreground: 'hsl(210, 20%, 96%)',
+    violet: 'hsl(263, 70%, 55%)',
+  },
+}
+
 interface LoadingAnimationProps {
   color?: string
 }
 
 export const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
-  color = '#FFFFFF',
+  color = THEME.accent.foreground,
 }) => {
   return (
     <>
@@ -39,18 +47,27 @@ export const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
             box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0);
           }
         }
+
+        @keyframes pulseOpacity {
+          0%, 100% {
+            opacity: 0.8;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
       `}</style>
       <span
         style={{
-          width: '8px',
-          height: '8px',
+          width: '6px',
+          height: '6px',
           borderRadius: '50%',
           display: 'block',
           position: 'relative',
           color: color,
           left: '-100px',
           boxSizing: 'border-box',
-          animation: 'shadowRolling 2s linear infinite',
+          animation: 'shadowRolling 1.8s linear infinite, pulseOpacity 2s ease-in-out infinite',
         }}
       />
     </>
