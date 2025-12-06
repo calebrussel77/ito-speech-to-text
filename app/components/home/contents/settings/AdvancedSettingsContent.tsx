@@ -161,7 +161,9 @@ function SettingInput({ config, value, onChange }: SettingInputProps) {
     <div className="mb-6">
       <Label htmlFor={config.name} className="block text-sm font-medium mb-1">
         {config.label}{' '}
-        {config.maxLength && `(${value.length}/${config.maxLength})`}
+        {config?.maxLength &&
+          value?.length > 0 &&
+          `(${value.length}/${config.maxLength})`}
       </Label>
       {config.isSelect ? (
         <Select
@@ -202,6 +204,7 @@ function SettingInput({ config, value, onChange }: SettingInputProps) {
           placeholder={config.placeholder}
           maxLength={config.maxLength}
           readOnly={config.readOnly}
+          disabled={config.readOnly}
         />
       )}
       <p className="text-xs text-muted-foreground mt-1">{config.description}</p>

@@ -24,10 +24,10 @@ export function getPillWindow(): BrowserWindow | null {
 export function createAppWindow(): BrowserWindow {
   // Create the main window.
   mainWindow = new BrowserWindow({
-    width: 1270,
-    height: 800,
+    width: 1170,
+    height: 700,
     show: false,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#0d0e12',
     icon: appIcon,
     frame: false,
     titleBarStyle: 'hiddenInset',
@@ -103,7 +103,7 @@ export function createAppWindow(): BrowserWindow {
 }
 
 const PILL_MAX_WIDTH = 220
-const PILL_MAX_HEIGHT = 84
+const PILL_MAX_HEIGHT = 88
 export function createPillWindow(): void {
   pillWindow = new BrowserWindow({
     width: PILL_MAX_WIDTH,

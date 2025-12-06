@@ -250,7 +250,7 @@ const Pill = () => {
   const idleWidth = 40
   const idleHeight = 10
   const hoveredWidth = 100
-  const hoveredHeight = 38
+  const hoveredHeight = 36
   const recordingWidth = 100
   const recordingHeight = 38
   const manualRecordingWidth = 200

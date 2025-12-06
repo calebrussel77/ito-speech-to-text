@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
+import { DEFAULT_ADVANCED_SETTINGS } from '../../lib/constants/generated-defaults'
 
 export interface LlmSettings {
   asrProvider: string
@@ -30,25 +31,33 @@ const DECOMMISSIONED_MODELS: Record<string, string> = {
   'openai/gpt-oss-120b': 'llama-3.1-8b-instant',
 }
 
-const mapModel = (model: string) =>
-  DECOMMISSIONED_MODELS[model] ? DECOMMISSIONED_MODELS[model] : model
+const mapModel = (model?: string) =>
+  model && DECOMMISSIONED_MODELS[model] ? DECOMMISSIONED_MODELS[model] : model
 
 const getInitialState = () => {
-  const storedAdvancedSettings = window.electron.store.get(
-    STORE_KEYS.ADVANCED_SETTINGS,
-  )
+  const storedAdvancedSettings =
+    window.electron.store.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
+  const storedLlm = storedAdvancedSettings.llm || {}
 
   return {
     llm: {
-      asrProvider: storedAdvancedSettings.llm.asrProvider,
-      asrModel: storedAdvancedSettings.llm.asrModel,
-      asrPrompt: storedAdvancedSettings.llm.asrPrompt,
-      llmProvider: storedAdvancedSettings.llm.llmProvider,
-      llmModel: mapModel(storedAdvancedSettings.llm.llmModel),
-      llmTemperature: storedAdvancedSettings.llm.llmTemperature,
-      transcriptionPrompt: storedAdvancedSettings.llm.transcriptionPrompt,
-      editingPrompt: storedAdvancedSettings.llm.editingPrompt,
-      noSpeechThreshold: storedAdvancedSettings.llm.noSpeechThreshold,
+      asrProvider:
+        storedLlm.asrProvider ?? DEFAULT_ADVANCED_SETTINGS.asrProvider,
+      asrModel: storedLlm.asrModel ?? DEFAULT_ADVANCED_SETTINGS.asrModel,
+      asrPrompt: storedLlm.asrPrompt ?? DEFAULT_ADVANCED_SETTINGS.asrPrompt,
+      llmProvider:
+        storedLlm.llmProvider ?? DEFAULT_ADVANCED_SETTINGS.llmProvider,
+      llmModel: mapModel(storedLlm.llmModel) ?? DEFAULT_ADVANCED_SETTINGS.llmModel,
+      llmTemperature:
+        storedLlm.llmTemperature ?? DEFAULT_ADVANCED_SETTINGS.llmTemperature,
+      transcriptionPrompt:
+        storedLlm.transcriptionPrompt ??
+        DEFAULT_ADVANCED_SETTINGS.transcriptionPrompt,
+      editingPrompt:
+        storedLlm.editingPrompt ?? DEFAULT_ADVANCED_SETTINGS.editingPrompt,
+      noSpeechThreshold:
+        storedLlm.noSpeechThreshold ??
+        DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
     grammarServiceEnabled:
       storedAdvancedSettings.grammarServiceEnabled ?? false,

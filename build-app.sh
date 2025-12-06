@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Exit on error
-set -e
+# Exit on error, treat unset vars as errors, fail on pipeline errors
+set -euo pipefail
 
 # Load environment variables from .env file if it exists
 if [ -f .env ]; then
@@ -74,6 +74,11 @@ setup_rust_env() {
 check_prerequisites() {
     print_status "Checking prerequisites..."
     
+    # Ensure bun is on PATH if installed via installer
+    if ! command -v bun &> /dev/null && [ -x "$HOME/.bun/bin/bun" ]; then
+        export PATH="$HOME/.bun/bin:$PATH"
+    fi
+
     if ! command -v node &> /dev/null; then
         print_error "Node.js is not installed or not in PATH"
         exit 1
@@ -166,7 +171,7 @@ create_dmg() {
     
     print_info "Packaging application with Electron Builder (forcing DMG target)..."
     # Ensure Vite embeds the stage for runtime
-    if [ -z "${VITE_ITO_ENV}" ]; then
+    if [ -z "${VITE_ITO_ENV:-}" ]; then
       export VITE_ITO_ENV="${ITO_ENV:-dev}"
       print_info "Set VITE_ITO_ENV=${VITE_ITO_ENV} for build-time embedding"
     fi
@@ -206,7 +211,7 @@ create_windows_installer() {
     export SKIP_SIGNING=true
     export WIN_CSC_LINK=""
     
-    print_info "Using Docker for Windows build on $OSTYPE..."
+    print_info "Using Docker for Windows build on ${OSTYPE:-unknown}..."
     
     # Check if Docker is available
     if ! command -v docker &> /dev/null; then
@@ -215,7 +220,7 @@ create_windows_installer() {
     fi
     
     # Check if Docker is running (skip in CI environments)
-    if [ -z "$CI" ] && ! docker info &> /dev/null; then
+    if [ -z "${CI:-}" ] && ! docker info &> /dev/null; then
         print_error "Docker is not running. Please start Docker."
         exit 1
     fi
@@ -232,17 +237,22 @@ create_windows_installer() {
     docker run --rm --platform linux/amd64 \
       --env CSC_IDENTITY_AUTO_DISCOVERY=false \
       --env SKIP_SIGNING=true \
-      --env VITE_ITO_VERSION="${VITE_ITO_VERSION}" \
-      --env ITO_ENV="${ITO_ENV}" \
+      --env VITE_ITO_VERSION="${VITE_ITO_VERSION:-}" \
+      --env ITO_ENV="${ITO_ENV:-}" \
       -v "${PROJECT_PATH}":/project \
       electronuserland/builder:wine \
-      bash -c "
+      bash -euo pipefail -c "
+        set -euo pipefail
         # Install bun with retry
         curl -fsSL https://bun.sh/install | bash || curl -fsSL https://bun.sh/install | bash
         export PATH=\"/root/.bun/bin:\$PATH\"
         
         # Verify bun installation
         bun --version
+        
+        # Use container-local output to avoid host AV deleting electron.exe mid-build
+        OUT_DIR=\"/tmp/ito-dist\"
+        rm -rf \"\$OUT_DIR\"
 
         # Change to project and debug file paths
         cd /project
@@ -259,14 +269,18 @@ create_windows_installer() {
         bun install || bun install --force || bun install
         
         # Run electron-builder
-        bunx electron-builder --config electron-builder.config.js --win --x64 --publish=never
+        bunx electron-builder --config electron-builder.config.js --win --x64 --publish=never -c.directories.output=\"\$OUT_DIR\"
+
+        # Copy artifacts back to mounted workspace
+        mkdir -p /project/dist
+        cp -r \"\$OUT_DIR\"/* /project/dist/
 
         # Copy versioned installer to static name for CDN (supports prod and dev names)
-        exe_path=\$(ls -t dist/Ito*.exe 2>/dev/null | head -n 1)
+        exe_path=\$(ls -t /project/dist/Ito*.exe 2>/dev/null | head -n 1)
         if [ -n \"\$exe_path\" ]; then
           dest_name=\$([ \"\${ITO_ENV:-dev}\" = \"prod\" ] && echo \"Ito-Installer.exe\" || echo \"Ito-\${ITO_ENV}-Installer.exe\")
           echo \"Copying \$exe_path to dist/\$dest_name for CDN\"
-          cp \"\$exe_path\" \"dist/\$dest_name\"
+          cp \"\$exe_path\" \"/project/dist/\$dest_name\"
         else
           echo 'No Windows installer .exe found to copy'
         fi
@@ -340,7 +354,7 @@ main() {
     echo
     
     # In CI, the environment is set up by the workflow.
-    if [ -z "$CI" ]; then
+    if [ -z "${CI:-}" ]; then
         # Setup environments
         setup_node_env
         setup_rust_env
@@ -372,7 +386,7 @@ main() {
             create_dmg
             echo
             print_status "macOS build process completed successfully! 🎉"
-            if [ -z "${ITO_ENV}" ] || [ "${ITO_ENV}" = "prod" ]; then
+            if [ -z "${ITO_ENV:-}" ] || [ "${ITO_ENV}" = "prod" ]; then
               print_info "Your DMG installer is ready: dist/Ito-Installer.dmg"
             else
               print_info "Your DMG installer is ready: dist/Ito-${ITO_ENV}-Installer.dmg"
