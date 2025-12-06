@@ -12,6 +12,8 @@ export default function GeneralSettingsContent() {
     setLaunchAtLogin,
     setShowItoBarAlways,
     setShowAppInDock,
+    runInBackground,
+    setRunInBackground,
   } = useSettingsStore()
 
   const windowContext = useWindowContext()
@@ -49,6 +51,23 @@ export default function GeneralSettingsContent() {
               onCheckedChange={setLaunchAtLogin}
             />
           </div>
+
+          {windowContext?.window?.platform === 'win32' && (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-foreground">
+                  Run in background
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Keep Ito running in the system tray when the window is closed.
+                </div>
+              </div>
+              <Switch
+                checked={runInBackground}
+                onCheckedChange={setRunInBackground}
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <div>

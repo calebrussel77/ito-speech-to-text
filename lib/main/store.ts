@@ -28,6 +28,7 @@ export interface SettingsStore {
   launchAtLogin: boolean
   showItoBarAlways: boolean
   showAppInDock: boolean
+  runInBackground: boolean
   interactionSounds: boolean
   muteAudioWhenDictating: boolean
   microphoneDeviceId: string
@@ -117,6 +118,7 @@ export const defaultValues: AppStore = {
     launchAtLogin: true,
     showItoBarAlways: true,
     showAppInDock: true,
+    runInBackground: true,
     interactionSounds: false,
     muteAudioWhenDictating: false,
     microphoneDeviceId: 'default',

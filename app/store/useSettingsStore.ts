@@ -22,6 +22,7 @@ interface SettingsState {
   launchAtLogin: boolean
   showItoBarAlways: boolean
   showAppInDock: boolean
+  runInBackground: boolean
   interactionSounds: boolean
   muteAudioWhenDictating: boolean
   microphoneDeviceId: string
@@ -32,6 +33,7 @@ interface SettingsState {
   setLaunchAtLogin: (launch: boolean) => void
   setShowItoBarAlways: (show: boolean) => void
   setShowAppInDock: (show: boolean) => void
+  setRunInBackground: (enabled: boolean) => void
   setInteractionSounds: (enabled: boolean) => void
   setMuteAudioWhenDictating: (enabled: boolean) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
@@ -56,6 +58,7 @@ const getInitialState = () => {
     launchAtLogin: storedSettings?.launchAtLogin ?? true,
     showItoBarAlways: storedSettings?.showItoBarAlways ?? true,
     showAppInDock: storedSettings?.showAppInDock ?? true,
+    runInBackground: storedSettings?.runInBackground ?? true,
     interactionSounds: storedSettings?.interactionSounds ?? false,
     muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? false,
     microphoneDeviceId: storedSettings?.microphoneDeviceId ?? 'default',
@@ -168,6 +171,7 @@ export const useSettingsStore = create<SettingsState>(set => {
         window.api.dock.setVisibility(show)
       }
     },
+    setRunInBackground: createSetter('runInBackground', 'general'),
     setInteractionSounds: createSetter('interactionSounds', 'audio&mic'),
     setMuteAudioWhenDictating: createSetter(
       'muteAudioWhenDictating',

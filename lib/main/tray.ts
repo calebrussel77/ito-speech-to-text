@@ -125,9 +125,13 @@ export async function createAppTray(): Promise<void> {
 
   // For Windows, manually pop the menu. On macOS, rely on native menu so the icon stays highlighted.
   if (process.platform !== 'darwin') {
-    tray.on('click', async () => {
-      await rebuildTrayMenu()
-      tray?.popUpContextMenu()
+    tray.on('click', () => {
+      if (!mainWindow) {
+        createAppWindow()
+      } else {
+        if (!mainWindow.isVisible()) mainWindow.show()
+        mainWindow.focus()
+      }
     })
 
     tray.on('right-click', async () => {

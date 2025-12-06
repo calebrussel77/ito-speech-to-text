@@ -2,6 +2,14 @@ import { BrowserWindow, shell, screen, app, protocol, net } from 'electron'
 import { join } from 'path'
 import appIcon from '@/resources/build/icon.png?asset'
 import { pathToFileURL } from 'url'
+import store, { SettingsStore } from './store'
+import { STORE_KEYS } from '../constants/store-keys'
+
+let isQuitting = false
+
+export function setIsQuitting(val: boolean) {
+  isQuitting = val
+}
 
 // Keep a reference to the pill window to prevent it from being garbage collected.
 let pillWindow: BrowserWindow | null = null
@@ -61,10 +69,23 @@ export function createAppWindow(): BrowserWindow {
     },
   )
 
+  // Handle window close behavior
+  mainWindow.on('close', event => {
+    if (process.platform === 'win32' && !isQuitting) {
+      const settings = store.get(STORE_KEYS.SETTINGS) as SettingsStore
+      if (settings?.runInBackground) {
+        event.preventDefault()
+        mainWindow?.hide()
+      }
+    }
+  })
+
   // Clean up the reference when the window is closed.
   mainWindow.on('closed', () => {
     mainWindow = null
     // On Windows, closing the main window should quit the entire app
+    // checking !isQuitting is redundant here because if we are quitting, we want to quit.
+    // But if we just closed the window (runInBackground=false), we also want to quit.
     if (process.platform === 'win32') {
       app.quit()
     }

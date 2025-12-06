@@ -7,6 +7,7 @@ import {
   mainWindow,
   registerResourcesProtocol,
   startPillPositioner,
+  setIsQuitting,
 } from './app'
 import { initializeLogging } from './logger'
 import { registerIPC } from '../window/ipcEvents'
@@ -152,8 +153,13 @@ app.whenReady().then(async () => {
     }
   })
 
+  // Handle protocol URL if the app was started by a deep link (Windows first instance)
+  processStartupProtocolUrl()
+
+  // Clean up
   app.on('before-quit', () => {
     console.log('App is quitting, cleaning up resources...')
+    setIsQuitting(true)
     teardown()
   })
 
