@@ -11,14 +11,16 @@ const dbPath = path.join(app.getPath('userData'), DB_FILE)
 
 let db: sqlite3.Database
 
-const runMigrations = async () => {
+const runMigrations = async (database: sqlite3.Database) => {
   // 1. Create migrations table if it doesn't exist
   await run(
+    database,
     'CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)',
   )
 
   // 2. Get applied migrations
   const appliedMigrations = await all<{ id: string }>(
+    database,
     'SELECT id FROM migrations',
   )
   const appliedMigrationIds = new Set(appliedMigrations.map(row => row.id))
@@ -58,18 +60,19 @@ const runMigrations = async () => {
     try {
       // We use exec for migrations that might contain multiple statements
       // like the initial schema.
-      await exec('BEGIN;')
-      await exec(migration.up)
-      await run('INSERT INTO migrations (id, applied_at) VALUES (?, ?)', [
-        migration.id,
-        new Date().toISOString(),
-      ])
-      await exec('COMMIT;')
+      await exec(database, 'BEGIN;')
+      await exec(database, migration.up)
+      await run(
+        database,
+        'INSERT INTO migrations (id, applied_at) VALUES (?, ?)',
+        [migration.id, new Date().toISOString()],
+      )
+      await exec(database, 'COMMIT;')
       console.info(`Migration ${migration.id} applied successfully.`)
     } catch (err) {
       console.error(`Failed to apply migration ${migration.id}:`, err)
       // Rollback transaction on error
-      await exec('ROLLBACK;')
+      await exec(database, 'ROLLBACK;')
       throw new Error(`Migration ${migration.id} failed.`)
     }
   }
@@ -208,7 +211,7 @@ const initializeDatabase = (): Promise<void> => {
         reject(err)
       } else {
         console.info('Connected to SQLite database.')
-        runMigrations()
+        runMigrations(db)
           .then(resolve)
           .catch(e => {
             console.error('Failed to run migrations.', e)

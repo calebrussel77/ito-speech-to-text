@@ -196,8 +196,13 @@ create_dmg() {
 # Create Windows installer
 create_windows_installer() {
     print_status "Creating Windows installer..."
-    
+
     print_info "Packaging application with Electron Builder..."
+    # Ensure Vite embeds the stage for runtime
+    if [ -z "${VITE_ITO_ENV:-}" ]; then
+      export VITE_ITO_ENV="${ITO_ENV:-dev}"
+      print_info "Set VITE_ITO_ENV=${VITE_ITO_ENV} for build-time embedding"
+    fi
     bun run electron-vite build
     
     # Set npm config to avoid symlink issues on Windows
@@ -239,6 +244,7 @@ create_windows_installer() {
       --env SKIP_SIGNING=true \
       --env VITE_ITO_VERSION="${VITE_ITO_VERSION:-}" \
       --env ITO_ENV="${ITO_ENV:-}" \
+      --env VITE_ITO_ENV="${VITE_ITO_ENV:-}" \
       -v "${PROJECT_PATH}":/project \
       electronuserland/builder:wine \
       bash -euo pipefail -c "

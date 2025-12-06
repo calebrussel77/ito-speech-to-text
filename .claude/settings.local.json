@@ -27,7 +27,8 @@
       "mcp__shadcn__get_add_command_for_items",
       "Bash(npx shadcn@latest add:*)",
       "mcp__shadcn__view_items_in_registries",
-      "WebFetch(domain:ui.shadcn.com)"
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash(dir \"C:\\Labs\\ito\\dist\")"
     ],
     "deny": [],
     "ask": []

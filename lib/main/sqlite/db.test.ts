@@ -46,10 +46,38 @@ mock.module('fs', () => ({
 }))
 
 // Mock database utilities - minimal mocking for business logic tests
-const mockRun = mock()
-const mockExec = mock()
-const mockGet = mock()
-const mockAll = mock()
+// These mocks now handle both old (query, params) and new (db, query, params) signatures
+const mockRun = mock((...args: any[]) => {
+  // If first arg looks like a database object, shift it out
+  if (args[0] && typeof args[0] === 'object' && 'run' in args[0]) {
+    args.shift()
+  }
+  return Promise.resolve()
+})
+
+const mockExec = mock((...args: any[]) => {
+  // If first arg looks like a database object, shift it out
+  if (args[0] && typeof args[0] === 'object' && 'exec' in args[0]) {
+    args.shift()
+  }
+  return Promise.resolve()
+})
+
+const mockGet = mock((...args: any[]) => {
+  // If first arg looks like a database object, shift it out
+  if (args[0] && typeof args[0] === 'object' && 'get' in args[0]) {
+    args.shift()
+  }
+  return Promise.resolve(undefined)
+})
+
+const mockAll = mock((...args: any[]) => {
+  // If first arg looks like a database object, shift it out
+  if (args[0] && typeof args[0] === 'object' && 'all' in args[0]) {
+    args.shift()
+  }
+  return Promise.resolve([])
+})
 
 mock.module('./utils', () => ({
   run: mockRun,
@@ -185,13 +213,15 @@ describe('Migration Logic', () => {
 
     await initializeDatabase()
 
-    // Should only run the remaining migration
+    // Should only run the remaining migration (now with db instance as first arg)
     expect(mockExec).toHaveBeenCalledWith(
+      expect.any(Object), // database instance
       'ALTER TABLE interactions ADD COLUMN duration_ms INTEGER DEFAULT 0;',
     )
 
-    // Should record the new migration
+    // Should record the new migration (now with db instance as first arg)
     expect(mockRun).toHaveBeenCalledWith(
+      expect.any(Object), // database instance
       'INSERT INTO migrations (id, applied_at) VALUES (?, ?)',
       ['20250108130000_add_duration_to_interactions', expect.any(String)],
     )
@@ -234,7 +264,7 @@ describe('Migration Logic', () => {
       'Migration 0000_initial_schema failed.',
     )
 
-    expect(mockExec).toHaveBeenCalledWith('ROLLBACK;')
+    expect(mockExec).toHaveBeenCalledWith(expect.any(Object), 'ROLLBACK;')
   })
 })
 
@@ -379,8 +409,9 @@ describe('Timestamp Generation', () => {
     const afterTime = Date.now()
 
     // Verify migration timestamp is valid and within reasonable range
-    const migrationCall = mockRun.mock.calls.find(call =>
-      call[0].includes('INSERT INTO migrations'),
+    // Now call[0] is db instance, call[1] is query
+    const migrationCall = mockRun.mock.calls.find(
+      call => call[1] && call[1].includes('INSERT INTO migrations'),
     )
     expect(migrationCall).toBeDefined()
 
@@ -390,7 +421,7 @@ describe('Timestamp Generation', () => {
       return
     }
 
-    const timestamp = migrationCall[1][1] // second parameter is timestamp
+    const timestamp = migrationCall[2][1] // third param is params array, second element is timestamp
     const timestampTime = new Date(timestamp).getTime()
 
     expect(() => new Date(timestamp)).not.toThrow()
