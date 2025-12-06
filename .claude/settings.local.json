@@ -21,7 +21,13 @@
       "WebFetch(domain:connectrpc.com)",
       "Bash(git log:*)",
       "Bash(dir \"C:\\Labs\\ito\\server\")",
-      "mcp__exa__get_code_context_exa"
+      "mcp__exa__get_code_context_exa",
+      "mcp__shadcn__get_project_registries",
+      "mcp__shadcn__search_items_in_registries",
+      "mcp__shadcn__get_add_command_for_items",
+      "Bash(npx shadcn@latest add:*)",
+      "mcp__shadcn__view_items_in_registries",
+      "WebFetch(domain:ui.shadcn.com)"
     ],
     "deny": [],
     "ask": []

@@ -193,13 +193,11 @@ export default function HomeKit() {
             >
               ito
             </span>
-            {isPro && showText && (
-              <span
-                className={`text-[10px] tracking-wider font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white transition-all duration-300 ${showText ? 'opacity-100 scale-100' : 'opacity-0 scale-90'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
-              >
-                PRO
-              </span>
-            )}
+            <span
+              className={`text-[10px] tracking-wider font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white transition-all duration-300 ${showText ? 'opacity-100 scale-100' : 'opacity-0 scale-90'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
+            >
+              PRO
+            </span>
           </div>
           {/* Nav */}
           <div className="flex flex-col gap-1 text-sm">

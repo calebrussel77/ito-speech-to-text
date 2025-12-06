@@ -31,7 +31,7 @@ export function NavItem({
         {icon}
       </div>
       <span
-        className={`whitespace-nowrap transition-all duration-300 ${
+        className={`whitespace-nowrap font-sans transition-all duration-300 ${
           showText ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
         } ${showText ? 'ml-3' : 'w-0 overflow-hidden'}`}
       >

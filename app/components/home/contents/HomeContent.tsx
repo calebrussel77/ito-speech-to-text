@@ -495,7 +495,7 @@ export default function HomeContent({
   }
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full h-full flex flex-col font-sans">
       {/* Fixed Header Content */}
       <div className="flex-shrink-0 px-24">
         <div className="flex items-center justify-between mb-8">

@@ -1,4 +1,5 @@
 import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -273,7 +274,7 @@ export default function CreateAccountContent() {
 
         {/* Email sign up */}
         <div className="w-1/2 space-y-3 mb-6">
-          <input
+          <Input
             type="email"
             placeholder="Email address"
             onChange={e => setEmail(e.target.value)}
@@ -288,8 +289,8 @@ export default function CreateAccountContent() {
             aria-describedby={
               emailTouched && !emailOk ? 'signup-email-error' : undefined
             }
-            className={`w-full h-12 px-3 rounded-md border bg-background text-foreground placeholder:text-muted-foreground ${
-              emailTouched && !emailOk ? 'border-destructive' : 'border-border'
+            className={`h-12 ${
+              emailTouched && !emailOk ? 'border-destructive' : ''
             }`}
           />
           {emailTouched && !emailOk && (
@@ -329,19 +330,19 @@ export default function CreateAccountContent() {
         >
           <DialogContent
             showCloseButton={false}
-            className="w-[90vw] max-w-[600px] rounded-md border-0 bg-white p-6"
+            className="w-[90vw] max-w-[600px] rounded-md"
           >
             <DialogHeader className="mb-2 text-left">
-              <DialogTitle className="text-[18px] leading-6 font-semibold text-black">
+              <DialogTitle className="text-[18px] leading-6 font-semibold">
                 Self-Hosted
               </DialogTitle>
-              <DialogDescription className="text-sm leading-5 text-black">
+              <DialogDescription className="text-sm leading-5">
                 Local server must be running to use self-hosted option
               </DialogDescription>
             </DialogHeader>
 
-            <div className="rounded-md bg-[#F5F5F5] p-4">
-              <p className="text-sm font-medium leading-5 text-black">
+            <div className="rounded-md bg-muted p-4">
+              <p className="text-sm font-medium leading-5 text-foreground">
                 Running Ito locally requires additional setup. Please refer to
                 our Github and Documentation
               </p>

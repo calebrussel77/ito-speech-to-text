@@ -170,7 +170,7 @@ export default function PricingBillingSettingsContent() {
 
       {/* Error Message */}
       {checkoutError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 text-sm text-destructive">
           {checkoutError}
         </div>
       )}
@@ -178,7 +178,7 @@ export default function PricingBillingSettingsContent() {
       {/* Cancellation Notice */}
       {billingState.isScheduledForCancellation &&
         billingState.subscriptionEndAt && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
+          <div className="bg-[hsl(var(--chart-3))]/10 border border-[hsl(var(--chart-3))]/30 rounded-lg p-4 text-sm text-[hsl(var(--chart-3))]">
             <p className="font-medium mb-1">
               Your subscription will end on{' '}
               {billingState.subscriptionEndAt.toLocaleDateString('en-US', {
@@ -187,7 +187,7 @@ export default function PricingBillingSettingsContent() {
                 day: 'numeric',
               })}
             </p>
-            <p className="text-yellow-700">
+            <p className="opacity-90">
               You'll continue to have Pro access until then. You can reactivate
               anytime before the end date.
             </p>
@@ -236,7 +236,7 @@ export default function PricingBillingSettingsContent() {
             <Button
               variant="default"
               size="lg"
-              className="w-full bg-gray-900 hover:bg-gray-800 text-white rounded-xl"
+              className="w-full rounded-xl"
               disabled={getProButtonDisabled()}
               onClick={
                 billingState.isScheduledForCancellation
@@ -263,7 +263,7 @@ export default function PricingBillingSettingsContent() {
             <Button
               variant="outline"
               size="lg"
-              className="w-full rounded-xl border-gray-200"
+              className="w-full rounded-xl"
               onClick={handleContactUs}
             >
               Contact Us
@@ -296,26 +296,28 @@ function PricingCard({
     <div
       className={`rounded-xl border-2 p-6 flex flex-col ${
         isHighlighted
-          ? 'border-purple-500 bg-gradient-to-br from-purple-50/30 to-pink-50/30'
-          : 'border-gray-200 bg-white'
+          ? 'border-[hsl(var(--chart-1))] bg-gradient-to-br from-[hsl(var(--chart-1))]/10 to-[hsl(var(--chart-4))]/10'
+          : 'border-border bg-card'
       }`}
     >
       {/* Title */}
-      <div className="text-sm font-medium text-gray-700 mb-2">{title}</div>
+      <div className="text-sm font-medium text-muted-foreground mb-2">
+        {title}
+      </div>
 
       {/* Price */}
       <div className="mb-6">
         <span
           className={`text-4xl font-bold ${
             isHighlighted
-              ? 'bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent'
-              : 'text-gray-900'
+              ? 'bg-gradient-to-r from-[hsl(var(--chart-1))] to-[hsl(var(--chart-4))] bg-clip-text text-transparent'
+              : 'text-foreground'
           }`}
         >
           {price}
         </span>
         {priceSubtext && (
-          <span className="text-gray-600 ml-1">{priceSubtext}</span>
+          <span className="text-muted-foreground ml-1">{priceSubtext}</span>
         )}
       </div>
 
@@ -326,7 +328,7 @@ function PricingCard({
             <div className="flex-shrink-0 mt-0.5">
               <Check className="w-5 h-5" strokeWidth={3} />
             </div>
-            <span className="text-sm text-gray-900">{feature}</span>
+            <span className="text-sm text-foreground">{feature}</span>
           </div>
         ))}
       </div>

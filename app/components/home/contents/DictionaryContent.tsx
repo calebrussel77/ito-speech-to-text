@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '../../ui/dialog'
 import { Button } from '../../ui/button'
+import { Input } from '../../ui/input'
 
 export default function DictionaryContent() {
   const {
@@ -280,19 +281,19 @@ export default function DictionaryContent() {
       }}
     >
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-medium">Dictionary</h1>
-        <button
+        <h1 className="text-2xl font-medium text-foreground">Dictionary</h1>
+        <Button
           onClick={handleAddNew}
-          className="bg-gray-900 text-white px-6 py-3 rounded-full font-semibold hover:bg-gray-800 cursor-pointer flex items-center gap-2"
+          className="px-6 py-3 rounded-full font-semibold cursor-pointer flex items-center"
         >
           <Plus className="w-4 h-4" />
           Add new
-        </button>
+        </Button>
       </div>
 
-      <div className="w-full h-[1px] bg-slate-200 my-10"></div>
+      <div className="w-full h-[1px] bg-border my-10"></div>
       {noEntries && (
-        <div className="text-gray-500">
+        <div className="text-muted-foreground">
           <p className="text-sm">No entries yet</p>
           <p className="text-xs mt-1">
             Dictionary entries make the transcription more accurate
@@ -300,15 +301,15 @@ export default function DictionaryContent() {
         </div>
       )}
       {!noEntries && (
-        <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-200">
+        <div className="bg-card rounded-lg border border-border divide-y divide-border">
           {entries.map((entry, index) => (
             <div
               key={entry.id}
-              className="flex items-center justify-between px-4 py-4 gap-10 hover:bg-gray-50 transition-colors duration-200 group"
+              className="flex items-center justify-between px-4 py-4 gap-10 hover:bg-muted transition-colors duration-200 group"
               onMouseEnter={() => setHoveredRow(index)}
               onMouseLeave={() => setHoveredRow(null)}
             >
-              <div className="text-gray-900 flex-1">
+              <div className="text-foreground flex-1">
                 {getDisplayText(entry)}
               </div>
 
@@ -322,10 +323,10 @@ export default function DictionaryContent() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => handleEdit(entry.id)}
-                      className="p-1.5 hover:bg-gray-200 rounded transition-colors cursor-pointer"
+                      className="p-1.5 hover:bg-muted rounded transition-colors cursor-pointer"
                       aria-label="Edit entry"
                     >
-                      <Pencil className="w-4 h-4 text-gray-600" />
+                      <Pencil className="w-4 h-4 text-muted-foreground" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={5}>
@@ -337,10 +338,10 @@ export default function DictionaryContent() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => handleDelete(entry.id)}
-                      className="p-1.5 hover:bg-red-100 rounded transition-colors cursor-pointer"
+                      className="p-1.5 hover:bg-destructive/10 rounded transition-colors cursor-pointer"
                       aria-label="Delete entry"
                     >
-                      <Trash className="w-4 h-4 text-gray-600 hover:text-red-600" />
+                      <Trash className="w-4 h-4 text-muted-foreground hover:text-destructive" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={5}>
@@ -357,7 +358,7 @@ export default function DictionaryContent() {
       {showScrollToTop && (
         <button
           onClick={scrollToTop}
-          className="fixed bottom-8 bg-black text-white right-8 w-8 h-8 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-200 flex items-center justify-center group z-50 cursor-pointer"
+          className="fixed bottom-8 bg-primary text-primary-foreground right-8 w-8 h-8 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-200 flex items-center justify-center group z-50 cursor-pointer"
           aria-label="Scroll to top"
         >
           <ArrowUp className="w-4 h-4 font-bold" />
@@ -393,41 +394,41 @@ export default function DictionaryContent() {
             </DialogTitle>
           </DialogHeader>
           <div className="px-6">
-            <h2 className="text-lg font-semibold mb-4">
+            <h2 className="text-lg font-semibold text-foreground mb-4">
               {editingEntry?.type === 'replacement'
                 ? 'Edit replacement'
                 : 'Edit entry'}
             </h2>
 
             {editingEntry?.type === 'normal' ? (
-              <input
+              <Input
                 ref={editInputRef}
                 type="text"
                 value={editContent}
                 onChange={e => setEditContent(e.target.value)}
                 onKeyDown={handleEditKeyDown}
-                className="w-full p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                className="w-full p-4"
                 placeholder="Enter dictionary entry..."
               />
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
-                  <input
+                  <Input
                     ref={editFromRef}
                     type="text"
                     value={editFrom}
                     onChange={e => setEditFrom(e.target.value)}
                     onKeyDown={handleEditKeyDown}
-                    className="flex-1 p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                    className="flex-1 p-4"
                     placeholder="Misspelling"
                   />
-                  <span className="text-gray-500">→</span>
-                  <input
+                  <span className="text-muted-foreground">→</span>
+                  <Input
                     type="text"
                     value={editTo}
                     onChange={e => setEditTo(e.target.value)}
                     onKeyDown={handleEditKeyDown}
-                    className="flex-1 p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                    className="flex-1 p-4"
                     placeholder="Correct spelling"
                   />
                 </div>
@@ -436,7 +437,8 @@ export default function DictionaryContent() {
           </div>
           <DialogFooter className="p-4">
             <Button
-              className="bg-neutral-200 hover:bg-neutral-300 text-black cursor-pointer"
+              variant="secondary"
+              className="cursor-pointer"
               onClick={handleCancelEdit}
             >
               Cancel
@@ -469,10 +471,14 @@ export default function DictionaryContent() {
             <DialogTitle className="sr-only">Add to vocabulary</DialogTitle>
           </DialogHeader>
           <div className="px-6">
-            <h2 className="text-lg font-semibold mb-4">Add to vocabulary</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">
+              Add to vocabulary
+            </h2>
 
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-medium">Make it a replacement</span>
+              <span className="text-sm font-medium text-foreground">
+                Make it a replacement
+              </span>
               <Switch
                 checked={isReplacement}
                 onCheckedChange={handleReplacementToggle}
@@ -480,34 +486,34 @@ export default function DictionaryContent() {
             </div>
 
             {!isReplacement ? (
-              <input
+              <Input
                 ref={addInputRef}
                 type="text"
                 value={newEntryContent}
                 onChange={e => setNewEntryContent(e.target.value)}
                 onKeyDown={handleAddKeyDown}
-                className="w-full p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                className="w-full p-4"
                 placeholder="Enter dictionary entry..."
               />
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
-                  <input
+                  <Input
                     ref={addFromRef}
                     type="text"
                     value={newFrom}
                     onChange={e => setNewFrom(e.target.value)}
                     onKeyDown={handleAddKeyDown}
-                    className="flex-1 p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                    className="flex-1 p-4"
                     placeholder="Misspelling"
                   />
-                  <span className="text-gray-500">→</span>
-                  <input
+                  <span className="text-muted-foreground">→</span>
+                  <Input
                     type="text"
                     value={newTo}
                     onChange={e => setNewTo(e.target.value)}
                     onKeyDown={handleAddKeyDown}
-                    className="flex-1 p-4 rounded-md resize-none focus:outline-none border border-neutral-200"
+                    className="flex-1 p-4"
                     placeholder="Correct spelling"
                   />
                 </div>
@@ -516,7 +522,8 @@ export default function DictionaryContent() {
           </div>
           <DialogFooter className="p-4">
             <Button
-              className="bg-neutral-200 hover:bg-neutral-300 text-black cursor-pointer"
+              variant="secondary"
+              className="cursor-pointer"
               onClick={handleCancelNew}
             >
               Cancel

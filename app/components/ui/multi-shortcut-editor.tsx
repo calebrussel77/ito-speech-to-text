@@ -200,8 +200,8 @@ export default function MultiShortcutEditor({
   }, [editingId, stop, editorKey])
 
   const base =
-    'inline-flex items-center justify-center rounded-xl border border-neutral-300 ' +
-    'px-3 py-1.5 text-neutral-700 hover:bg-neutral-50 h-9 min-w-[48px] border-0'
+    'inline-flex items-center justify-center rounded-xl border border-border ' +
+    'px-3 py-1.5 text-foreground hover:bg-muted h-9 min-w-[48px] border-0'
 
   const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
 
@@ -214,7 +214,7 @@ export default function MultiShortcutEditor({
         return (
           <div
             key={row.id}
-            className="mb-1 rounded-lg border border-neutral-200 bg-white p-1"
+            className="mb-1 rounded-lg border border-border bg-card p-1"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center justify-between gap-1">
@@ -225,14 +225,14 @@ export default function MultiShortcutEditor({
                     ))}
                     {isEditing &&
                       displayKeys.length < MAX_KEYS_PER_SHORTCUT && (
-                        <span className="text-xs text-neutral-400 ml-2">
+                        <span className="text-xs text-muted-foreground ml-2">
                           ({MAX_KEYS_PER_SHORTCUT - displayKeys.length} more
                           allowed)
                         </span>
                       )}
                   </>
                 ) : (
-                  <span className="text-neutral-400">
+                  <span className="text-muted-foreground">
                     {isEditing
                       ? `Press keys to add (max ${MAX_KEYS_PER_SHORTCUT})`
                       : `No keys set`}
@@ -264,7 +264,7 @@ export default function MultiShortcutEditor({
               </div>
             </div>
             {editingId === row.id && (error || temporaryError) && (
-              <div className="mt-1 text-xs text-red-500">
+              <div className="mt-1 text-xs text-destructive">
                 {temporaryError || error}
               </div>
             )}
@@ -282,7 +282,7 @@ export default function MultiShortcutEditor({
             }
           }}
           hidden={isMinimum}
-          className="ml-auto text-red-400 hover:underline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ml-auto text-destructive hover:underline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isLockedByOther}
         >
           Delete
@@ -298,7 +298,7 @@ export default function MultiShortcutEditor({
             addNew()
           }}
           hidden={isAtLimit}
-          className="rounded-md border border-neutral-300 py-1 px-2 text-md text-neutral-800 disabled:opacity-50 hover:bg-neutral-50 disabled:cursor-not-allowed"
+          className="rounded-md border border-border py-1 px-2 text-md text-foreground disabled:opacity-50 hover:bg-muted disabled:cursor-not-allowed"
           disabled={isLockedByOther}
         >
           Add another

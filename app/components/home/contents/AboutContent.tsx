@@ -22,15 +22,16 @@ function AboutCard({
   onClick,
 }: AboutCardProps) {
   return (
-    <div className="w-1/3 bg-white rounded-lg border border-gray-200 p-4 flex flex-col items-start text-left">
-      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center mb-3">
+    <div className="w-1/3 bg-card rounded-lg border border-border p-4 flex flex-col items-start text-left">
+      <div className="w-8 h-8 bg-card rounded-lg flex items-center justify-center mb-3">
         {icon}
       </div>
-      <h2 className="text-lg font-semibold mb-1">{title}</h2>
-      <p className="text-gray-500 mb-6 leading-relaxed">{description}</p>
+      <h2 className="text-lg font-semibold text-foreground mb-1">{title}</h2>
+      <p className="text-muted-foreground mb-6 leading-relaxed">{description}</p>
       <Button
         onClick={onClick}
-        className="w-fit bg-white text-black border border-gray-300 hover:bg-gray-50 rounded-full cursor-pointer"
+        variant="outline"
+        className="w-fit rounded-full cursor-pointer"
         style={{
           padding: '20px 28px',
         }}
@@ -65,14 +66,14 @@ export default function AboutContent() {
   return (
     <div className="w-full px-24">
       <div className="mb-8">
-        <h1 className="text-2xl font-medium">About</h1>
+        <h1 className="text-2xl font-medium text-foreground">About</h1>
       </div>
 
       <div className="flex flex-col gap-4">
         {/* First Row: 3 items */}
         <div className="flex flex-row gap-4">
           <AboutCard
-            icon={<DiscordIcon width={24} height={24} className="text-black" />}
+            icon={<DiscordIcon width={24} height={24} className="text-foreground" />}
             title="Discord"
             description="Join the community, share feedback, and grow with Ito."
             buttonText="Join Discord"
@@ -80,7 +81,7 @@ export default function AboutContent() {
           />
 
           <AboutCard
-            icon={<Telephone className="w-6 h-6 text-black" />}
+            icon={<Telephone className="w-6 h-6 text-foreground" />}
             title="Team Call"
             description="Got feedback or ideas? Book a quick call with the Ito team."
             buttonText="Book a Call"
@@ -88,7 +89,7 @@ export default function AboutContent() {
           />
 
           <AboutCard
-            icon={<XIcon width={24} height={24} className="text-black" />}
+            icon={<XIcon width={24} height={24} className="text-foreground" />}
             title="X (Twitter)"
             description="Get updates, tips, and behind-the-scenes insights from the Ito team."
             buttonText="Follow on X"
@@ -99,7 +100,7 @@ export default function AboutContent() {
         {/* Second Row: 2 items */}
         <div className="flex flex-row gap-4">
           <AboutCard
-            icon={<GitHubIcon width={24} height={24} className="text-black" />}
+            icon={<GitHubIcon width={24} height={24} className="text-foreground" />}
             title="GitHub"
             description="Check out the code, contribute, or star the repo."
             buttonText="View on GitHub"
@@ -107,25 +108,25 @@ export default function AboutContent() {
           />
 
           <AboutCard
-            icon={<Globe className="w-6 h-6 text-black" />}
+            icon={<Globe className="w-6 h-6 text-foreground" />}
             title="ito.ai"
             description="Learn more about Ito, explore features, and see what's next."
             buttonText="Go to Website"
             onClick={handleWebsiteClick}
           />
 
-          <div className="w-1/3 bg-white rounded-lg border border-gray-200 p-4 flex flex-col items-start text-left">
-            <div className="bg-white rounded-lg flex items-center justify-center mb-4">
+          <div className="w-1/3 bg-card rounded-lg border border-border p-4 flex flex-col items-start text-left">
+            <div className="bg-card rounded-lg flex items-center justify-center mb-4">
               <ItoIcon
-                className="w-6 h-6 text-gray-900"
+                className="w-6 h-6 text-foreground"
                 style={{ height: '24px' }}
               />
-              <span className={`text-lg font-bold ml-2`}>ito</span>
+              <span className="text-lg font-bold text-foreground ml-2">ito</span>
             </div>
-            <h2 className="text-lg font-semibold mb-4">
+            <h2 className="text-lg font-semibold text-foreground mb-4">
               Version {import.meta.env.VITE_ITO_VERSION}
             </h2>
-            <p className="text-gray-500 mb-6 leading-relaxed">
+            <p className="text-muted-foreground mb-6 leading-relaxed">
               Made with 🩷 in San Francisco.
             </p>
           </div>

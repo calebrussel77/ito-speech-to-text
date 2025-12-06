@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
 import { AppOrbitImage } from '@/app/components/ui/app-orbit-image'
 import { isValidEmail, isStrongPassword } from '@/app/utils/utils'
 import { useAuth } from '@/app/components/auth/useAuth'
@@ -67,20 +69,21 @@ export default function EmailLoginContent({
 
         {/* Fields */}
         <div className="space-y-5">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-foreground">Email</label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
               type="email"
               placeholder="Enter your email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="h-10 w-full rounded-md border border-border bg-background px-3 text-foreground placeholder:text-muted-foreground"
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label className="text-sm text-foreground">Password</label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
               type="password"
               placeholder="Enter your password"
               value={password}
@@ -91,7 +94,6 @@ export default function EmailLoginContent({
                 }
               }}
               onChange={e => setPassword(e.target.value)}
-              className="h-10 w-full rounded-md border border-border bg-background px-3 text-foreground placeholder:text-muted-foreground"
             />
           </div>
 

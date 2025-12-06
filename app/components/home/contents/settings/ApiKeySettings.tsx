@@ -1,5 +1,9 @@
 import { useState } from 'react'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card'
+import { Input } from '@/app/components/ui/input'
+import { Button } from '@/app/components/ui/button'
+import { cn } from '@/lib/utils'
 
 type Status = 'idle' | 'testing' | 'ok' | 'error'
 
@@ -41,67 +45,67 @@ export default function ApiKeySettings() {
     }
   }
 
-  const statusColor =
-    status === 'ok'
-      ? 'text-green-600'
-      : status === 'error'
-        ? 'text-red-600'
-        : 'text-slate-500'
-
   return (
-    <div className="space-y-2 rounded-md border border-slate-200 bg-white/60 p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-md font-medium text-slate-900">API Configuration</h3>
-          <p className="text-xs text-slate-500">
-            Store your Groq API key locally. It never leaves this device.
-          </p>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>API Configuration</CardTitle>
+            <CardDescription>
+              Store your Groq API key locally. It never leaves this device.
+            </CardDescription>
+          </div>
+          <Button
+            variant="link"
+            size="sm"
+            className="text-xs"
+            onClick={e => {
+              e.preventDefault()
+              window.api['web-open-url']('https://console.groq.com/keys')
+            }}
+          >
+            Open Groq Console
+          </Button>
         </div>
-        <a
-          href="#"
-          className="text-xs text-blue-600 underline"
-          onClick={e => {
-            e.preventDefault()
-            window.api['web-open-url']('https://console.groq.com/keys')
-          }}
-        >
-          Open Groq Console
-        </a>
-      </div>
+      </CardHeader>
 
-      <div className="flex flex-col gap-2">
-        <input
+      <CardContent className="space-y-4">
+        <Input
           type="password"
           value={localKey}
           placeholder="gsk_..."
           onChange={e => setLocalKey(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="flex gap-2">
-          <button
-            className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
-            onClick={handleSave}
-          >
+          <Button onClick={handleSave} size="sm">
             Save
-          </button>
-          <button
-            className="rounded-md bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200"
-            onClick={handleClear}
-          >
+          </Button>
+          <Button variant="secondary" onClick={handleClear} size="sm">
             Clear
-          </button>
-          <button
-            className="rounded-md bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+          </Button>
+          <Button
+            variant="outline"
             onClick={handleTest}
             disabled={status === 'testing'}
+            size="sm"
           >
             {status === 'testing' ? 'Testing…' : 'Test Connection'}
-          </button>
+          </Button>
         </div>
-        <p className={`text-xs ${statusColor}`}>
-          {message || 'Not connected'}
-        </p>
-      </div>
-    </div>
+        {message && (
+          <p
+            className={cn(
+              'text-xs',
+              status === 'ok' && 'text-[hsl(var(--chart-2))]',
+              status === 'error' && 'text-destructive',
+              status === 'idle' && 'text-muted-foreground',
+              status === 'testing' && 'text-muted-foreground',
+            )}
+          >
+            {message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }

@@ -324,27 +324,27 @@ export default function NotesContent() {
     >
       {/* Header */}
       {showSearch ? (
-        <div className="flex items-center gap-4 mb-8 px-4 py-2 bg-white border border-gray-200 rounded-lg">
-          <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex items-center gap-4 mb-8 px-4 py-2 bg-card border border-border rounded-lg">
+          <Search className="w-5 h-5 text-muted-foreground flex-shrink-0" />
           <input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search your notes"
-            className="flex-1 text-sm outline-none placeholder-gray-400"
+            className="flex-1 text-sm outline-none bg-transparent text-foreground placeholder:text-muted-foreground"
           />
           <button
             onClick={closeSearch}
-            className="p-1 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-muted rounded transition-colors flex-shrink-0"
             title="Close search"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
       ) : (
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-xl font-medium text-gray-900 w-full text-center">
+          <h1 className="text-xl font-medium text-foreground w-full text-center">
             What's on your mind today?
           </h1>
         </div>
@@ -353,18 +353,18 @@ export default function NotesContent() {
       {/* Text Input Area - Only show when not searching */}
       {!showSearch && (
         <div
-          className="shadow-lg rounded-2xl mb-8 border border-gray-200 w-3/5 mx-auto transition-all duration-200 ease-in-out relative"
+          className="shadow-lg rounded-2xl mb-8 border border-border bg-card w-3/5 mx-auto transition-all duration-200 ease-in-out relative"
           style={{ height: `${containerHeight}px` }}
         >
           {!creatingNote && (
-            <div className="absolute top-6 left-6 flex items-center gap-1 text-gray-500 pointer-events-none">
+            <div className="absolute top-6 left-6 flex items-center gap-1 text-muted-foreground pointer-events-none">
               <AudioIcon />
               <span>Take a quick note with your voice</span>
             </div>
           )}
           <textarea
             ref={textareaRef}
-            className={`w-full pt-6 px-6 focus:outline-none resize-none overflow-hidden ${creatingNote ? 'cursor-text' : 'cursor-pointer'}`}
+            className={`w-full pt-6 px-6 bg-transparent text-foreground focus:outline-none resize-none overflow-hidden placeholder:text-muted-foreground ${creatingNote ? 'cursor-text' : 'cursor-pointer'}`}
             value={noteContent}
             onChange={e => updateNoteContent(e.target.value)}
             onClick={() => setCreatingNote(true)}
@@ -373,12 +373,13 @@ export default function NotesContent() {
           />
           {showAddNoteButton && (
             <div className="absolute bottom-3 right-3">
-              <button
+              <Button
                 onClick={handleAddNote}
-                className="bg-neutral-200 px-4 py-2 rounded-md font-semibold hover:bg-neutral-300 cursor-pointer"
+                variant="secondary"
+                className="cursor-pointer"
               >
                 Add note
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -387,36 +388,36 @@ export default function NotesContent() {
         className={`${viewMode === 'grid' || showSearch ? '' : 'm-auto w-3/5'}`}
       >
         <div className="flex items-center justify-between mb-1">
-          <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+          <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
             {showSearch
               ? `Search Results (${filteredNotes.length})`
               : `Notes (${notes.length})`}
           </div>
           <div className="flex items-center gap-1">
             <button
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              className="p-2 hover:bg-muted rounded-lg transition-colors cursor-pointer"
               title="Search"
               onClick={openSearch}
             >
-              <Search className="w-5 h-5 text-neutral-400" />
+              <Search className="w-5 h-5 text-muted-foreground" />
             </button>
             <button
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              className="p-2 hover:bg-muted rounded-lg transition-colors cursor-pointer"
               title="List view"
               onClick={toggleViewMode}
             >
               {viewMode === 'grid' ? (
-                <Rows className="w-5 h-5 text-neutral-400" />
+                <Rows className="w-5 h-5 text-muted-foreground" />
               ) : (
-                <Grid className="w-5 h-5 text-neutral-400" />
+                <Grid className="w-5 h-5 text-muted-foreground" />
               )}
             </button>
           </div>
         </div>
-        <div className="w-full h-[1px] bg-slate-200 mb-4"></div>
+        <div className="w-full h-[1px] bg-border mb-4"></div>
         {/* Notes Masonry Layout */}
         {(showSearch ? filteredNotes.length === 0 : notes.length === 0) ? (
-          <div className="py-4 text-gray-500">
+          <div className="py-4 text-muted-foreground">
             {showSearch ? (
               <>
                 <p className="text-sm">No notes found</p>
@@ -478,7 +479,7 @@ export default function NotesContent() {
       {showScrollToTop && (
         <button
           onClick={scrollToTop}
-          className="fixed bottom-8 bg-black text-white right-8 w-8 h-8 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-200 flex items-center justify-center group z-50 cursor-pointer"
+          className="fixed bottom-8 bg-primary text-primary-foreground right-8 w-8 h-8 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-200 flex items-center justify-center group z-50 cursor-pointer"
           aria-label="Scroll to top"
         >
           <ArrowUp className="w-4 h-4 font-bold" />
@@ -503,22 +504,23 @@ export default function NotesContent() {
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
               onKeyDown={handleEditKeyDown}
-              className="w-full px-4 rounded-md resize-none focus:outline-none border-0"
+              className="w-full px-4 rounded-md resize-none focus:outline-none border-0 bg-transparent text-foreground placeholder:text-muted-foreground"
               rows={6}
               placeholder="Edit your note..."
             />
           </div>
           <DialogFooter className="p-4">
             <Button
-              className="bg-neutral-200 hover:bg-neutral-300 text-black cursor-pointer"
+              variant="secondary"
               onClick={handleCancelEdit}
+              className="cursor-pointer"
             >
               Cancel
             </Button>
             <Button
-              className="cursor-pointer"
               onClick={handleSaveEdit}
               disabled={!editContent.trim()}
+              className="cursor-pointer"
             >
               Save
             </Button>

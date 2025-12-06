@@ -22,8 +22,10 @@ export default function GeneralSettingsContent() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Share analytics</div>
-              <div className="text-xs text-gray-600 mt-1">
+              <div className="text-sm font-medium text-foreground">
+                Share analytics
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
                 Share anonymous usage data to help us improve Ito.
               </div>
             </div>
@@ -35,8 +37,10 @@ export default function GeneralSettingsContent() {
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Launch at Login</div>
-              <div className="text-xs text-gray-600 mt-1">
+              <div className="text-sm font-medium text-foreground">
+                Launch at Login
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
                 Open Ito automatically when your computer starts.
               </div>
             </div>
@@ -48,10 +52,10 @@ export default function GeneralSettingsContent() {
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">
+              <div className="text-sm font-medium text-foreground">
                 Show Ito bar at all times
               </div>
-              <div className="text-xs text-gray-600 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 Show the Ito bar at all times.
               </div>
             </div>
@@ -64,8 +68,10 @@ export default function GeneralSettingsContent() {
           {windowContext?.window?.platform === 'darwin' && (
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium">Show app in dock</div>
-                <div className="text-xs text-gray-600 mt-1">
+                <div className="text-sm font-medium text-foreground">
+                  Show app in dock
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
                   Show the Ito app in the dock for quick access.
                 </div>
               </div>
