@@ -93,6 +93,7 @@ const api = {
     ipcRenderer.invoke('check-microphone-permission', prompt),
   'start-native-recording': () => ipcRenderer.send('start-native-recording'),
   'stop-native-recording': () => ipcRenderer.send('stop-native-recording'),
+  'cancel-native-recording': () => ipcRenderer.send('cancel-native-recording'),
   dev: {
     revertLastMigration: () => ipcRenderer.invoke('dev:revert-last-migration'),
     wipeDatabase: () => ipcRenderer.invoke('dev:wipe-database'),

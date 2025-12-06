@@ -127,7 +127,7 @@ const Pill = () => {
   const initialOnboardingCompleted = useOnboardingStore(
     state => state.onboardingCompleted,
   )
-  const { startRecording, stopRecording } = useAudioStore()
+  const { startRecording, stopRecording, cancelRecording } = useAudioStore()
 
   const [isRecording, setIsRecording] = useState(false)
   const [isManualRecording, setIsManualRecording] = useState(false)
@@ -382,11 +382,11 @@ const Pill = () => {
     }
   }
 
-  // Handle cancel recording
+  // Handle cancel recording (abandons recording without processing)
   const handleCancel = (e: React.MouseEvent) => {
     e.stopPropagation()
     setIsManualRecording(false)
-    stopRecording()
+    cancelRecording()
 
     analytics.track(ANALYTICS_EVENTS.MANUAL_RECORDING_ABANDONED, {
       is_recording: false,

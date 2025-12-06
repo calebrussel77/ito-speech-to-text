@@ -897,6 +897,12 @@ export function registerIPC() {
     itoSessionManager.completeSession()
   })
 
+  // Cancel recording without processing (user abandoned the recording)
+  ipcMain.on('cancel-native-recording', () => {
+    console.log('IPC: Received cancel-native-recording.')
+    itoSessionManager.cancelSession()
+  })
+
   // Stop recording for microphone test (doesn't stop transcription since it wasn't started)
   ipcMain.on('stop-native-recording-test', () => {
     console.log('IPC: Received stop-native-recording-test.')
