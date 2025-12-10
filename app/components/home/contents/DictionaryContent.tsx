@@ -51,9 +51,10 @@ export default function DictionaryContent() {
   const addInputRef = useRef<HTMLInputElement>(null)
   const addFromRef = useRef<HTMLInputElement>(null)
 
+  // Reload entries every time the component mounts (e.g., when switching back to dictionary tab)
   useEffect(() => {
     loadEntries()
-  }, [loadEntries])
+  }, []) // Empty dependency array ensures this runs on every mount
 
   // Handle scroll events
   useEffect(() => {

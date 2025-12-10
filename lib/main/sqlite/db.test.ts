@@ -71,7 +71,7 @@ const mockGet = mock((...args: any[]) => {
   return Promise.resolve(undefined)
 })
 
-const mockAll = mock((...args: any[]) => {
+const mockAll = mock((...args: any[]): Promise<any[]> => {
   // If first arg looks like a database object, shift it out
   if (args[0] && typeof args[0] === 'object' && 'all' in args[0]) {
     args.shift()
@@ -205,8 +205,8 @@ describe('Migration Logic', () => {
   test('should identify which migrations need to be applied', async () => {
     // Mock that first migration is already applied
     mockAll.mockResolvedValue([
-      { id: '0000_initial_schema' },
-      { id: '20250108120000_add_raw_audio_to_interactions' },
+      { id: '0000_initial_schema' } as any,
+      { id: '20250108120000_add_raw_audio_to_interactions' } as any,
     ])
     mockRun.mockResolvedValue(undefined)
     mockExec.mockResolvedValue(undefined)
@@ -230,9 +230,9 @@ describe('Migration Logic', () => {
   test('should skip all migrations when database is up to date', async () => {
     // Mock all migrations already applied
     mockAll.mockResolvedValue([
-      { id: '0000_initial_schema' },
-      { id: '20250108120000_add_raw_audio_to_interactions' },
-      { id: '20250108130000_add_duration_to_interactions' },
+      { id: '0000_initial_schema' } as any,
+      { id: '20250108120000_add_raw_audio_to_interactions' } as any,
+      { id: '20250108130000_add_duration_to_interactions' } as any,
     ])
 
     const consoleSpy = mock()
@@ -276,7 +276,7 @@ describe('Migration Validation', () => {
   })
 
   test('should prevent reverting initial schema', async () => {
-    mockGet.mockResolvedValue({ id: '0000_initial_schema' })
+    mockGet.mockResolvedValue({ id: '0000_initial_schema' } as any)
 
     expect(revertLastMigration()).rejects.toThrow(
       'Reverting the initial schema is not supported.',
@@ -284,7 +284,7 @@ describe('Migration Validation', () => {
   })
 
   test('should handle migration not found in code', async () => {
-    mockGet.mockResolvedValue({ id: 'unknown_migration_12345' })
+    mockGet.mockResolvedValue({ id: 'unknown_migration_12345' } as any)
 
     expect(revertLastMigration()).rejects.toThrow(
       'Migration with id unknown_migration_12345 found in DB but not in code.',
@@ -292,7 +292,7 @@ describe('Migration Validation', () => {
   })
 
   test('should handle no migrations to revert', async () => {
-    mockGet.mockResolvedValue(null)
+    mockGet.mockResolvedValue(null as any)
 
     const consoleSpy = mock()
     const originalInfo = console.info
@@ -310,7 +310,7 @@ describe('Migration Validation', () => {
     // Mock finding a valid migration to revert
     mockGet.mockResolvedValue({
       id: '20250108130000_add_duration_to_interactions',
-    })
+    } as any)
     mockExec.mockResolvedValue(undefined)
     mockRun.mockResolvedValue(undefined)
 
@@ -331,7 +331,7 @@ describe('Migration Validation', () => {
   test('should rollback on revert failure', async () => {
     mockGet.mockResolvedValue({
       id: '20250108130000_add_duration_to_interactions',
-    })
+    } as any)
     mockExec.mockResolvedValueOnce(undefined) // BEGIN
     mockExec.mockRejectedValueOnce(new Error('Revert failed')) // DOWN script fails
     mockExec.mockResolvedValueOnce(undefined) // ROLLBACK
