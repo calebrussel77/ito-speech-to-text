@@ -1,6 +1,8 @@
 import { execFile } from 'child_process'
 import { platform, arch } from 'os'
 import { getNativeBinaryPath } from './native-interface'
+import store from '../main/store'
+import { STORE_KEYS } from '../constants/store-keys'
 
 interface TextWriterOptions {
   delay: number // Delay before typing (milliseconds)
@@ -22,6 +24,10 @@ export function setFocusedText(
       return resolve(false)
     }
 
+    // Read preferred paste combo from settings (default to auto)
+    const settings = store.get(STORE_KEYS.SETTINGS) as any
+    const pasteCombo: string = settings?.pasteCombo || 'auto'
+
     const args: string[] = []
 
     // Add optional arguments
@@ -35,12 +41,22 @@ export function setFocusedText(
     // Add the text as the final argument with -- separator to prevent flag parsing
     args.push('--', text)
 
-    execFile(binaryPath, args, (err, _stdout, stderr) => {
-      if (err) {
-        console.error('text-writer error:', stderr)
-        return resolve(false)
-      }
-      resolve(true)
-    })
+    execFile(
+      binaryPath,
+      args,
+      {
+        env: {
+          ...process.env,
+          ITO_PASTE_COMBO: pasteCombo,
+        },
+      },
+      (err, _stdout, stderr) => {
+        if (err) {
+          console.error('text-writer error:', stderr)
+          return resolve(false)
+        }
+        resolve(true)
+      },
+    )
   })
 }

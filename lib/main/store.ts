@@ -30,6 +30,7 @@ export interface SettingsStore {
   runInBackground: boolean
   interactionSounds: boolean
   muteAudioWhenDictating: boolean
+  pasteCombo: 'auto' | 'ctrl-v' | 'ctrl-shift-v' | 'shift-insert'
   microphoneDeviceId: string
   microphoneName: string
   isShortcutGloballyEnabled: boolean
@@ -120,6 +121,7 @@ export const defaultValues: AppStore = {
     runInBackground: true,
     interactionSounds: false,
     muteAudioWhenDictating: false,
+    pasteCombo: 'auto',
     microphoneDeviceId: 'default',
     microphoneName: 'Auto-detect',
     isShortcutGloballyEnabled: false,

@@ -25,6 +25,7 @@ interface SettingsState {
   runInBackground: boolean
   interactionSounds: boolean
   muteAudioWhenDictating: boolean
+  pasteCombo: 'auto' | 'ctrl-v' | 'ctrl-shift-v' | 'shift-insert'
   microphoneDeviceId: string
   microphoneName: string
   theme: 'light' | 'dark' | 'system'
@@ -36,6 +37,7 @@ interface SettingsState {
   setRunInBackground: (enabled: boolean) => void
   setInteractionSounds: (enabled: boolean) => void
   setMuteAudioWhenDictating: (enabled: boolean) => void
+    setPasteCombo: (combo: SettingsState['pasteCombo']) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   createKeyboardShortcut: (mode: ItoMode) => ShortcutResult
@@ -61,6 +63,7 @@ const getInitialState = () => {
     runInBackground: storedSettings?.runInBackground ?? true,
     interactionSounds: storedSettings?.interactionSounds ?? false,
     muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? false,
+    pasteCombo: storedSettings?.pasteCombo ?? 'auto',
     microphoneDeviceId: storedSettings?.microphoneDeviceId ?? 'default',
     microphoneName: storedSettings?.microphoneName ?? 'Default Microphone',
     theme: storedSettings?.theme ?? 'dark',
@@ -177,6 +180,7 @@ export const useSettingsStore = create<SettingsState>(set => {
       'muteAudioWhenDictating',
       'audio&mic',
     ),
+    setPasteCombo: createSetter('pasteCombo', 'general'),
     setMicrophoneDeviceId: (deviceId: string, name: string) => {
       const currentName = useSettingsStore.getState().microphoneName
       analytics.trackSettings(ANALYTICS_EVENTS.MICROPHONE_CHANGED, {

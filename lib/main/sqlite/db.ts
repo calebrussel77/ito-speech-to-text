@@ -10,6 +10,7 @@ const DB_FILE = 'ito.db'
 const dbPath = path.join(app.getPath('userData'), DB_FILE)
 
 let db: sqlite3.Database
+let dbInitPromise: Promise<void> | null = null
 
 const runMigrations = async (database: sqlite3.Database) => {
   // 1. Create migrations table if it doesn't exist
@@ -203,23 +204,38 @@ const deleteCompleteUserData = async (userId: string) => {
   }
 }
 
-const initializeDatabase = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    db = new sqlite3.Database(dbPath, err => {
-      if (err) {
-        console.error('Failed to connect to SQLite database.', err)
-        reject(err)
-      } else {
-        console.info('Connected to SQLite database.')
-        runMigrations(db)
-          .then(resolve)
-          .catch(e => {
-            console.error('Failed to run migrations.', e)
-            reject(e)
-          })
-      }
+const initializeDatabase = async (): Promise<void> => {
+  // Memoize so concurrent callers share the same initialization work.
+  if (dbInitPromise) return dbInitPromise
+
+  dbInitPromise = (async () => {
+    try {
+      // Ensure the directory exists
+      await fs.mkdir(path.dirname(dbPath), { recursive: true })
+    } catch (error) {
+      console.error('Failed to create database directory.', error)
+      throw error
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      db = new sqlite3.Database(dbPath, err => {
+        if (err) {
+          console.error('Failed to connect to SQLite database.', err)
+          reject(err)
+        } else {
+          console.info('Connected to SQLite database.')
+          runMigrations(db)
+            .then(resolve)
+            .catch(e => {
+              console.error('Failed to run migrations.', e)
+              reject(e)
+            })
+        }
+      })
     })
-  })
+  })()
+
+  return dbInitPromise
 }
 
 const getDb = () => {

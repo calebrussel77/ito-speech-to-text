@@ -80,7 +80,7 @@ export default function ApiKeySettings() {
           <Button onClick={handleSave} size="sm">
             Save
           </Button>
-          <Button variant="secondary" onClick={handleClear} size="sm">
+          <Button variant="outline" onClick={handleClear} size="sm">
             Clear
           </Button>
           <Button

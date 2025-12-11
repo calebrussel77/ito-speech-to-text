@@ -270,7 +270,7 @@ create_windows_installer() {
         export npm_config_target_platform=win32
         export npm_config_target_arch=x64
         export npm_config_runtime=electron
-        export npm_config_sqlite3_binary_host_mirror=https://github.com/mapbox/node-sqlite3/releases/download
+
         export npm_config_electron_version=\$(node -p \"require('./package.json').devDependencies.electron.replace('^', '')\")
         bun install || bun install --force || bun install
         
