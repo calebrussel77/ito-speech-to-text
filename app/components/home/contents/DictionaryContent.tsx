@@ -273,14 +273,7 @@ export default function DictionaryContent() {
   const noEntries = entries.length === 0
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full px-24 max-h-160 overflow-y-auto relative"
-      style={{
-        msOverflowStyle: 'none',
-        scrollbarWidth: 'none',
-      }}
-    >
+    <div ref={containerRef} className="w-full px-24 relative">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-medium text-foreground">Dictionary</h1>
         <Button

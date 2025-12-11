@@ -593,7 +593,7 @@ export default function HomeContent({
       </div>
 
       {/* Scrollable Recent Activity Section */}
-      <div className="flex-1 px-24 overflow-y-auto scrollbar-hide">
+      <div className="flex-1 px-24">
         {loading ? (
           <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             Loading recent activity...

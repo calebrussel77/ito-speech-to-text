@@ -176,10 +176,10 @@ export default function HomeKit() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans select-none">
-      {/* Sidebar */}
+    <div className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans select-none">
+      {/* Sidebar - Fixed, non-scrollable */}
       <div
-        className={`${navExpanded ? 'w-48' : 'w-20'} flex flex-col justify-between py-4 px-4 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] bg-background z-10`}
+        className={`${navExpanded ? 'w-48' : 'w-20'} flex-shrink-0 flex flex-col justify-between py-4 px-4 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] bg-background z-10`}
       >
         <div>
           {/* Logo and Plan */}
@@ -240,9 +240,9 @@ export default function HomeKit() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex flex-col flex-1 items-stretch bg-card/40 backdrop-blur-sm my-2 mr-2 rounded-2xl border border-border/50 shadow-sm overflow-hidden relative">
-        <div className="w-full h-full overflow-auto pt-12 px-6 pb-6">
+      {/* Main Content - Scrollable area only */}
+      <div className="flex-1 flex flex-col items-stretch bg-card/40 backdrop-blur-sm my-2 mr-2 rounded-2xl border border-border/50 shadow-sm overflow-hidden relative">
+        <div className="w-full h-full overflow-y-auto overflow-x-hidden pt-12 px-6 pb-6">
           {renderContent()}
         </div>
       </div>

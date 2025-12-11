@@ -285,7 +285,7 @@ export default function AdvancedSettingsContent() {
   }
 
   return (
-    <div className="max-h-[70vh] overflow-y-auto px-1.5">
+    <div className="px-1.5">
       {/* LLM Settings Section */}
       <div className="space-y-6">
         <ApiKeySettings />
