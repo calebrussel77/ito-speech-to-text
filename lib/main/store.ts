@@ -1,4 +1,3 @@
-// @ts-nocheck
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
@@ -165,7 +164,10 @@ export const defaultValues: AppStore = {
   openMic: false,
   selectedAudioInput: null,
   interactionSounds: false,
-  userProfile: null,
+  userProfile: {
+    id: 'self-hosted',
+    provider: 'self-hosted',
+  },
   idToken: null,
   accessToken: null,
   appliedMigrations: [],
@@ -315,6 +317,21 @@ const migrations: Migration[] = [
           llmModel: 'llama-3.1-8b-instant',
         }
         s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
+      }
+    },
+  },
+  {
+    id: '2025-12-11-self-hosted-user-profile',
+    run: s => {
+      // Ensure userProfile exists with self-hosted user for local-only mode
+      // This fixes the issue where notes/dictionary were saved but not retrieved
+      const userProfile = s.get(STORE_KEYS.USER_PROFILE)
+      if (!userProfile || !userProfile.id) {
+        s.set(STORE_KEYS.USER_PROFILE, {
+          id: 'self-hosted',
+          provider: 'self-hosted',
+        })
+        console.log('[migrations] Initialized self-hosted user profile')
       }
     },
   },

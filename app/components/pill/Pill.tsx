@@ -554,7 +554,7 @@ const Pill = () => {
             {renderContent()}
           </div>
         </TooltipTrigger>
-        {isHovered && !anyRecording && (
+        {/* {isHovered && !anyRecording && (
           <TooltipContent
             side="top"
             style={{
@@ -573,7 +573,7 @@ const Pill = () => {
           >
             Click and start speaking
           </TooltipContent>
-        )}
+        )} */}
       </Tooltip>
     </>
   )
