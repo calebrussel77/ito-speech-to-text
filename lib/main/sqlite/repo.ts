@@ -133,6 +133,15 @@ export class InteractionsTable {
     await run(query, [new Date().toISOString(), new Date().toISOString(), id])
   }
 
+  static async softDeleteAllVisible(userId?: string): Promise<void> {
+    const now = new Date().toISOString()
+    const query = userId
+      ? 'UPDATE interactions SET deleted_at = ?, updated_at = ? WHERE (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL'
+      : 'UPDATE interactions SET deleted_at = ?, updated_at = ? WHERE deleted_at IS NULL'
+    const params = userId ? [now, now, userId] : [now, now]
+    await run(query, params)
+  }
+
   static async deleteAllUserData(userId: string): Promise<void> {
     const query =
       'UPDATE interactions SET deleted_at = ?, updated_at = ? WHERE user_id = ?'

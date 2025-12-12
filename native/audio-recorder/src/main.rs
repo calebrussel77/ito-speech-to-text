@@ -2,6 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -15,6 +16,8 @@ use rubato::{FftFixedIn, Resampler};
 enum Command {
     #[serde(rename = "start")]
     Start { device_name: Option<String> },
+    #[serde(rename = "prepare")]
+    Prepare { device_name: Option<String> },
     #[serde(rename = "stop")]
     Stop,
     #[serde(rename = "list-devices")]
@@ -78,8 +81,10 @@ struct CommandProcessor {
     stdout: Arc<Mutex<io::Stdout>>,
     cached_host: Option<Rc<cpal::Host>>,
     // Offloaded writer thread state
-    audio_tx: Option<crossbeam_channel::Sender<Vec<f32>>>,
+    audio_tx: Option<crossbeam_channel::Sender<WriterMsg>>,
     writer_handle: Option<std::thread::JoinHandle<()>>,
+    is_recording: Option<Arc<AtomicBool>>,
+    current_device_name: Option<String>,
 }
 
 impl CommandProcessor {
@@ -91,6 +96,8 @@ impl CommandProcessor {
             cached_host: None,
             audio_tx: None,
             writer_handle: None,
+            is_recording: None,
+            current_device_name: None,
         }
     }
 
@@ -134,9 +141,66 @@ impl CommandProcessor {
             match command {
                 Command::ListDevices => self.list_devices(),
                 Command::Start { device_name } => self.start_recording(device_name),
+                Command::Prepare { device_name } => self.prepare_stream(device_name),
                 Command::Stop => self.stop_recording(),
                 Command::GetDeviceConfig { device_name } => self.get_device_config(device_name),
             }
+        }
+    }
+
+    fn normalize_device_name(device_name: Option<String>) -> Option<String> {
+        match device_name {
+            None => None,
+            Some(name) => {
+                let trimmed = name.trim().to_string();
+                if trimmed.is_empty() || trimmed.to_lowercase() == "default" {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+        }
+    }
+
+    fn teardown_stream(&mut self) {
+        if let Some(flag) = &self.is_recording {
+            flag.store(false, Ordering::Release);
+        }
+        if let Some(stream) = self.active_stream.take() {
+            let _ = stream.pause();
+            drop(stream);
+        }
+        // Close audio channel to stop the writer thread.
+        if let Some(tx) = self.audio_tx.take() {
+            drop(tx);
+        }
+        if let Some(handle) = self.writer_handle.take() {
+            let _ = handle.join();
+        }
+        self.is_recording = None;
+        self.current_device_name = None;
+    }
+
+    fn prepare_stream(&mut self, device_name: Option<String>) {
+        // Create the CPAL stream + writer thread once so subsequent starts are instant.
+        let device_name = Self::normalize_device_name(device_name);
+        if self.active_stream.is_some() {
+            if self.current_device_name == device_name {
+                return;
+            }
+            // Device changed: recreate the stream to match the selected device.
+            self.teardown_stream();
+        }
+
+        let host = self.get_or_create_host();
+        if let Ok(handles) = start_capture(device_name.clone(), Arc::clone(&self.stdout), host) {
+            self.audio_tx = Some(handles.audio_tx);
+            self.writer_handle = Some(handles.writer_handle);
+            self.is_recording = Some(handles.is_recording);
+            self.active_stream = Some(handles.stream);
+            self.current_device_name = device_name;
+        } else {
+            eprintln!("[audio-recorder] CRITICAL: Failed to prepare audio stream");
         }
     }
 
@@ -159,14 +223,33 @@ impl CommandProcessor {
     }
 
     fn start_recording(&mut self, device_name: Option<String>) {
-        self.stop_recording();
+        let device_name = Self::normalize_device_name(device_name);
+
+        // Fast path: reuse existing stream + writer thread to avoid 1-3s cold-start latency
+        if self.active_stream.is_some() && self.current_device_name == device_name {
+            let stream = self.active_stream.as_ref().unwrap();
+            let flag = self.is_recording.as_ref().unwrap();
+            flag.store(true, Ordering::Release);
+            if let Err(e) = stream.play() {
+                eprintln!("[audio-recorder] Failed to resume audio stream: {}", e);
+            }
+            return;
+        }
+
+        // Stream exists but device changed: recreate to use the requested device.
+        if self.active_stream.is_some() {
+            self.teardown_stream();
+        }
 
         let host = self.get_or_create_host();
-        if let Ok(handles) = start_capture(device_name, Arc::clone(&self.stdout), host) {
+        if let Ok(handles) = start_capture(device_name.clone(), Arc::clone(&self.stdout), host) {
+            handles.is_recording.store(true, Ordering::Release);
             if handles.stream.play().is_ok() {
                 self.audio_tx = Some(handles.audio_tx);
                 self.writer_handle = Some(handles.writer_handle);
+                self.is_recording = Some(handles.is_recording);
                 self.active_stream = Some(handles.stream);
+                self.current_device_name = device_name;
             }
         } else {
             eprintln!("[audio-recorder] CRITICAL: Failed to create audio stream");
@@ -174,16 +257,15 @@ impl CommandProcessor {
     }
 
     fn stop_recording(&mut self) {
-        if let Some(stream) = self.active_stream.take() {
+        if let Some(flag) = &self.is_recording {
+            flag.store(false, Ordering::Release);
+        }
+        if let Some(stream) = &self.active_stream {
             let _ = stream.pause();
-            drop(stream);
         }
-        // Close audio channel to signal writer thread to exit
-        if let Some(tx) = self.audio_tx.take() {
-            drop(tx);
-        }
-        if let Some(handle) = self.writer_handle.take() {
-            let _ = handle.join();
+        // Flush any buffered samples and signal drain-complete for the current session
+        if let Some(tx) = &self.audio_tx {
+            let _ = tx.send(WriterMsg::Flush);
         }
     }
 
@@ -238,10 +320,16 @@ fn write_audio_chunk(data: &[f32], stdout: &Arc<Mutex<io::Stdout>>) {
     }
 }
 
+enum WriterMsg {
+    Audio(Vec<f32>),
+    Flush,
+}
+
 struct CaptureHandles {
     stream: cpal::Stream,
-    audio_tx: crossbeam_channel::Sender<Vec<f32>>,
+    audio_tx: crossbeam_channel::Sender<WriterMsg>,
     writer_handle: std::thread::JoinHandle<()>,
+    is_recording: Arc<AtomicBool>,
 }
 
 fn downmix_to_mono_vec<T>(data: &[T], num_channels: usize) -> Vec<f32>
@@ -286,7 +374,7 @@ where
 }
 
 fn writer_loop(
-    audio_rx: crossbeam_channel::Receiver<Vec<f32>>,
+    audio_rx: crossbeam_channel::Receiver<WriterMsg>,
     stdout: Arc<Mutex<io::Stdout>>,
     input_sample_rate: u32,
 ) {
@@ -364,72 +452,108 @@ fn writer_loop(
         out
     }
 
-    while let Ok(frame) = audio_rx.recv() {
-        if let Some(resampler) = resampler_opt.as_mut() {
-            in_buffer.extend_from_slice(&frame);
-            while in_buffer.len() >= chosen_chunk_size {
-                let chunk_to_process: Vec<f32> =
-                    in_buffer.drain(..chosen_chunk_size).collect::<Vec<_>>();
-                match resampler.process(&[chunk_to_process], None) {
-                    Ok(mut resampled) => {
-                        if !resampled.is_empty() {
-                            write_audio_chunk(&resampled.remove(0), &stdout);
+    fn flush_pending(
+        stdout: &Arc<Mutex<io::Stdout>>,
+        input_sample_rate: u32,
+        chosen_chunk_size: usize,
+        resampler_opt: &mut Option<FftFixedIn<f32>>,
+        in_buffer: &mut Vec<f32>,
+    ) {
+        const TARGET_SAMPLE_RATE: u32 = 16000;
+
+        // Channel closed or explicit flush requested; flush any remaining buffered samples.
+        if let Some(mut resampler) = resampler_opt.take() {
+            while !in_buffer.is_empty() {
+                let take = if in_buffer.len() >= chosen_chunk_size {
+                    chosen_chunk_size
+                } else {
+                    in_buffer.len()
+                };
+                let mut chunk = in_buffer.drain(..take).collect::<Vec<_>>();
+                if chunk.len() < chosen_chunk_size {
+                    chunk.resize(chosen_chunk_size, 0.0);
+                }
+                if let Ok(mut resampled) = resampler.process(&[chunk], None) {
+                    if !resampled.is_empty() {
+                        write_audio_chunk(&resampled.remove(0), stdout);
+                    }
+                }
+            }
+            // Keep the resampler instance for subsequent sessions
+            *resampler_opt = Some(resampler);
+        } else if !in_buffer.is_empty() {
+            if input_sample_rate != TARGET_SAMPLE_RATE {
+                let resampled =
+                    linear_resample_mono(in_buffer, input_sample_rate, TARGET_SAMPLE_RATE);
+                if !resampled.is_empty() {
+                    write_audio_chunk(&resampled, stdout);
+                }
+            } else {
+                write_audio_chunk(in_buffer, stdout);
+            }
+            in_buffer.clear();
+        }
+
+        // Signal drain complete to the host via a JSON message
+        let response = serde_json::json!({
+            "type": "drain-complete"
+        });
+        if let Ok(json_string) = serde_json::to_string(&response) {
+            let mut writer = stdout.lock().unwrap();
+            let _ = write_framed_message(&mut *writer, MSG_TYPE_JSON, json_string.as_bytes());
+        }
+    }
+
+    while let Ok(msg) = audio_rx.recv() {
+        match msg {
+            WriterMsg::Audio(frame) => {
+                if let Some(resampler) = resampler_opt.as_mut() {
+                    in_buffer.extend_from_slice(&frame);
+                    while in_buffer.len() >= chosen_chunk_size {
+                        let chunk_to_process: Vec<f32> =
+                            in_buffer.drain(..chosen_chunk_size).collect::<Vec<_>>();
+                        match resampler.process(&[chunk_to_process], None) {
+                            Ok(mut resampled) => {
+                                if !resampled.is_empty() {
+                                    write_audio_chunk(&resampled.remove(0), &stdout);
+                                }
+                            }
+                            Err(e) => eprintln!(
+                                "[audio-recorder] CRITICAL: Resampling failed in writer: {}",
+                                e
+                            ),
                         }
                     }
-                    Err(e) => eprintln!(
-                        "[audio-recorder] CRITICAL: Resampling failed in writer: {}",
-                        e
-                    ),
+                } else if input_sample_rate != TARGET_SAMPLE_RATE {
+                    let resampled =
+                        linear_resample_mono(&frame, input_sample_rate, TARGET_SAMPLE_RATE);
+                    if !resampled.is_empty() {
+                        write_audio_chunk(&resampled, &stdout);
+                    }
+                } else {
+                    write_audio_chunk(&frame, &stdout);
                 }
             }
-        } else if input_sample_rate != TARGET_SAMPLE_RATE {
-            let resampled = linear_resample_mono(&frame, input_sample_rate, TARGET_SAMPLE_RATE);
-            if !resampled.is_empty() {
-                write_audio_chunk(&resampled, &stdout);
+            WriterMsg::Flush => {
+                flush_pending(
+                    &stdout,
+                    input_sample_rate,
+                    chosen_chunk_size,
+                    &mut resampler_opt,
+                    &mut in_buffer,
+                );
             }
-        } else {
-            write_audio_chunk(&frame, &stdout);
         }
     }
 
-    // Channel closed; flush any remaining buffered samples through resampler
-    if let Some(mut resampler) = resampler_opt.take() {
-        while !in_buffer.is_empty() {
-            let take = if in_buffer.len() >= chosen_chunk_size {
-                chosen_chunk_size
-            } else {
-                in_buffer.len()
-            };
-            let mut chunk = in_buffer.drain(..take).collect::<Vec<_>>();
-            if chunk.len() < chosen_chunk_size {
-                // zero-pad final chunk to meet resampler size
-                chunk.resize(chosen_chunk_size, 0.0);
-            }
-            if let Ok(mut resampled) = resampler.process(&[chunk], None) {
-                if !resampled.is_empty() {
-                    write_audio_chunk(&resampled.remove(0), &stdout);
-                }
-            }
-        }
-    } else if !in_buffer.is_empty() {
-        if input_sample_rate != TARGET_SAMPLE_RATE {
-            let resampled = linear_resample_mono(&in_buffer, input_sample_rate, TARGET_SAMPLE_RATE);
-            if !resampled.is_empty() {
-                write_audio_chunk(&resampled, &stdout);
-            }
-        } else {
-            write_audio_chunk(&in_buffer, &stdout);
-        }
-    }
-
-    // Signal drain complete to the host via a JSON message
-    let response = serde_json::json!({
-        "type": "drain-complete"
-    });
-    if let Ok(json_string) = serde_json::to_string(&response) {
-        let mut writer = stdout.lock().unwrap();
-        let _ = write_framed_message(&mut *writer, MSG_TYPE_JSON, json_string.as_bytes());
-    }
+    // Channel closed; do a final flush so the host doesn't hang on stop.
+    flush_pending(
+        &stdout,
+        input_sample_rate,
+        chosen_chunk_size,
+        &mut resampler_opt,
+        &mut in_buffer,
+    );
 }
 
 fn start_capture(
@@ -466,7 +590,7 @@ fn start_capture(
     let stream_config: StreamConfig = default_config.clone().into();
 
     // Writer thread and queue
-    let (audio_tx, audio_rx) = crossbeam_channel::bounded::<Vec<f32>>(QUEUE_CAPACITY);
+    let (audio_tx, audio_rx) = crossbeam_channel::bounded::<WriterMsg>(QUEUE_CAPACITY);
     let stdout_for_writer = Arc::clone(&stdout);
     let writer_handle = std::thread::spawn(move || {
         writer_loop(audio_rx, stdout_for_writer, input_sample_rate);
@@ -486,14 +610,20 @@ fn start_capture(
         }
     }
 
+    let is_recording = Arc::new(AtomicBool::new(false));
+
     let stream = match input_sample_format {
         SampleFormat::F32 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[f32], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -501,11 +631,15 @@ fn start_capture(
         }
         SampleFormat::I16 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[i16], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -513,11 +647,15 @@ fn start_capture(
         }
         SampleFormat::U16 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[u16], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -525,11 +663,15 @@ fn start_capture(
         }
         SampleFormat::U8 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[u8], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -537,11 +679,15 @@ fn start_capture(
         }
         SampleFormat::I32 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[i32], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -549,11 +695,15 @@ fn start_capture(
         }
         SampleFormat::F64 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[f64], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -561,11 +711,15 @@ fn start_capture(
         }
         SampleFormat::U32 => {
             let tx = audio_tx.clone();
+            let flag = Arc::clone(&is_recording);
             device.build_input_stream(
                 &stream_config,
                 move |data: &[u32], _| {
+                    if !flag.load(Ordering::Acquire) {
+                        return;
+                    }
                     let mono = downmix_to_mono_vec(data, channels_count);
-                    let _ = tx.try_send(mono);
+                    let _ = tx.try_send(WriterMsg::Audio(mono));
                 },
                 err_fn,
                 None,
@@ -583,6 +737,7 @@ fn start_capture(
         stream,
         audio_tx,
         writer_handle,
+        is_recording,
     })
 }
 

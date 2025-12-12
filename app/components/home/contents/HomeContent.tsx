@@ -85,6 +85,7 @@ export default function HomeContent({
   const platform = usePlatform()
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [isClearingAll, setIsClearingAll] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
@@ -428,6 +429,31 @@ export default function HomeContent({
     }
   }
 
+  const handleClearAllInteractions = async () => {
+    if (loading || interactions.length === 0 || isClearingAll) return
+
+    const confirmed = window.confirm(
+      'Clear all transcriptions?\n\nThis will remove everything in Recent activity and cannot be undone.',
+    )
+    if (!confirmed) return
+
+    try {
+      setIsClearingAll(true)
+      setOpenTooltipKey(null)
+      await window.api.interactions.clearAll()
+      setInteractions([])
+      setStats({
+        streakDays: 0,
+        totalWords: 0,
+        averageWPM: 0,
+      })
+    } catch (error) {
+      console.error('Failed to clear interactions:', error)
+    } finally {
+      setIsClearingAll(false)
+    }
+  }
+
   const groupedInteractions = groupInteractionsByDate(interactions)
 
   const copyToClipboard = async (text: string, interactionId: string) => {
@@ -587,8 +613,27 @@ export default function HomeContent({
         </div>
 
         {/* Recent Activity Header */}
-        <div className="text-sm font-medium text-muted-foreground mb-4 pl-1">
-          Recent activity
+        <div className="mb-4 pl-1 flex items-center justify-between">
+          <div className="text-sm font-medium text-muted-foreground">
+            Recent activity
+          </div>
+          <Tooltip
+            open={openTooltipKey === 'clear-all'}
+            onOpenChange={open => setOpenTooltipKey(open ? 'clear-all' : null)}
+          >
+            <TooltipTrigger asChild>
+              <button
+                className="p-1.5 hover:bg-destructive/10 rounded transition-colors cursor-pointer text-destructive/80 hover:text-destructive disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={handleClearAllInteractions}
+                disabled={loading || interactions.length === 0 || isClearingAll}
+              >
+                <Trash className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={5}>
+              {isClearingAll ? 'Clearing…' : 'Clear all transcriptions'}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

@@ -5,8 +5,6 @@ const mockIpcMain = (await import('electron')).ipcMain as any
 const mockSystemPreferences = (await import('electron'))
   .systemPreferences as any
 const mockBrowserWindow = (await import('electron')).BrowserWindow as any
-let mockGetCurrentUserId = (await import('../main/store'))
-  .getCurrentUserId as any
 const mockNotesTable = (await import('../main/sqlite/repo')).NotesTable as any
 let mockEnsureValidTokens = (await import('../auth/events'))
   .ensureValidTokens as any
@@ -150,8 +148,9 @@ describe('IPC Events Critical Business Logic Tests', () => {
       const originalError = mockElectronLog.error
       mockElectronLog.error = () => {}
 
-      const originalGetCurrentUserId = mockGetCurrentUserId
-      mockGetCurrentUserId = () => null
+      const storeModule = await import('../main/store')
+      const originalStoreGet = storeModule.default.get
+      storeModule.default.get = () => null
 
       expect(handler).toBeDefined()
       const result = await handler!({})
@@ -159,7 +158,7 @@ describe('IPC Events Critical Business Logic Tests', () => {
       expect(result).toBe(false)
 
       // Restore original functions
-      mockGetCurrentUserId = originalGetCurrentUserId
+      storeModule.default.get = originalStoreGet
       mockElectronLog.error = originalError
     })
 

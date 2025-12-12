@@ -1,31 +1,15 @@
 // @ts-nocheck
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { InteractionManager } from './InteractionManager'
+import { STORE_KEYS } from '../../constants/store-keys'
 
-// Mock database utilities
-const mockDbRun = mock(() => Promise.resolve())
-const mockDbGet = mock(() => Promise.resolve(undefined))
-const mockDbAll = mock(() => Promise.resolve([]))
-
-mock.module('../sqlite/utils', () => ({
-  run: mockDbRun,
-  get: mockDbGet,
-  all: mockDbAll,
+const mockUpsert = mock(() => Promise.resolve())
+mock.module('../sqlite/repo', () => ({
+  InteractionsTable: {
+    upsert: mockUpsert,
+  },
 }))
 
-// Mock electron-store
-mock.module('electron-store', () => {
-  return {
-    default: class MockStore {
-      get() {
-        return null
-      }
-      set() {}
-      delete() {}
-    },
-  }
-})
-
-// Mock the store
 const mockMainStore = {
   get: mock(() => ({ id: 'test-user-123' })),
 }
@@ -33,7 +17,12 @@ mock.module('../store', () => ({
   default: mockMainStore,
 }))
 
-// Mock electron-log
+mock.module('../timing/TimingCollector', () => ({
+  timingCollector: {
+    clearInteraction: mock(),
+  },
+}))
+
 mock.module('electron-log', () => ({
   default: {
     info: mock(),
@@ -42,17 +31,12 @@ mock.module('electron-log', () => ({
   },
 }))
 
-import { InteractionManager } from './InteractionManager'
-import { STORE_KEYS } from '../../constants/store-keys'
-
 describe('InteractionManager', () => {
   let interactionManager: InteractionManager
 
   beforeEach(() => {
     interactionManager = new InteractionManager()
-    mockDbRun.mockClear()
-    mockDbGet.mockClear()
-    mockDbAll.mockClear()
+    mockUpsert.mockClear()
     mockMainStore.get.mockClear()
     mockMainStore.get.mockReturnValue({ id: 'test-user-123' })
   })
@@ -108,16 +92,16 @@ describe('InteractionManager', () => {
         sampleRate,
       )
 
-      expect(mockDbRun).toHaveBeenCalled()
-      // Check the SQL call parameters
-      const call = mockDbRun.mock.calls[0]
-      const sql = call[0] as unknown as string
-      const params = call[1] as unknown as any[]
-
-      expect(sql).toContain('INSERT INTO interactions')
-      expect(params).toContain(interactionManager.getCurrentInteractionId())
-      expect(params).toContain('test-user-123')
-      expect(params).toContain(transcript)
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.id).toBe(interactionManager.getCurrentInteractionId())
+      expect(interactionData.user_id).toBe('test-user-123')
+      expect(interactionData.title).toBe(transcript)
+      expect(interactionData.raw_audio).toBeNull()
+      expect(interactionData.sample_rate).toBe(sampleRate)
+      expect(interactionData.duration_ms).toBeGreaterThanOrEqual(0)
+      expect(interactionData.asr_output?.transcript).toBe(transcript)
+      expect(interactionData.asr_output?.totalAudioBytes).toBe(audioBuffer.length)
     })
 
     test('should skip creation when no current interaction ID', async () => {
@@ -128,7 +112,7 @@ describe('InteractionManager', () => {
         16000,
       )
 
-      expect(mockDbRun).not.toHaveBeenCalled()
+      expect(mockUpsert).not.toHaveBeenCalled()
     })
 
     test('should skip creation when no user ID', async () => {
@@ -142,7 +126,9 @@ describe('InteractionManager', () => {
       )
 
       expect(mockMainStore.get).toHaveBeenCalledWith(STORE_KEYS.USER_PROFILE)
-      expect(mockDbRun).not.toHaveBeenCalled()
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.user_id).toBe('self-hosted')
     })
   })
 
@@ -156,10 +142,9 @@ describe('InteractionManager', () => {
         16000,
       )
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const titleParam = params[2] // title is at index 2
-      expect(titleParam).toBe(transcript)
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.title).toBe(transcript)
     })
 
     test('should truncate long transcripts at 50 characters', async () => {
@@ -173,13 +158,12 @@ describe('InteractionManager', () => {
         16000,
       )
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const titleParam = params[2]
-      expect(titleParam).toBe(
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.title).toBe(
         'This is a very long transcript that should be trun...',
       )
-      expect(titleParam.length).toBe(53)
+      expect(interactionData.title.length).toBe(53)
     })
 
     test('should use fallback title for empty transcript', async () => {
@@ -190,10 +174,9 @@ describe('InteractionManager', () => {
         16000,
       )
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const titleParam = params[2]
-      expect(titleParam).toBe('Voice interaction')
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.title).toBe('Voice interaction')
     })
   })
 
@@ -210,11 +193,10 @@ describe('InteractionManager', () => {
         16000,
       )
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const durationParam = params[6] // duration_ms is at index 6 in upsert
-      expect(durationParam).toBeGreaterThan(0)
-      expect(durationParam).toBeLessThan(1000) // Should be reasonable
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.duration_ms).toBeGreaterThan(0)
+      expect(interactionData.duration_ms).toBeLessThan(1000) // Should be reasonable
     })
 
     test('should handle missing start time', async () => {
@@ -225,10 +207,9 @@ describe('InteractionManager', () => {
 
       await manager.createInteraction('test', Buffer.from('audio'), 16000)
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const durationParam = params[6] // duration_ms is at index 6 in upsert
-      expect(durationParam).toBe(0)
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.duration_ms).toBe(0)
     })
   })
 
@@ -239,10 +220,11 @@ describe('InteractionManager', () => {
       interactionManager.initialize()
       await interactionManager.createInteraction('test', audioBuffer, 16000)
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const rawAudioParam = params[5] // raw_audio is at index 5
-      expect(rawAudioParam).toEqual(audioBuffer)
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      // We intentionally do not persist audio in local-only mode.
+      expect(interactionData.raw_audio).toBeNull()
+      expect(interactionData.asr_output?.totalAudioBytes).toBe(audioBuffer.length)
     })
 
     test('should set null for empty audio buffer', async () => {
@@ -251,16 +233,16 @@ describe('InteractionManager', () => {
       interactionManager.initialize()
       await interactionManager.createInteraction('test', emptyBuffer, 16000)
 
-      expect(mockDbRun).toHaveBeenCalled()
-      const params = mockDbRun.mock.calls[0][1] as unknown as any[]
-      const rawAudioParam = params[5]
-      expect(rawAudioParam).toBeNull()
+      expect(mockUpsert).toHaveBeenCalled()
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.raw_audio).toBeNull()
+      expect(interactionData.asr_output?.totalAudioBytes).toBe(0)
     })
   })
 
   describe('Error Handling', () => {
     test('should handle database insertion errors gracefully', async () => {
-      mockDbRun.mockRejectedValueOnce(new Error('Database error'))
+      mockUpsert.mockRejectedValueOnce(new Error('Database error'))
 
       interactionManager.initialize()
 

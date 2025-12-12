@@ -6,7 +6,9 @@ import { ItoMode } from '@/app/generated/ito_pb.js'
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
-import { safeStorage } from 'electron'
+import * as electron from 'electron'
+
+const safeStorageApi: any = (electron as any).safeStorage
 
 export interface KeyboardShortcutConfig {
   id: string
@@ -176,7 +178,7 @@ export const defaultValues: AppStore = {
 }
 
 // Lightweight store-like interface used for migrations and defaults logic
-type StoreLike<T = any> = {
+type StoreLike = {
   get: (path: string) => any
   set: (path: string, value: any) => void
 }
@@ -224,8 +226,8 @@ async function persistTopLevelKey(key: string) {
       const toPersist: any = { ...value }
       if (toPersist.groqApiKey) {
         try {
-          if (safeStorage.isEncryptionAvailable()) {
-            toPersist.groqApiKeyEncrypted = safeStorage
+          if (safeStorageApi?.isEncryptionAvailable?.()) {
+            toPersist.groqApiKeyEncrypted = safeStorageApi
               .encryptString(toPersist.groqApiKey)
               .toString('base64')
           } else {
@@ -247,7 +249,7 @@ async function persistTopLevelKey(key: string) {
   }
 }
 
-export const store: StoreLike<AppStore> & {
+export const store: StoreLike & {
   delete: (key: string) => void
 } = {
   get: (path: string) => {
@@ -280,7 +282,7 @@ export const store: StoreLike<AppStore> & {
   },
 }
 
-type Migration = { id: string; run: (s: StoreLike<AppStore>) => void }
+type Migration = { id: string; run: (s: StoreLike) => void }
 
 const migrations: Migration[] = [
   {
@@ -340,7 +342,7 @@ const migrations: Migration[] = [
 ]
 
 // ---------- Migration runner ----------
-function runMigrations(s: StoreLike<AppStore>, allMigrations: Migration[]) {
+function runMigrations(s: StoreLike, allMigrations: Migration[]) {
   const applied = new Set(s.get('appliedMigrations') || [])
   for (const m of allMigrations) {
     if (!applied.has(m.id)) {
@@ -357,7 +359,7 @@ function runMigrations(s: StoreLike<AppStore>, allMigrations: Migration[]) {
 }
 
 function ensureDefaultsDeep<T = unknown>(
-  s: StoreLike<any>,
+  s: StoreLike,
   defaults: T,
   basePath = '',
   exclude: Set<string> = new Set(['appliedMigrations']), // skip internal/meta keys
@@ -421,8 +423,8 @@ export async function initializeStore() {
           let decrypted = ''
           if (stored?.groqApiKeyEncrypted) {
             try {
-              if (safeStorage.isEncryptionAvailable()) {
-                decrypted = safeStorage.decryptString(
+              if (safeStorageApi?.isEncryptionAvailable?.()) {
+                decrypted = safeStorageApi.decryptString(
                   Buffer.from(stored.groqApiKeyEncrypted, 'base64'),
                 )
               } else {

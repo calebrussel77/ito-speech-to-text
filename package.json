@@ -21,7 +21,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev -w",
-    "dev:rust": "bun build:rust:mac && bun dev",
+    "dev:rust": "bun run build:rust && bun run dev",
     "format:fix:app": "prettier --write app lib",
     "format:fix": "prettier --write .",
     "lint:fix:app": "eslint app lib --ext .ts,.tsx --fix",
@@ -46,6 +46,7 @@
     "build:rust:mac": "bash ./build-binaries.sh --mac",
     "build:rust:mac:x64": "bash ./build-binaries.sh --mac --x64",
     "build:rust:win": "bash ./build-binaries.sh --windows",
+    "build:rust": "node scripts/build-rust.cjs",
     "build:swift:mac": "cd native/cursor-context && swift build -c release",
     "build:win": "bash ./build-app.sh windows",
     "build:mac": "bash ./build-app.sh mac",

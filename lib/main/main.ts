@@ -140,6 +140,9 @@ app.whenReady().then(async () => {
   // Initialize microphone selection to prefer built-in microphone
   await initializeMicrophoneSelection()
 
+  // Warm the native audio stream so the hotkey can record immediately
+  voiceInputService.prepareAudioStream()
+
   // Create system tray after audio recorder is initialized and devices are available
   await createAppTray()
 

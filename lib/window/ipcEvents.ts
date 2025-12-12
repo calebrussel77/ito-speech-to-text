@@ -784,6 +784,11 @@ export function registerIPC() {
     InteractionsTable.softDelete(id),
   )
 
+  handleIPC('interactions:clear-all', async () => {
+    const user_id = getCurrentUserId()
+    return InteractionsTable.softDeleteAllVisible(user_id)
+  })
+
   // User Data Deletion
   handleIPC('delete-user-data', async _e => {
     const userId = getCurrentUserId()

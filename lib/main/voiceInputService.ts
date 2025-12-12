@@ -8,6 +8,19 @@ import log from 'electron-log'
 
 export class VoiceInputService {
   /**
+   * Prepares the native audio stream so recordings can start instantly.
+   * Safe to call multiple times; it will no-op if already prepared.
+   */
+  public prepareAudioStream = () => {
+    const settings = store.get(STORE_KEYS.SETTINGS)
+    const deviceId = settings.microphoneDeviceId
+    if (!deviceId) return
+
+    console.log('[VoiceInputService] Preparing audio stream with device:', deviceId)
+    audioRecorderService.prepareStream(deviceId)
+  }
+
+  /**
    * Starts audio recording and handles system audio muting.
    * Does NOT start the ItoStreamController - that should be done separately.
    */

@@ -4,16 +4,25 @@ export class AudioStreamManager {
   private isStreaming = false
   private audioChunks: Buffer[] = []
   private currentSampleRate: number = 16000
+  private chunkWaiters: Array<() => void> = []
+
+  private notifyChunkWaiters() {
+    const waiters = this.chunkWaiters
+    this.chunkWaiters = []
+    for (const resolve of waiters) resolve()
+  }
 
   initialize() {
     this.isStreaming = true
     this.audioChunks = []
+    this.notifyChunkWaiters()
     this.setupListeners()
   }
 
   stopStreaming() {
     this.isStreaming = false
     this.removeListeners()
+    this.notifyChunkWaiters()
   }
 
   private setupListeners() {
@@ -47,6 +56,7 @@ export class AudioStreamManager {
       return
     }
     this.audioChunks.push(chunk)
+    this.notifyChunkWaiters()
   }
 
   /**
@@ -56,11 +66,22 @@ export class AudioStreamManager {
     return Buffer.concat(this.audioChunks)
   }
 
-  // Backwards compatibility for legacy tests
   async *streamAudioChunks() {
-    if (this.audioChunks.length === 0) return
-    for (const chunk of this.audioChunks) {
-      yield { audioData: chunk } as any
+    let cursor = 0
+    while (true) {
+      while (cursor < this.audioChunks.length) {
+        const chunk = this.audioChunks[cursor]
+        cursor += 1
+        yield { audioData: chunk } as any
+      }
+
+      if (!this.isStreaming) {
+        return
+      }
+
+      await new Promise<void>(resolve => {
+        this.chunkWaiters.push(resolve)
+      })
     }
   }
 
@@ -84,6 +105,7 @@ export class AudioStreamManager {
 
   clearInteractionAudio() {
     this.audioChunks = []
+    this.notifyChunkWaiters()
   }
 
   getAudioDurationMs(): number {

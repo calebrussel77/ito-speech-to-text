@@ -45,39 +45,26 @@ mock.module('fs', () => ({
   promises: mockFs,
 }))
 
-// Mock database utilities - minimal mocking for business logic tests
-// These mocks now handle both old (query, params) and new (db, query, params) signatures
-const mockRun = mock((...args: any[]) => {
-  // If first arg looks like a database object, shift it out
-  if (args[0] && typeof args[0] === 'object' && 'run' in args[0]) {
-    args.shift()
-  }
-  return Promise.resolve()
-})
+// Mock database utilities - minimal mocking for business logic tests.
+// Important: do NOT mutate the args array (it is used for call assertions).
+const mockRun = mock(
+  (_dbOrQuery: any, _queryOrParams?: any, _maybeParams?: any): Promise<void> =>
+    Promise.resolve(),
+)
 
-const mockExec = mock((...args: any[]) => {
-  // If first arg looks like a database object, shift it out
-  if (args[0] && typeof args[0] === 'object' && 'exec' in args[0]) {
-    args.shift()
-  }
-  return Promise.resolve()
-})
+const mockExec = mock(
+  (_dbOrQuery: any, _queryMaybe?: any): Promise<void> => Promise.resolve(),
+)
 
-const mockGet = mock((...args: any[]) => {
-  // If first arg looks like a database object, shift it out
-  if (args[0] && typeof args[0] === 'object' && 'get' in args[0]) {
-    args.shift()
-  }
-  return Promise.resolve(undefined)
-})
+const mockGet = mock(
+  (_dbOrQuery: any, _queryMaybe?: any, _paramsMaybe?: any): Promise<any> =>
+    Promise.resolve(undefined),
+)
 
-const mockAll = mock((...args: any[]): Promise<any[]> => {
-  // If first arg looks like a database object, shift it out
-  if (args[0] && typeof args[0] === 'object' && 'all' in args[0]) {
-    args.shift()
-  }
-  return Promise.resolve([])
-})
+const mockAll = mock(
+  (_dbOrQuery: any, _queryMaybe?: any, _paramsMaybe?: any): Promise<any[]> =>
+    Promise.resolve([]),
+)
 
 mock.module('./utils', () => ({
   run: mockRun,
@@ -130,13 +117,12 @@ mock.module('./schema', () => ({
   INITIAL_SCHEMA: `CREATE TABLE interactions (id TEXT PRIMARY KEY);`,
 }))
 
-import {
-  initializeDatabase,
-  getDb,
-  revertLastMigration,
-  wipeDatabase,
-} from './db'
 import path from 'path'
+
+const importFreshDbModule = async () => {
+  const cacheBust = `?t=${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return await import(`./db${cacheBust}`)
+}
 
 describe('Database State Management', () => {
   beforeEach(() => {
@@ -146,14 +132,11 @@ describe('Database State Management', () => {
     mockGet.mockClear()
     mockAll.mockClear()
     mockFs.unlink.mockClear()
-
-    // Reset module state by clearing require cache
-    delete require.cache[require.resolve('./db')]
   })
 
   test('should throw error when accessing uninitialized database', async () => {
     // Import fresh module to ensure uninitialized state
-    const { getDb: freshGetDb } = await import('./db')
+    const { getDb: freshGetDb } = await importFreshDbModule()
 
     expect(() => freshGetDb()).toThrow(
       'Database not initialized. Call initializeDatabase() first.',
@@ -165,6 +148,7 @@ describe('Database State Management', () => {
     mockRun.mockResolvedValue(undefined)
     mockExec.mockResolvedValue(undefined)
 
+    const { initializeDatabase, getDb } = await importFreshDbModule()
     await initializeDatabase()
     const db = getDb()
 
@@ -187,7 +171,8 @@ describe('Database State Management', () => {
     sqlite3Module.default.Database = failingDatabase as any
 
     try {
-      expect(initializeDatabase()).rejects.toThrow('Connection failed')
+      const { initializeDatabase } = await importFreshDbModule()
+      await expect(initializeDatabase()).rejects.toThrow('Connection failed')
     } finally {
       sqlite3Module.default.Database = originalDatabase
     }
@@ -211,6 +196,7 @@ describe('Migration Logic', () => {
     mockRun.mockResolvedValue(undefined)
     mockExec.mockResolvedValue(undefined)
 
+    const { initializeDatabase } = await importFreshDbModule()
     await initializeDatabase()
 
     // Should only run the remaining migration (now with db instance as first arg)
@@ -240,6 +226,7 @@ describe('Migration Logic', () => {
     console.info = consoleSpy
 
     try {
+      const { initializeDatabase } = await importFreshDbModule()
       await initializeDatabase()
       expect(consoleSpy).toHaveBeenCalledWith('Database schema is up to date.')
     } finally {
@@ -260,6 +247,7 @@ describe('Migration Logic', () => {
       return Promise.resolve(undefined)
     })
 
+    const { initializeDatabase } = await importFreshDbModule()
     await expect(initializeDatabase()).rejects.toThrow(
       'Migration 0000_initial_schema failed.',
     )
@@ -278,7 +266,8 @@ describe('Migration Validation', () => {
   test('should prevent reverting initial schema', async () => {
     mockGet.mockResolvedValue({ id: '0000_initial_schema' } as any)
 
-    expect(revertLastMigration()).rejects.toThrow(
+    const { revertLastMigration } = await importFreshDbModule()
+    await expect(revertLastMigration()).rejects.toThrow(
       'Reverting the initial schema is not supported.',
     )
   })
@@ -286,7 +275,8 @@ describe('Migration Validation', () => {
   test('should handle migration not found in code', async () => {
     mockGet.mockResolvedValue({ id: 'unknown_migration_12345' } as any)
 
-    expect(revertLastMigration()).rejects.toThrow(
+    const { revertLastMigration } = await importFreshDbModule()
+    await expect(revertLastMigration()).rejects.toThrow(
       'Migration with id unknown_migration_12345 found in DB but not in code.',
     )
   })
@@ -299,6 +289,7 @@ describe('Migration Validation', () => {
     console.info = consoleSpy
 
     try {
+      const { revertLastMigration } = await importFreshDbModule()
       await revertLastMigration()
       expect(consoleSpy).toHaveBeenCalledWith('No migrations to revert.')
     } finally {
@@ -314,6 +305,7 @@ describe('Migration Validation', () => {
     mockExec.mockResolvedValue(undefined)
     mockRun.mockResolvedValue(undefined)
 
+    const { revertLastMigration } = await importFreshDbModule()
     await revertLastMigration()
 
     // Should execute the down script
@@ -336,7 +328,8 @@ describe('Migration Validation', () => {
     mockExec.mockRejectedValueOnce(new Error('Revert failed')) // DOWN script fails
     mockExec.mockResolvedValueOnce(undefined) // ROLLBACK
 
-    expect(revertLastMigration()).rejects.toThrow(
+    const { revertLastMigration } = await importFreshDbModule()
+    await expect(revertLastMigration()).rejects.toThrow(
       'Migration 20250108130000_add_duration_to_interactions revert failed.',
     )
 
@@ -355,9 +348,6 @@ describe('File Error Handling', () => {
     mockSqliteDatabase.close.mockClear()
     mockSqliteDatabase.run.mockClear()
     mockSqliteDatabase.exec.mockClear()
-
-    // Reset module state by clearing require cache
-    delete require.cache[require.resolve('./db')]
   })
 
   /* Bun sucks and doesn't support mocked errors in tests */
@@ -391,6 +381,7 @@ describe('File Error Handling', () => {
   test('should successfully delete database file when it exists', async () => {
     mockFs.unlink.mockResolvedValue(undefined)
 
+    const { wipeDatabase } = await importFreshDbModule()
     await wipeDatabase()
 
     const expectedPath = path.join('/tmp/test-ito-app', 'ito.db')
@@ -405,6 +396,7 @@ describe('Timestamp Generation', () => {
     mockExec.mockResolvedValue(undefined)
 
     const beforeTime = Date.now()
+    const { initializeDatabase } = await importFreshDbModule()
     await initializeDatabase()
     const afterTime = Date.now()
 

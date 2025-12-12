@@ -194,8 +194,19 @@ const deleteCompleteUserData = async (userId: string) => {
     await deleteUserData(userId)
 
     // Delete server-side data - server will extract userId from authenticated token
-    const { grpcClient } = await import('../../clients/grpcClient')
-    await grpcClient.deleteUserData()
+    try {
+      const { grpcClient } = await import('../../clients/grpcClient')
+      await grpcClient.deleteUserData()
+    } catch (error: any) {
+      const message = error?.message || String(error)
+      if (message.includes('gRPC client disabled')) {
+        console.warn(
+          '[db] Skipping server-side deletion (gRPC client disabled).',
+        )
+      } else {
+        throw error
+      }
+    }
 
     console.info(`Successfully completed data deletion for user: ${userId}`)
   } catch (error) {

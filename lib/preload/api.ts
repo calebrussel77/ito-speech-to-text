@@ -132,6 +132,7 @@ const api = {
     getById: (id: string) => ipcRenderer.invoke('interactions:get-by-id', id),
 
     delete: (id: string) => ipcRenderer.invoke('interactions:delete', id),
+    clearAll: () => ipcRenderer.invoke('interactions:clear-all'),
   },
   trial: {
     complete: () => ipcRenderer.invoke('trial:complete'),

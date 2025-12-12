@@ -23,6 +23,7 @@ class AudioRecorderService extends EventEmitter {
     resolve: () => void
     reject: (reason?: any) => void
   } | null = null
+  #pendingDrainComplete = false
 
   constructor() {
     super()
@@ -87,6 +88,15 @@ class AudioRecorderService extends EventEmitter {
   public startRecording(deviceName: string): void {
     this.#sendCommand({ command: 'start', device_name: deviceName })
     console.log(`[AudioService] Recording started on device: ${deviceName}`)
+  }
+
+  /**
+   * Prepares the underlying CPAL stream for fast starts.
+   * This creates the stream/writer thread but does not begin emitting audio.
+   */
+  public prepareStream(deviceName: string): void {
+    this.#sendCommand({ command: 'prepare', device_name: deviceName })
+    console.log(`[AudioService] Stream prepared for device: ${deviceName}`)
   }
 
   /**
@@ -207,9 +217,13 @@ class AudioRecorderService extends EventEmitter {
             channels,
           })
         } else if (jsonResponse.type === 'drain-complete') {
+          this.emit('drain-complete')
           if (this.#drainPromise) {
             this.#drainPromise.resolve()
             this.#drainPromise = null
+          } else {
+            // Avoid a race where drain-complete arrives before awaitDrainComplete() is called.
+            this.#pendingDrainComplete = true
           }
         }
         // You could emit a generic 'json-message' event here if needed
@@ -236,10 +250,16 @@ class AudioRecorderService extends EventEmitter {
   }
 
   public awaitDrainComplete(timeoutMs: number = 500): Promise<void> {
+    if (this.#pendingDrainComplete) {
+      this.#pendingDrainComplete = false
+      return Promise.resolve()
+    }
+
+    // If someone is already waiting, just attach to the next drain-complete.
     if (this.#drainPromise) {
       return new Promise((resolve, reject) => {
+        this.once('drain-complete', resolve)
         this.once('error', reject)
-        this.#drainPromise = { resolve, reject }
       })
     }
     return new Promise((resolve, reject) => {

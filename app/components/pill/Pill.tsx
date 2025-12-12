@@ -60,7 +60,7 @@ const globalStyles = `
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    padding-bottom: 8px;
+    padding-bottom: 4px;
 
     pointer-events: none;
 

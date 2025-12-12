@@ -89,8 +89,31 @@ const mockGetAdvancedSettings = mock(() => ({
   macosAccessibilityContextEnabled: false,
   groqApiKey: 'gsk_test',
 }))
+
+const mockCreateNewAuthState = mock(() => ({
+  state: '',
+  codeVerifier: '',
+  codeChallenge: '',
+  codeChallengeMethod: 'S256',
+  createdAt: new Date().toISOString(),
+}))
+const mockGetCurrentUserId = mock(() => 'self-hosted')
+
 mock.module('./store', () => ({
+  createNewAuthState: mockCreateNewAuthState,
+  getCurrentUserId: mockGetCurrentUserId,
   getAdvancedSettings: mockGetAdvancedSettings,
+  defaultValues: {} as any,
+  default: {
+    get: mock(() => undefined),
+    set: mock(() => {}),
+    delete: mock(() => {}),
+  },
+  store: {
+    get: mock(() => undefined),
+    set: mock(() => {}),
+    delete: mock(() => {}),
+  },
 }))
 
 describe('ItoStreamController (local)', () => {
