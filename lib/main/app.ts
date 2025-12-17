@@ -72,8 +72,11 @@ export function createAppWindow(): BrowserWindow {
   // Handle window close behavior
   mainWindow.on('close', event => {
     if (process.platform === 'win32' && !isQuitting) {
-      const settings = store.get(STORE_KEYS.SETTINGS) as SettingsStore
-      if (settings?.runInBackground) {
+      const settings = store.get(STORE_KEYS.SETTINGS) as
+        | SettingsStore
+        | undefined
+      const runInBackground = settings?.runInBackground ?? true
+      if (runInBackground) {
         event.preventDefault()
         mainWindow?.hide()
       }
@@ -83,11 +86,17 @@ export function createAppWindow(): BrowserWindow {
   // Clean up the reference when the window is closed.
   mainWindow.on('closed', () => {
     mainWindow = null
-    // On Windows, closing the main window should quit the entire app
-    // checking !isQuitting is redundant here because if we are quitting, we want to quit.
-    // But if we just closed the window (runInBackground=false), we also want to quit.
+    // On Windows, only quit when "Run in background" is disabled.
+    // If the window was destroyed for any reason while background mode is on,
+    // keep the app alive (tray + pill + services).
     if (process.platform === 'win32') {
-      app.quit()
+      const settings = store.get(STORE_KEYS.SETTINGS) as
+        | SettingsStore
+        | undefined
+      const runInBackground = settings?.runInBackground ?? true
+      if (!runInBackground) {
+        app.quit()
+      }
     }
   })
 

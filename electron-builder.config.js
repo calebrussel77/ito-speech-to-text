@@ -116,6 +116,7 @@ module.exports = {
   nsis: {
     shortcutName: '${productName}',
     uninstallDisplayName: '${productName}-uninstaller',
+    include: 'build/installer.nsh',
     createDesktopShortcut: false,
     createStartMenuShortcut: true,
     oneClick: false,
