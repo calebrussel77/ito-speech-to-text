@@ -1,17 +1,97 @@
 name: Build and Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
+  actions: read
   id-token: write # required for OIDC role assumption
 
 jobs:
+  resolve-release-context:
+    runs-on: ubuntu-latest
+    outputs:
+      stage: ${{ steps.resolve.outputs.stage }}
+      github_environment: ${{ steps.resolve.outputs.github_environment }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release context from tag
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION="${TAG_NAME#v}"
+          STAGE=""
+
+          git fetch origin main dev --depth=1 || true
+
+          if git branch -r --contains "$GITHUB_SHA" | grep -q "origin/main"; then
+            STAGE="prod"
+          elif git branch -r --contains "$GITHUB_SHA" | grep -q "origin/dev"; then
+            STAGE="dev"
+          elif [[ "$TAG_NAME" == *"-dev"* || "$TAG_NAME" == *"-beta"* || "$TAG_NAME" == *"-rc"* ]]; then
+            STAGE="dev"
+          else
+            STAGE="prod"
+          fi
+
+          GITHUB_ENVIRONMENT=$([ "$STAGE" = "prod" ] && echo "production" || echo "develop")
+
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "github_environment=$GITHUB_ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+  verify-ci-success:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure CI Controller passed for tagged commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: sha,
+              per_page: 100,
+            });
+
+            const ciRuns = runs.filter((run) => run.name === "CI Controller");
+            if (ciRuns.length === 0) {
+              core.setFailed(`No 'CI Controller' run found for commit ${sha}. Run CI on this commit before tagging a release.`);
+              return;
+            }
+
+            const successfulRun = ciRuns.find((run) => run.conclusion === "success");
+            if (!successfulRun) {
+              const states = ciRuns.map((run) => `${run.status}/${run.conclusion}`).join(", ");
+              core.setFailed(`'CI Controller' did not succeed for commit ${sha}. Found runs: ${states}`);
+              return;
+            }
+
+            core.info(`Using successful CI Controller run #${successfulRun.run_number} for commit ${sha}.`);
+
   build-mac:
     runs-on: macos-latest
-    environment: ${{ github.event.release.target_commitish == 'main' && 'production' || 'develop' }}
+    needs: [resolve-release-context, verify-ci-success]
+    environment: ${{ needs.resolve-release-context.outputs.github_environment }}
 
     steps:
       - name: Checkout repository
@@ -42,9 +122,9 @@ jobs:
           echo "VITE_SENTRY_ENV=\"${{ vars.VITE_SENTRY_ENV }}\"" >> .env
           echo "VITE_SENTRY_TRACES_SAMPLE_RATE=\"${{ vars.VITE_SENTRY_TRACES_SAMPLE_RATE }}\"" >> .env
           echo "VITE_SENTRY_PROFILES_SAMPLE_RATE=\"${{ vars.VITE_SENTRY_PROFILES_SAMPLE_RATE }}\"" >> .env
-          echo "VITE_ITO_VERSION=\"${GITHUB_REF#refs/tags/v}\"" >> .env
-          echo "ITO_ENV=\"${{ github.event.release.target_commitish == 'main' && 'prod' || 'dev' }}\"" >> .env
-          echo "VITE_ITO_ENV=\"${{ github.event.release.target_commitish == 'main' && 'prod' || 'dev' }}\"" >> .env
+          echo "VITE_ITO_VERSION=\"${{ needs.resolve-release-context.outputs.version }}\"" >> .env
+          echo "ITO_ENV=\"${{ needs.resolve-release-context.outputs.stage }}\"" >> .env
+          echo "VITE_ITO_ENV=\"${{ needs.resolve-release-context.outputs.stage }}\"" >> .env
           echo "APPLE_ID=\"${{ secrets.APPLE_ID }}\"" >> .env
           echo "APPLE_TEAM_ID=\"${{ secrets.APPLE_TEAM_ID }}\"" >> .env
           echo "APPLE_APP_SPECIFIC_PASSWORD=\"${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}\"" >> .env
@@ -68,7 +148,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Ito-Mac-Installer
-          path: dist/Ito-${{ github.event.release.target_commitish == 'main' && 'Installer' || 'dev-Installer' }}.dmg
+          path: dist/*Installer.dmg
 
       - name: Upload Mac Build Artifacts
         uses: actions/upload-artifact@v4
@@ -83,7 +163,8 @@ jobs:
 
   build-windows-rust:
     runs-on: windows-latest
-    environment: ${{ github.event.release.target_commitish == 'main' && 'production' || 'develop' }}
+    needs: [resolve-release-context, verify-ci-success]
+    environment: ${{ needs.resolve-release-context.outputs.github_environment }}
 
     steps:
       - name: Checkout repository
@@ -150,8 +231,8 @@ jobs:
 
   build-windows:
     runs-on: ubuntu-latest
-    needs: build-windows-rust
-    environment: ${{ github.event.release.target_commitish == 'main' && 'production' || 'develop' }}
+    needs: [resolve-release-context, verify-ci-success, build-windows-rust]
+    environment: ${{ needs.resolve-release-context.outputs.github_environment }}
 
     steps:
       - name: Checkout repository
@@ -191,9 +272,9 @@ jobs:
           echo "VITE_SENTRY_ENV=\"${{ vars.VITE_SENTRY_ENV }}\"" >> .env
           echo "VITE_SENTRY_TRACES_SAMPLE_RATE=\"${{ vars.VITE_SENTRY_TRACES_SAMPLE_RATE }}\"" >> .env
           echo "VITE_SENTRY_PROFILES_SAMPLE_RATE=\"${{ vars.VITE_SENTRY_PROFILES_SAMPLE_RATE }}\"" >> .env
-          echo "VITE_ITO_VERSION=\"${GITHUB_REF#refs/tags/v}\"" >> .env
-          echo "ITO_ENV=\"${{ github.event.release.target_commitish == 'main' && 'prod' || 'dev' }}\"" >> .env
-          echo "VITE_ITO_ENV=\"${{ github.event.release.target_commitish == 'main' && 'prod' || 'dev' }}\"" >> .env
+          echo "VITE_ITO_VERSION=\"${{ needs.resolve-release-context.outputs.version }}\"" >> .env
+          echo "ITO_ENV=\"${{ needs.resolve-release-context.outputs.stage }}\"" >> .env
+          echo "VITE_ITO_ENV=\"${{ needs.resolve-release-context.outputs.stage }}\"" >> .env
           echo "GH_TOKEN=\"${{ secrets.GITHUB_TOKEN }}\"" >> .env
           echo "GRPC_BASE_URL=\"${{ vars.GRPC_BASE_URL }}\"" >> .env
           echo "Created .env file:"
@@ -307,8 +388,8 @@ jobs:
 
   upload-to-s3:
     runs-on: ubuntu-latest
-    needs: [build-mac, build-windows]
-    environment: ${{ github.event.release.target_commitish == 'main' && 'production' || 'develop' }}
+    needs: [resolve-release-context, build-mac, build-windows]
+    environment: ${{ needs.resolve-release-context.outputs.github_environment }}
 
     steps:
       - name: Download Mac Build Artifacts
@@ -331,7 +412,7 @@ jobs:
 
       - name: Upload Build Output to S3
         run: |
-          echo "Deploying version ${{ github.ref_name }} to S3"
+          echo "Deploying version ${{ needs.resolve-release-context.outputs.tag_name }} to S3"
 
           BUCKET=s3://${{ vars.AWS_STAGE }}-ito-releases/releases
 
@@ -367,8 +448,8 @@ jobs:
             -name '*.blockmap' \
           \) | xargs -I{} basename {} > uploaded_root_files.txt
 
-          echo "Uploading full combined dist to versioned folder: $BUCKET/${{ github.ref_name }}/"
-          aws s3 cp combined-dist $BUCKET/${{ github.ref_name }}/ --recursive
+          echo "Uploading full combined dist to versioned folder: $BUCKET/${{ needs.resolve-release-context.outputs.tag_name }}/"
+          aws s3 cp combined-dist $BUCKET/${{ needs.resolve-release-context.outputs.tag_name }}/ --recursive
 
           echo "Uploading selected files to root of releases/"
           for FILE in \
@@ -423,7 +504,7 @@ jobs:
       - name: Upload installers to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.resolve-release-context.outputs.tag_name }}
           files: |
             mac-dist/*.dmg
             windows-dist/*.exe

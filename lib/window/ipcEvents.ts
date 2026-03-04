@@ -9,6 +9,7 @@ import {
   checkMicrophonePermission,
 } from '../utils/crossPlatform'
 import { getUpdateStatus, installUpdateNow } from '../main/autoUpdaterWrapper'
+import { buildLoginItemSettings } from '../main/loginItem'
 
 import {
   startKeyListener,
@@ -83,10 +84,7 @@ export function registerIPC() {
   // Login Item Settings
   handleIPC('set-login-item-settings', (_e, enabled: boolean) => {
     try {
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        openAsHidden: false,
-      })
+      app.setLoginItemSettings(buildLoginItemSettings(enabled))
       console.log(`Successfully set login item to: ${enabled}`)
     } catch (error: any) {
       log.error('Failed to set login item settings:', error)

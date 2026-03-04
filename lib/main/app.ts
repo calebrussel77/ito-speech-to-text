@@ -20,8 +20,14 @@ export function getPillWindow(): BrowserWindow | null {
   return pillWindow
 }
 
-// --- No changes to createAppWindow ---
-export function createAppWindow(): BrowserWindow {
+type CreateAppWindowOptions = {
+  showOnReady?: boolean
+}
+
+export function createAppWindow(
+  options: CreateAppWindowOptions = {},
+): BrowserWindow {
+  const { showOnReady = true } = options
   // Create the main window.
   mainWindow = new BrowserWindow({
     width: 1170,
@@ -43,7 +49,14 @@ export function createAppWindow(): BrowserWindow {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow!.show()
+    if (
+      showOnReady &&
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !mainWindow.isVisible()
+    ) {
+      mainWindow.show()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler(details => {

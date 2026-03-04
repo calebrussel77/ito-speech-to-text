@@ -247,6 +247,26 @@ bun run format             # Run Prettier
 bun run lint:fix           # Fix linting issues
 ```
 
+### Release CI/CD (GitHub)
+
+Releases are now automated from Git tags:
+
+1. Merge your changes to `main` (production) or `dev` (develop channel) and wait for `CI Controller` to pass.
+2. Create and push a semantic version tag from that commit:
+
+```bash
+git tag v0.2.4
+git push origin v0.2.4
+```
+
+3. GitHub Actions (`.github/workflows/build.yml`) will automatically:
+   - verify `CI Controller` already succeeded on the tagged commit,
+   - build macOS and Windows installers,
+   - upload artifacts to S3/CDN,
+   - attach installers to the GitHub Release for that tag.
+
+Use pre-release suffixes like `-beta` or `-rc` (example: `v0.3.0-beta.1`) to route the build to the develop environment.
+
 ---
 
 ## 🏗️ Architecture

@@ -32,6 +32,10 @@ import { createAppTray } from './tray'
 import { initializeAutoUpdater } from './autoUpdaterWrapper'
 import { teardown } from './teardown'
 import { ITO_ENV } from './env'
+import {
+  syncLoginItemWithStoredSettings,
+  wasAutoLaunchedAtLogin,
+} from './loginItem'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -40,24 +44,68 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+const delay = (ms: number) =>
+  new Promise(resolve => {
+    setTimeout(resolve, ms)
+  })
+
+const initializeWithRetry = async (
+  label: string,
+  fn: () => Promise<void>,
+  maxAttempts = 3,
+): Promise<boolean> => {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fn()
+      return true
+    } catch (error) {
+      console.error(
+        `[Startup] Failed to initialize ${label} (attempt ${attempt}/${maxAttempts}).`,
+        error,
+      )
+
+      if (attempt < maxAttempts) {
+        await delay(1000 * attempt)
+      }
+    }
+  }
+
+  return false
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Initialize the database BEFORE logging so KV writes have a schema
-  try {
-    await initializeDatabase()
-  } catch (error) {
-    console.error('Failed to initialize database, quitting app.', error)
+  const dbInitialized = await initializeWithRetry(
+    'database',
+    initializeDatabase,
+  )
+  if (!dbInitialized) {
+    console.error(
+      '[Startup] Database initialization failed after retries. Quitting app.',
+    )
+    app.quit()
     return
   }
 
   // Initialize KV-backed store and run migrations before anything reads/writes
-  try {
-    await initializeStore()
-  } catch (err) {
-    console.error('Failed to initialize main store, quitting app.', err)
+  const storeInitialized = await initializeWithRetry('store', initializeStore)
+  if (!storeInitialized) {
+    console.error(
+      '[Startup] Store initialization failed after retries. Quitting app.',
+    )
+    app.quit()
     return
+  }
+
+  // Keep OS login-item registration in sync with persisted settings.
+  // This also ensures startup arguments are present for hidden auto-launch mode.
+  try {
+    syncLoginItemWithStoredSettings()
+  } catch (error) {
+    console.error('[Startup] Failed to sync login item settings.', error)
   }
 
   // Initialize logging after DB + store so batched log persistence can write
@@ -107,7 +155,8 @@ app.whenReady().then(async () => {
   }
 
   // Create windows
-  createAppWindow()
+  const autoLaunchedAtLogin = wasAutoLaunchedAtLogin()
+  createAppWindow({ showOnReady: !autoLaunchedAtLogin })
   createPillWindow()
   startPillPositioner()
 
