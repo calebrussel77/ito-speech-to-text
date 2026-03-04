@@ -14,10 +14,12 @@ export default function GeneralSettingsContent() {
   const {
     shareAnalytics,
     launchAtLogin,
+    interactionSounds,
     showItoBarAlways,
     showAppInDock,
     setShareAnalytics,
     setLaunchAtLogin,
+    setInteractionSounds,
     setShowItoBarAlways,
     setShowAppInDock,
     runInBackground,
@@ -59,6 +61,21 @@ export default function GeneralSettingsContent() {
             <Switch
               checked={launchAtLogin}
               onCheckedChange={setLaunchAtLogin}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-foreground">
+                Interaction sounds
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Play a sound after a voice transcription is completed.
+              </div>
+            </div>
+            <Switch
+              checked={interactionSounds}
+              onCheckedChange={setInteractionSounds}
             />
           </div>
 

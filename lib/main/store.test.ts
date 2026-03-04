@@ -43,6 +43,7 @@ describe('KV-backed Store', () => {
     const settings = store.get('settings')
     expect(settings.shareAnalytics).toBe(true)
     expect(settings.launchAtLogin).toBe(true)
+    expect(settings.interactionSounds).toBe(false)
     expect(settings.isShortcutGloballyEnabled).toBe(false)
     const main = store.get('main')
     expect(main.navExpanded).toBe(true)

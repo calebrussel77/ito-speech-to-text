@@ -9,10 +9,12 @@ import { TextInserter } from './text/TextInserter'
 import { interactionManager } from './interactions/InteractionManager'
 import { contextGrabber } from './context/ContextGrabber'
 import { GrammarRulesService } from './grammar/GrammarRulesService'
-import { getAdvancedSettings } from './store'
+import store, { getAdvancedSettings } from './store'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 import { LocalTranscriptionError } from './transcription/LocalTranscriptionService'
+import { STORE_KEYS } from '../constants/store-keys'
+import { shell } from 'electron'
 
 export class ItoSessionManager {
   private readonly MINIMUM_AUDIO_DURATION_MS = 100
@@ -127,6 +129,7 @@ export class ItoSessionManager {
         sampleRate,
         undefined,
       )
+      this.playInteractionCompletionSoundIfEnabled()
       console.log(
         '[itoSessionManager] Interaction stored (audio omitted) duration:',
         durationMs,
@@ -149,6 +152,13 @@ export class ItoSessionManager {
     log.error('[itoSessionManager] Transcription failed:', message)
     timingCollector.clearInteraction()
     interactionManager.clearCurrentInteraction()
+  }
+
+  private playInteractionCompletionSoundIfEnabled() {
+    const settings = store.get(STORE_KEYS.SETTINGS)
+    if (settings?.interactionSounds) {
+      shell.beep()
+    }
   }
 }
 

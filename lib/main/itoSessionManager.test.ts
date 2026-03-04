@@ -88,8 +88,19 @@ mock.module('./grammar/GrammarRulesService', () => ({
 const mockGetAdvancedSettings = mock(() => ({
   grammarServiceEnabled: false,
 }))
+const mockStore = {
+  get: mock((_path: string) => ({ interactionSounds: false })),
+}
 mock.module('./store', () => ({
+  default: mockStore,
   getAdvancedSettings: mockGetAdvancedSettings,
+}))
+
+const mockShell = {
+  beep: mock(),
+}
+mock.module('electron', () => ({
+  shell: mockShell,
 }))
 
 mock.module('electron-log', () => ({
@@ -105,6 +116,9 @@ beforeEach(() => {
   Object.values(mockGrammarRulesService).forEach(fn => fn.mockClear())
   Object.values(mockTimingCollector).forEach(fn => fn.mockClear())
   mockGetAdvancedSettings.mockClear()
+  mockStore.get.mockClear()
+  mockStore.get.mockReturnValue({ interactionSounds: false })
+  mockShell.beep.mockClear()
 
   mockItoStreamController.getAudioDurationMs.mockReturnValue(500)
   mockItoStreamController.processLocalTranscription.mockResolvedValue({
@@ -164,9 +178,53 @@ describe('itoSessionManager (local mode)', () => {
     expect(mockItoStreamController.processLocalTranscription).toHaveBeenCalled()
     expect(mockTextInserter.insertText).toHaveBeenCalledWith('test transcript')
     expect(mockInteractionManager.createInteraction).toHaveBeenCalled()
+    expect(mockShell.beep).not.toHaveBeenCalled()
+  })
+
+  test('plays completion sound when interaction sounds are enabled', async () => {
+    mockStore.get.mockReturnValue({ interactionSounds: true })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.completeSession()
+
+    expect(mockShell.beep).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not play completion sound when no transcript is returned', async () => {
+    mockStore.get.mockReturnValue({ interactionSounds: true })
+    mockItoStreamController.processLocalTranscription.mockResolvedValue({
+      transcript: '',
+      audioBuffer: Buffer.alloc(0),
+      sampleRate: 16000,
+      durationMs: 500,
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.completeSession()
+
+    expect(mockShell.beep).not.toHaveBeenCalled()
+  })
+
+  test('does not play completion sound when transcription fails', async () => {
+    mockStore.get.mockReturnValue({ interactionSounds: true })
+    mockItoStreamController.processLocalTranscription.mockRejectedValue(
+      new Error('transcription failed'),
+    )
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.completeSession()
+
+    expect(mockShell.beep).not.toHaveBeenCalled()
   })
 
   test('skips processing when audio is too short', async () => {
+    mockStore.get.mockReturnValue({ interactionSounds: true })
     mockItoStreamController.getAudioDurationMs.mockReturnValue(50)
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
@@ -176,5 +234,6 @@ describe('itoSessionManager (local mode)', () => {
 
     expect(mockItoStreamController.cancelTranscription).toHaveBeenCalled()
     expect(mockItoStreamController.processLocalTranscription).not.toHaveBeenCalled()
+    expect(mockShell.beep).not.toHaveBeenCalled()
   })
 })
