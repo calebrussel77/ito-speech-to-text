@@ -127,9 +127,18 @@ export class ContextGrabber {
       }
     }
 
-    // Fallback to keyboard-based method
+    // Fallback to keyboard-based method. This simulates Ctrl+C, which is a
+    // SIGINT in terminals — never do it when a terminal-like app has focus.
     console.log('[ContextGrabber] Using keyboard method for selected text')
     try {
+      const canGetContext = await canGetContextFromCurrentApp()
+      if (!canGetContext) {
+        console.log(
+          '[ContextGrabber] Skipping selected text read for current app',
+        )
+        return ''
+      }
+
       const text = await timingCollector.timeAsync(
         TimingEventName.SELCTED_TEXT_GATHER,
         async () => await getSelectedTextString(),

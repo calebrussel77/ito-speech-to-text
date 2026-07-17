@@ -63,7 +63,36 @@ const TERMINAL_APPS = new Set([
   'tilix',
   'guake',
   'yakuake',
+
+  // Windows process names (active-window appName may be the executable stem)
+  'windowsterminal',
+  'wt',
+  'conhost',
+  'cmd',
+  'pwsh',
+  'mintty',
+  'openconsole',
+
+  // Apps embedding a terminal where synthetic keystrokes are destructive
+  'claude',
+  'cursor',
+  'windsurf',
+  'ghostty',
+  'wave',
 ])
+
+// Substring fallback: catches names the exact list misses (e.g. "Windows
+// Terminal Preview", "iTerm2 Beta", unknown terminal emulators). Any app whose
+// name contains one of these is treated as a terminal.
+const TERMINAL_NAME_FRAGMENTS = [
+  'terminal',
+  'term',
+  'console',
+  'cmd',
+  'shell',
+  'bash',
+  'claude',
+]
 
 const AXApiNotSupportedApps = new Set([
   'visual studio code',
@@ -90,8 +119,13 @@ export async function canGetContextWithAccessibilityApis(): Promise<boolean> {
 }
 
 export function isTerminalApplication(appName: string): boolean {
-  const lowerAppName = appName.toLowerCase()
-  return TERMINAL_APPS.has(lowerAppName)
+  const normalized = appName.toLowerCase().replace(/\.exe$/, '').trim()
+  if (TERMINAL_APPS.has(normalized)) {
+    return true
+  }
+  return TERMINAL_NAME_FRAGMENTS.some(fragment =>
+    normalized.includes(fragment),
+  )
 }
 
 export async function canGetContextFromCurrentApp(): Promise<boolean> {
