@@ -26,6 +26,7 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : l
 
 <!-- une ligne par ticket clos : [titre](tickets/xxx.md) — gist de la réponse -->
 
+- [Commit du travail en cours « son de complétion »](tickets/001-commit-wip-son-completion.md) — Livré en trois commits (`4ad759f`, `b5b0bd0`, `a37a7d0`) : feature + correctifs de types, exclusions lint/git (`opensrc/`, `.history/` — le lint passait de 2h+ à ~60 s), et la carte. Arbre propre ; 11 erreurs `@ts-nocheck` préexistantes hors WIP signalées à part.
 - [Recherche : optimiser Groq au maximum](tickets/010-recherche-groq-optimisation.md) — Le free tier Groq tient l'usage de Caleb avec ~8x de marge (8 h d'audio/jour gratuites) ; leviers inexploités : `language: 'fr'`, prompt en FR ponctué avec le lexique, `temperature: 0`, filtrage no_speech/avg_logprob par segment, VAD/durée minimale ; garder large-v3 (pas turbo) et le prétraitement actuel ; Groq n'a pas de streaming ; AssemblyAI ne se justifie que pour le texte live ou si son code-switching prouve sa supériorité à l'essai.
 - [Recherche : capacités AssemblyAI pour le profil Ito](tickets/003-recherche-assemblyai.md) — Oui sur toute la ligne : FR supporté en streaming GA (Universal-Streaming Multilingual, code-switching FR/EN natif, P50 303 ms, PCM 16 kHz d'Ito accepté tel quel) ; alternative batch quasi-instantanée découverte (Sync API, ~134 ms par clip < 2 min) ; keyterms jusqu'à 1 000 termes en FR ; ~$2-14/mois selon la voie ; LeMUR mort → LLM Gateway ; $50 de crédits gratuits sans carte.
 
