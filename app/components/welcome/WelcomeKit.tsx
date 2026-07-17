@@ -1,6 +1,4 @@
-// @ts-nocheck
 import CreateAccountContent from './contents/CreateAccountContent'
-import SignInContent from './contents/SignInContent'
 import ReferralContent from './contents/ReferralContent'
 import DataControlContent from './contents/DataControlContent'
 import PermissionsContent from './contents/PermissionsContent'
@@ -13,12 +11,10 @@ import { useEffect } from 'react'
 import './styles.css'
 import { usePermissionsStore } from '../../store/usePermissionsStore'
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
-import { useAuthStore } from '@/app/store/useAuthStore'
 import IntroducingIntelligentModeContent from './contents/IntroducingIntelligentModeContent'
 
 export default function WelcomeKit() {
   const { onboardingStep } = useOnboardingStore()
-  const { isAuthenticated, user } = useAuthStore()
 
   const onboardingStepOrder = [
     CreateAccountContent,
@@ -64,4 +60,3 @@ export default function WelcomeKit() {
     </div>
   )
 }
-// @ts-nocheck

@@ -1,11 +1,5 @@
-// @ts-nocheck
 import { create } from 'zustand'
-import type {
-  AuthState,
-  AuthUser,
-  AuthTokens,
-  AuthStore,
-} from '../../lib/main/store'
+import type { AuthState, AuthUser, AuthTokens } from '../../lib/main/store'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
 
 interface AuthZustandStore {
@@ -31,10 +25,6 @@ interface AuthZustandStore {
 
 // Initialize from electron store
 const getInitialState = () => {
-  const storedAuth = window.electron?.store?.get(STORE_KEYS.AUTH) as
-    | (AuthStore & { isSelfHosted?: boolean })
-    | undefined
-
   // Always use self-hosted mode (authentication bypassed)
   const selfHostedUser: AuthUser = {
     id: 'self-hosted',
@@ -205,4 +195,3 @@ export const useAuthStore = create<AuthZustandStore>((set, get) => {
     },
   }
 })
-// @ts-nocheck

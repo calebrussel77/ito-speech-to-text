@@ -11,7 +11,7 @@ import { useShortcutEditingStore } from '@/app/store/useShortcutEditingStore'
 
 interface KeyboardShortcutEditorProps {
   shortcut: KeyboardShortcutConfig
-  onShortcutChange: (shortcutId: string, newShortcutKeys: string[]) => void
+  onShortcutChange: (shortcutId: string, newShortcutKeys: KeyName[]) => void
   hideTitle?: boolean
   className?: string
   keySize?: number
@@ -53,7 +53,7 @@ export default function KeyboardShortcutEditor({
   const { start, stop, activeEditor } = useShortcutEditingStore()
 
   const cleanupRef = useRef<(() => void) | null>(null)
-  const keyStateRef = useRef<KeyState>(new KeyState(shortcutKeys))
+  const keyStateRef = useRef<KeyState>(new KeyState())
   const [pressedKeys, setPressedKeys] = useState<string[]>([])
   const [isEditing, setIsEditing] = useState(false)
   const [newShortcut, setNewShortcut] = useState<KeyName[]>([])
@@ -120,11 +120,6 @@ export default function KeyboardShortcutEditor({
     },
     [isEditing, newShortcut, platform],
   )
-
-  useEffect(() => {
-    // Update key state when shortcut changes
-    keyStateRef.current.updateShortcut(shortcutKeys)
-  }, [shortcut, shortcutKeys])
 
   useEffect(() => {
     // Capture the current keyState ref value for cleanup
@@ -206,7 +201,6 @@ export default function KeyboardShortcutEditor({
       // Don't save empty shortcuts
       return
     }
-    keyStateRef.current.updateShortcut(newShortcut)
     onShortcutChange(shortcut.id, newShortcut)
     setIsEditing(false)
     setIsShortcutEnabled(true)

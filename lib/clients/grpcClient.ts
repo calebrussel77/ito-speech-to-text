@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   ItoService,
   TimingService,
@@ -8,7 +7,6 @@ import {
   DictionaryItem as DictionaryItemPb,
   AdvancedSettings as AdvancedSettingsPb,
   TimingReport,
-  TimingEvent,
   CreateNoteRequestSchema,
   UpdateNoteRequestSchema,
   DeleteNoteRequestSchema,
@@ -25,8 +23,6 @@ import {
   GetAdvancedSettingsRequestSchema,
   UpdateAdvancedSettingsRequestSchema,
   SubmitTimingReportsRequestSchema,
-  TimingReportSchema,
-  TimingEventSchema,
   ItoMode,
   TranscribeStreamRequest,
 } from '@/app/generated/ito_pb'
@@ -571,4 +567,3 @@ class GrpcClient {
 }
 
 export const grpcClient = new GrpcClient()
-// @ts-nocheck

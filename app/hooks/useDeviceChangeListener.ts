@@ -1,6 +1,4 @@
-// @ts-nocheck
 import { useEffect } from 'react'
-import log from 'electron-log'
 
 /**
  * A React hook that listens for changes in media devices (e.g., plugging in or
@@ -31,5 +29,3 @@ export const useDeviceChangeListener = (): void => {
     }
   }, []) // The empty dependency array ensures this effect runs only once on mount.
 }
-// @ts-nocheck
-// @ts-nocheck

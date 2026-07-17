@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { KeyEvent } from '@/lib/preload'
 import { KeyboardShortcutConfig } from '@/lib/main/store'
 import { ItoMode } from '../generated/ito_pb'
@@ -281,20 +280,6 @@ export function validateShortcutForDuplicate(
  */
 export class KeyState {
   private pressedKeys: Set<KeyName> = new Set()
-  private shortcut: KeyName[] = []
-
-  constructor(shortcut: KeyName[] = []) {
-    this.updateShortcut(shortcut)
-  }
-
-  /**
-   * Updates the shortcut
-   * @param shortcut The shortcut to set, as an array of normalized key names.
-   */
-  updateShortcut(shortcut: KeyName[]) {
-    // Normalize legacy keys to new format
-    this.shortcut = shortcut.map(normalizeLegacyKey)
-  }
 
   /**
    * Updates the key state based on a key event
@@ -340,5 +325,3 @@ export class KeyState {
     this.pressedKeys.clear()
   }
 }
-// @ts-nocheck
-// @ts-nocheck

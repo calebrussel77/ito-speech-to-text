@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { InteractionManager } from './InteractionManager'
 import { STORE_KEYS } from '../../constants/store-keys'
 
-const mockUpsert = mock(() => Promise.resolve())
+const mockUpsert = mock((_interaction: unknown) => Promise.resolve())
 mock.module('../sqlite/repo', () => ({
   InteractionsTable: {
     upsert: mockUpsert,
@@ -11,7 +10,7 @@ mock.module('../sqlite/repo', () => ({
 }))
 
 const mockMainStore = {
-  get: mock(() => ({ id: 'test-user-123' })),
+  get: mock((): { id: string } | null => ({ id: 'test-user-123' })),
 }
 mock.module('../store', () => ({
   default: mockMainStore,
@@ -257,4 +256,3 @@ describe('InteractionManager', () => {
     })
   })
 })
-// @ts-nocheck

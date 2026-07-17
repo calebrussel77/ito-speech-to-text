@@ -519,4 +519,3 @@ export async function initializeStore() {
 }
 
 export default store
-// @ts-nocheck

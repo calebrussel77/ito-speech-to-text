@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 
 // Mock the database utilities
@@ -444,7 +443,9 @@ describe('DictionaryTable - Business Logic', () => {
       }
 
       // Mock unique constraint error
-      const constraintError = new Error('UNIQUE constraint failed')
+      const constraintError = new Error('UNIQUE constraint failed') as Error & {
+        code?: string
+      }
       constraintError.code = 'SQLITE_CONSTRAINT_UNIQUE'
       mockRun.mockRejectedValue(constraintError)
 
@@ -541,7 +542,9 @@ describe('DictionaryTable - Business Logic', () => {
     })
 
     test('should handle unique constraint error in update', async () => {
-      const constraintError = new Error('UNIQUE constraint failed')
+      const constraintError = new Error('UNIQUE constraint failed') as Error & {
+        code?: string
+      }
       constraintError.code = 'SQLITE_CONSTRAINT_UNIQUE'
       mockRun.mockRejectedValue(constraintError)
 
@@ -606,4 +609,3 @@ describe('DictionaryTable - Business Logic', () => {
     })
   })
 })
-// @ts-nocheck

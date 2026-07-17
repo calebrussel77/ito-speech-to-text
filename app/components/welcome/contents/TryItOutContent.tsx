@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Button } from '@/app/components/ui/button'
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
@@ -13,7 +12,6 @@ import React from 'react'
 import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
-import { KeyName } from '@/lib/types/keyboard'
 
 export default function TryItOut() {
   const { decrementOnboardingStep, setOnboardingCompleted } =
@@ -266,4 +264,3 @@ export default function TryItOut() {
     </div>
   )
 }
-// @ts-nocheck

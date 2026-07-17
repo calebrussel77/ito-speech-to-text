@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Button } from '@/app/components/ui/button'
 import {
   Tooltip,
@@ -115,7 +114,6 @@ export default function SignInContent() {
   const { clearAuth } = useAuthStore()
   const { loadNotes } = useNotesStore()
   const { loadEntries } = useDictionaryStore()
-  const { resetOnboarding } = useOnboardingStore()
   const [isServerHealthy, setIsServerHealthy] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -484,4 +482,3 @@ export default function SignInContent() {
     </div>
   )
 }
-// @ts-nocheck

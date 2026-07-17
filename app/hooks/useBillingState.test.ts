@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test'
 import React from 'react'
 import { createRoot, Root } from 'react-dom/client'
@@ -54,8 +53,8 @@ beforeEach(() => {
   mockElectronStore.get.mockClear()
 
   // Create fresh mocks for event listeners
-  mockAddEventListener = mock((event: string, handler: () => void) => {})
-  mockRemoveEventListener = mock((event: string, handler: () => void) => {})
+  mockAddEventListener = mock((_event: string, _handler: () => void) => {})
+  mockRemoveEventListener = mock((_event: string, _handler: () => void) => {})
 
   // Setup window mocks with addEventListener/removeEventListener
   globalThis.window = {
@@ -583,7 +582,7 @@ describe('useBillingState', () => {
     const originalClearInterval = global.clearInterval
     let intervalCallback: (() => void) | null = null
     const intervalId: any = {}
-    const mockSetInterval = mock((callback: () => void, delay: number) => {
+    const mockSetInterval = mock((callback: () => void, _delay: number) => {
       intervalCallback = callback
       return intervalId
     })
@@ -623,5 +622,3 @@ describe('useBillingState', () => {
     global.clearInterval = originalClearInterval
   })
 })
-// @ts-nocheck
-// @ts-nocheck
