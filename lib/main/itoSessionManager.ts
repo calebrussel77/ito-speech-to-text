@@ -16,12 +16,41 @@ import { LocalTranscriptionError } from './transcription/LocalTranscriptionServi
 import { STORE_KEYS } from '../constants/store-keys'
 import { playInteractionCompletionSound } from './soundFeedback'
 
+export type SessionState = 'idle' | 'starting' | 'recording' | 'processing'
+
 export class ItoSessionManager {
   private readonly MINIMUM_AUDIO_DURATION_MS = 100
   private textInserter = new TextInserter()
   private grammarRulesService = new GrammarRulesService('')
 
-  public async startSession(mode: ItoMode) {
+  // Explicit session state machine. All entry points (keyboard handler, pill
+  // IPC) funnel through this class, so guarding transitions here makes
+  // interleaved start/complete/cancel calls safe without callers awaiting.
+  private state: SessionState = 'idle'
+  private startPromise: Promise<string | null> | null = null
+
+  public getState(): SessionState {
+    return this.state
+  }
+
+  public async startSession(mode: ItoMode): Promise<string | null> {
+    if (this.state !== 'idle') {
+      console.log(
+        `[itoSessionManager] Ignoring startSession while ${this.state}`,
+      )
+      return null
+    }
+
+    this.state = 'starting'
+    this.startPromise = this.doStartSession(mode)
+    try {
+      return await this.startPromise
+    } finally {
+      this.startPromise = null
+    }
+  }
+
+  private async doStartSession(mode: ItoMode): Promise<string | null> {
     console.log('[itoSessionManager] Starting session with mode:', mode)
 
     let interactionId = interactionManager.getCurrentInteractionId()
@@ -38,7 +67,10 @@ export class ItoSessionManager {
     const started = await itoStreamController.initialize(mode)
     if (!started) {
       log.error('[itoSessionManager] Failed to initialize itoStreamController')
-      return
+      this.state = 'idle'
+      // Keep the UI in sync: nothing is recording.
+      recordingStateNotifier.notifyRecordingStopped()
+      return null
     }
 
     voiceInputService.startAudioRecording()
@@ -52,6 +84,7 @@ export class ItoSessionManager {
     timingCollector.startInteraction()
     timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
 
+    this.state = 'recording'
     return interactionId
   }
 
@@ -67,11 +100,22 @@ export class ItoSessionManager {
   }
 
   public setMode(mode: ItoMode) {
+    if (this.state !== 'starting' && this.state !== 'recording') {
+      console.log(`[itoSessionManager] Ignoring setMode while ${this.state}`)
+      return
+    }
     itoStreamController.setMode(mode)
     recordingStateNotifier.notifyRecordingStarted(mode)
   }
 
   public async cancelSession() {
+    // Valid from any state: cancel is a force-reset to idle and doubles as a
+    // recovery escape hatch when something upstream got out of sync.
+    if (this.startPromise) {
+      await this.startPromise.catch(() => {})
+    }
+    this.state = 'idle'
+
     timingCollector.clearInteraction()
     itoStreamController.cancelTranscription()
     interactionManager.clearCurrentInteraction()
@@ -82,35 +126,64 @@ export class ItoSessionManager {
   }
 
   public async completeSession() {
-    timingCollector.endTiming(TimingEventName.INTERACTION_ACTIVE)
-    await voiceInputService.stopAudioRecording()
-
-    const audioDurationMs = itoStreamController.getAudioDurationMs()
-    if (audioDurationMs < this.MINIMUM_AUDIO_DURATION_MS) {
-      console.log(
-        `[itoSessionManager] Audio too short (${audioDurationMs}ms < ${this.MINIMUM_AUDIO_DURATION_MS}ms), cancelling`,
-      )
-      itoStreamController.cancelTranscription()
-      recordingStateNotifier.notifyRecordingStopped()
-      return
+    // A fast press/release can fire completion while the session is still
+    // starting: wait for the start to settle, then decide.
+    if (this.startPromise) {
+      await this.startPromise.catch(() => {})
     }
 
-    itoStreamController.endInteraction()
-    recordingStateNotifier.notifyRecordingStopped()
-    recordingStateNotifier.notifyProcessingStarted()
+    if (this.state !== 'recording') {
+      console.log(
+        `[itoSessionManager] Ignoring completeSession while ${this.state}`,
+      )
+      return
+    }
+    this.state = 'processing'
 
     try {
-      const result = await itoStreamController.processLocalTranscription()
-      await this.handleTranscriptionResponse(result)
-    } catch (error) {
-      await this.handleTranscriptionError(error)
+      timingCollector.endTiming(TimingEventName.INTERACTION_ACTIVE)
+      await voiceInputService.stopAudioRecording()
+
+      const audioDurationMs = itoStreamController.getAudioDurationMs()
+      if (audioDurationMs < this.MINIMUM_AUDIO_DURATION_MS) {
+        console.log(
+          `[itoSessionManager] Audio too short (${audioDurationMs}ms < ${this.MINIMUM_AUDIO_DURATION_MS}ms), cancelling`,
+        )
+        itoStreamController.cancelTranscription()
+        recordingStateNotifier.notifyRecordingStopped()
+        return
+      }
+
+      itoStreamController.endInteraction()
+      recordingStateNotifier.notifyRecordingStopped()
+      recordingStateNotifier.notifyProcessingStarted()
+
+      try {
+        const result = await itoStreamController.processLocalTranscription()
+        await this.handleTranscriptionResponse(result)
+      } catch (error) {
+        await this.handleTranscriptionError(error)
+      } finally {
+        recordingStateNotifier.notifyProcessingStopped()
+      }
     } finally {
-      recordingStateNotifier.notifyProcessingStopped()
+      // cancelSession may already have reset the state while we were
+      // processing; only leave 'processing' if we still own it.
+      if (this.state === 'processing') {
+        this.state = 'idle'
+      }
     }
   }
 
   private async handleTranscriptionResponse(result: LocalTranscriptionResult) {
     const { transcript, sampleRate, durationMs } = result
+
+    if (this.state !== 'processing') {
+      console.log(
+        '[itoSessionManager] Session cancelled during processing, discarding transcript',
+      )
+      return
+    }
 
     if (transcript) {
       let textToInsert = transcript

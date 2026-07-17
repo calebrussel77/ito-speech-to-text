@@ -120,6 +120,9 @@ beforeEach(() => {
   mockStore.get.mockClear()
   mockStore.get.mockReturnValue({ interactionSounds: false })
 
+  mockItoStreamController.initialize.mockImplementation(() =>
+    Promise.resolve(true),
+  )
   mockItoStreamController.getAudioDurationMs.mockReturnValue(500)
   mockItoStreamController.processLocalTranscription.mockResolvedValue({
     transcript: 'test transcript',
@@ -237,5 +240,118 @@ describe('itoSessionManager (local mode)', () => {
     expect(mockItoStreamController.cancelTranscription).toHaveBeenCalled()
     expect(mockItoStreamController.processLocalTranscription).not.toHaveBeenCalled()
     expect(mockSoundFeedback.playInteractionCompletionSound).not.toHaveBeenCalled()
+  })
+})
+
+describe('itoSessionManager (state machine)', () => {
+  test('ignores a second startSession while one is active', async () => {
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    const second = await session.startSession(ItoMode.TRANSCRIBE)
+
+    expect(second).toBeNull()
+    expect(mockItoStreamController.initialize).toHaveBeenCalledTimes(1)
+    expect(session.getState()).toBe('recording')
+  })
+
+  test('completeSession without an active session is a no-op', async () => {
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.completeSession()
+
+    expect(mockVoiceInputService.stopAudioRecording).not.toHaveBeenCalled()
+    expect(
+      mockItoStreamController.processLocalTranscription,
+    ).not.toHaveBeenCalled()
+  })
+
+  test('completeSession during a slow start waits for the start to settle', async () => {
+    let resolveInit: (value: boolean) => void = () => {}
+    mockItoStreamController.initialize.mockImplementation(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveInit = resolve
+        }),
+    )
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    const startPromise = session.startSession(ItoMode.TRANSCRIBE)
+    const completePromise = session.completeSession()
+    expect(
+      mockItoStreamController.processLocalTranscription,
+    ).not.toHaveBeenCalled()
+
+    resolveInit(true)
+    await startPromise
+    await completePromise
+
+    expect(
+      mockItoStreamController.processLocalTranscription,
+    ).toHaveBeenCalledTimes(1)
+    expect(session.getState()).toBe('idle')
+  })
+
+  test('failed start resets to idle and allows a new session', async () => {
+    mockItoStreamController.initialize.mockImplementationOnce(() =>
+      Promise.resolve(false),
+    )
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    const first = await session.startSession(ItoMode.TRANSCRIBE)
+
+    expect(first).toBeNull()
+    expect(session.getState()).toBe('idle')
+    expect(mockVoiceInputService.startAudioRecording).not.toHaveBeenCalled()
+    expect(mockRecordingStateNotifier.notifyRecordingStopped).toHaveBeenCalled()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    expect(session.getState()).toBe('recording')
+  })
+
+  test('cancelSession during processing discards the transcript', async () => {
+    let resolveProcess: (value: any) => void = () => {}
+    mockItoStreamController.processLocalTranscription.mockImplementation(
+      () =>
+        new Promise<any>(resolve => {
+          resolveProcess = resolve
+        }),
+    )
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession(ItoMode.TRANSCRIBE)
+    const completePromise = session.completeSession()
+    // Let completeSession advance past the audio checks into processing
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(session.getState()).toBe('processing')
+
+    await session.cancelSession()
+    resolveProcess({
+      transcript: 'late transcript',
+      audioBuffer: Buffer.alloc(0),
+      sampleRate: 16000,
+      durationMs: 500,
+    })
+    await completePromise
+
+    expect(mockTextInserter.insertText).not.toHaveBeenCalled()
+    expect(session.getState()).toBe('idle')
+  })
+
+  test('setMode is ignored when no session is active', async () => {
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    session.setMode(ItoMode.EDIT)
+
+    expect(mockItoStreamController.setMode).not.toHaveBeenCalled()
+    expect(
+      mockRecordingStateNotifier.notifyRecordingStarted,
+    ).not.toHaveBeenCalled()
   })
 })
