@@ -27,6 +27,14 @@ export default [
       'server/src/migrations',
       'scripts',
       'native',
+      // Vendored third-party reference apps
+      'opensrc',
+      // Editor local-history and build caches
+      '.history',
+      'release',
+      '.electron-builder-cache',
+      '.npm-cache',
+      '.cache',
       '**/target',
       '*.config.js',
       'commitlint.config.js',

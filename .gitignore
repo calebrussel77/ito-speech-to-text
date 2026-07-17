@@ -23,3 +23,6 @@ server/deploy-dev.sh
 .cache
 .history
 .mcp.json
+
+# Vendored third-party reference apps (not part of the build)
+opensrc/
