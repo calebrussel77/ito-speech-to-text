@@ -160,6 +160,31 @@ const api = {
       ipcRenderer.invoke('set-dock-visibility', visible),
     getVisibility: () => ipcRenderer.invoke('get-dock-visibility'),
   },
+  interactionSound: {
+    pickCustomFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('interaction-sound:pick-custom-file'),
+    installCustomFile: (
+      sourcePath: string,
+    ): Promise<{
+      success: boolean
+      message?: string
+      path?: string
+      fileName?: string
+    }> =>
+      ipcRenderer.invoke('interaction-sound:install-custom-file', sourcePath),
+    getCustomInfo: (): Promise<{ exists: boolean; fileName: string | null }> =>
+      ipcRenderer.invoke('interaction-sound:get-custom-info'),
+    hasCustomFile: (): Promise<boolean> =>
+      ipcRenderer.invoke('interaction-sound:has-custom-file'),
+    playTest: (): Promise<{
+      success: boolean
+      message?: string
+      target?: 'main' | 'pill'
+      fileName?: string
+      mimeType?: string
+      theme?: 'pop' | 'marimba' | 'custom'
+    }> => ipcRenderer.invoke('interaction-sound:play-test'),
+  },
   // Send settings updates to pill window
   notifySettingsUpdate: (settings: any) =>
     ipcRenderer.send('settings-update', settings),

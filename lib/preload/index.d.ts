@@ -101,6 +101,28 @@ declare global {
         setVisibility: (visible: boolean) => Promise<void>
         getVisibility: () => Promise<{ isVisible: boolean }>
       }
+      interactionSound: {
+        pickCustomFile: () => Promise<string | null>
+        installCustomFile: (sourcePath: string) => Promise<{
+          success: boolean
+          message?: string
+          path?: string
+          fileName?: string
+        }>
+        getCustomInfo: () => Promise<{
+          exists: boolean
+          fileName: string | null
+        }>
+        hasCustomFile: () => Promise<boolean>
+        playTest: () => Promise<{
+          success: boolean
+          message?: string
+          target?: 'main' | 'pill'
+          fileName?: string
+          mimeType?: string
+          theme?: 'pop' | 'marimba' | 'custom'
+        }>
+      }
       notifySettingsUpdate: (settings: any) => void
       notifyOnboardingUpdate: (onboarding: any) => void
       notifyUserAuthUpdate: (authUser: any) => void

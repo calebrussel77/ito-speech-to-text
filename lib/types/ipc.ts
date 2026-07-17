@@ -7,6 +7,7 @@ export const IPC_EVENTS = {
   VOLUME_UPDATE: 'volume-update',
   FORCE_DEVICE_LIST_RELOAD: 'force-device-list-reload',
   SETTINGS_UPDATE: 'settings-update',
+  INTERACTION_SOUND_PLAY: 'interaction-sound-play',
   ONBOARDING_UPDATE: 'onboarding-update',
   USER_AUTH_UPDATE: 'user-auth-update',
 } as const
@@ -24,6 +25,13 @@ export interface ProcessingStatePayload {
 
 export interface VolumeUpdatePayload {
   volume: number
+}
+
+export interface InteractionSoundPlayPayload {
+  audioData: Uint8Array
+  mimeType: string
+  fileName: string
+  theme: 'pop' | 'marimba' | 'custom'
 }
 
 // Generic IPC Response Types

@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, shell, app } from 'electron'
+import { BrowserWindow, ipcMain, shell, app, dialog } from 'electron'
 import log from 'electron-log'
 import os from 'os'
 import { exec } from 'child_process'
@@ -37,6 +37,12 @@ import {
 import { audioRecorderService } from '../media/audio'
 import { voiceInputService } from '../main/voiceInputService'
 import { itoSessionManager } from '../main/itoSessionManager'
+import {
+  getCustomInteractionSoundInfo,
+  hasCustomInteractionSound,
+  installCustomInteractionSound,
+  playInteractionCompletionSoundTest,
+} from '../main/soundFeedback'
 import { ItoMode } from '@/app/generated/ito_pb'
 import {
   getSelectedText,
@@ -79,6 +85,40 @@ export function registerIPC() {
 
   ipcMain.handle('get-update-status', () => {
     return getUpdateStatus()
+  })
+
+  handleIPC('interaction-sound:pick-custom-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select custom interaction sound',
+      buttonLabel: 'Use this sound',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio files', extensions: ['wav', 'mp3'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  })
+
+  handleIPC(
+    'interaction-sound:install-custom-file',
+    async (_e, sourcePath: string) => {
+      return installCustomInteractionSound(sourcePath)
+    },
+  )
+
+  handleIPC('interaction-sound:get-custom-info', () => {
+    return getCustomInteractionSoundInfo()
+  })
+
+  handleIPC('interaction-sound:has-custom-file', () => {
+    return hasCustomInteractionSound()
+  })
+
+  handleIPC('interaction-sound:play-test', () => {
+    return playInteractionCompletionSoundTest()
   })
 
   // Login Item Settings

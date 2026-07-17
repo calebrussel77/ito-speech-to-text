@@ -7,6 +7,12 @@ const nativeBinaries = [
   'selected-text-reader',
 ]
 
+const customSoundResources = {
+  from: 'resources/sounds',
+  to: 'sounds',
+  filter: ['**/*.wav'],
+}
+
 const getMacResources = () =>
   nativeBinaries.map(binary => ({
     from: `native/target/\${arch}-apple-darwin/release/${binary}`,
@@ -76,6 +82,7 @@ module.exports = {
     },
     extraResources: [
       ...getMacResources(),
+      customSoundResources,
       { from: 'resources/build/ito-logo.png', to: 'build/ito-logo.png' },
     ],
   },
@@ -102,6 +109,7 @@ module.exports = {
     requestedExecutionLevel: 'asInvoker',
     extraResources: [
       ...getWindowsResources(),
+      customSoundResources,
       { from: 'resources/build/ito-logo.png', to: 'build/ito-logo.png' },
     ],
     forceCodeSigning: false,

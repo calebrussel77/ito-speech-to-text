@@ -16,6 +16,8 @@ export interface KeyboardShortcutConfig {
   mode: ItoMode
 }
 
+export type InteractionSoundTheme = 'pop' | 'marimba' | 'custom'
+
 interface MainStore {
   navExpanded: boolean
 }
@@ -31,6 +33,7 @@ export interface SettingsStore {
   showAppInDock: boolean
   runInBackground: boolean
   interactionSounds: boolean
+  interactionSoundTheme: InteractionSoundTheme
   muteAudioWhenDictating: boolean
   pasteCombo: 'auto' | 'ctrl-v' | 'ctrl-shift-v' | 'shift-insert'
   microphoneDeviceId: string
@@ -122,6 +125,7 @@ export const defaultValues: AppStore = {
     showAppInDock: true,
     runInBackground: true,
     interactionSounds: false,
+    interactionSoundTheme: 'pop',
     muteAudioWhenDictating: false,
     pasteCombo: 'auto',
     microphoneDeviceId: 'default',
@@ -233,7 +237,7 @@ async function persistTopLevelKey(key: string) {
           } else {
             toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
           }
-        } catch (err) {
+        } catch {
           console.warn('[store] Failed to encrypt Groq API key, storing as-is')
           toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
         }
@@ -285,6 +289,20 @@ export const store: StoreLike & {
 type Migration = { id: string; run: (s: StoreLike) => void }
 
 const migrations: Migration[] = [
+  {
+    id: '2026-03-05-interaction-sound-theme-default',
+    run: s => {
+      const settings = (s.get(STORE_KEYS.SETTINGS) || {}) as Partial<SettingsStore>
+      const currentTheme = settings.interactionSoundTheme
+      if (
+        currentTheme !== 'pop' &&
+        currentTheme !== 'marimba' &&
+        currentTheme !== 'custom'
+      ) {
+        s.set('settings.interactionSoundTheme', 'pop')
+      }
+    },
+  },
   {
     id: '2025-08-15-keyboard-shortcut-rename',
     run: s => {

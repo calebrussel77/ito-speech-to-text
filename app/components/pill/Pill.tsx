@@ -11,11 +11,14 @@ import { PreviewAudioBars } from './contents/PreviewAudioBars'
 import { LoadingAnimation } from './contents/LoadingAnimation'
 import { useAudioStore } from '@/app/store/useAudioStore'
 import { analytics, ANALYTICS_EVENTS } from '../analytics'
+import { IPC_EVENTS } from '@/lib/types/ipc'
 import type {
+  InteractionSoundPlayPayload,
   RecordingStatePayload,
   ProcessingStatePayload,
 } from '@/lib/types/ipc'
 import { ItoMode } from '@/app/generated/ito_pb'
+import { playInteractionSoundPayload } from '@/app/utils/interactionSoundPlayer'
 
 // Premium Dark Theme Colors (matching globals.css Refined Obsidian palette)
 const THEME = {
@@ -235,6 +238,13 @@ const Pill = () => {
       }
     })
 
+    const unsubInteractionSound = window.api.on(
+      IPC_EVENTS.INTERACTION_SOUND_PLAY,
+      (payload: InteractionSoundPlayPayload) => {
+        void playInteractionSoundPayload(payload)
+      },
+    )
+
     // Cleanup listeners when the component unmounts
     return () => {
       unsubRecording()
@@ -243,6 +253,7 @@ const Pill = () => {
       unsubSettings()
       unsubOnboarding()
       unsubUserAuth()
+      unsubInteractionSound()
     }
   }, [volumeHistory, lastVolumeUpdate, recordingMode])
 

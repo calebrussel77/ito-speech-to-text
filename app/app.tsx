@@ -14,6 +14,8 @@ import { Auth0Provider } from '@/app/components/auth/Auth0Provider'
 import { useDeviceChangeListener } from './hooks/useDeviceChangeListener'
 import { verifyStoredMicrophone } from './media/microphone'
 import { useEffect } from 'react'
+import { IPC_EVENTS, InteractionSoundPlayPayload } from '@/lib/types/ipc'
+import { playInteractionSoundPayload } from './utils/interactionSoundPlayer'
 
 const MainApp = () => {
   const { onboardingCompleted, onboardingStep } = useOnboardingStore()
@@ -22,6 +24,19 @@ const MainApp = () => {
 
   useEffect(() => {
     verifyStoredMicrophone()
+  }, [])
+
+  useEffect(() => {
+    const unsubscribeInteractionSound = window.api.on(
+      IPC_EVENTS.INTERACTION_SOUND_PLAY,
+      (payload: InteractionSoundPlayPayload) => {
+        void playInteractionSoundPayload(payload)
+      },
+    )
+
+    return () => {
+      unsubscribeInteractionSound()
+    }
   }, [])
 
   const onboardingSetupCompleted =

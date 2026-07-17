@@ -1,13 +1,17 @@
 import { resolve } from 'path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 export default defineConfig({
   main: {
     build: {
       sourcemap: true,
       rollupOptions: {
+        external: [
+          'sqlite3',
+          'bindings',
+        ],
         input: {
           main: resolve(__dirname, 'lib/main/main.ts'),
         },
@@ -20,7 +24,7 @@ export default defineConfig({
         '@/resources': resolve(__dirname, 'resources'),
       },
     },
-    plugins: [],
+    plugins: [externalizeDepsPlugin()],
   },
 
   preload: {
@@ -39,7 +43,7 @@ export default defineConfig({
         '@/resources': resolve(__dirname, 'resources'),
       },
     },
-    plugins: [],
+    plugins: [externalizeDepsPlugin()],
   },
 
   renderer: {

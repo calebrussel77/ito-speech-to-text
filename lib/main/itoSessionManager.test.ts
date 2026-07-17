@@ -96,11 +96,11 @@ mock.module('./store', () => ({
   getAdvancedSettings: mockGetAdvancedSettings,
 }))
 
-const mockShell = {
-  beep: mock(),
+const mockSoundFeedback = {
+  playInteractionCompletionSound: mock(),
 }
-mock.module('electron', () => ({
-  shell: mockShell,
+mock.module('./soundFeedback', () => ({
+  playInteractionCompletionSound: mockSoundFeedback.playInteractionCompletionSound,
 }))
 
 mock.module('electron-log', () => ({
@@ -115,10 +115,10 @@ beforeEach(() => {
   Object.values(mockInteractionManager).forEach(fn => fn.mockClear())
   Object.values(mockGrammarRulesService).forEach(fn => fn.mockClear())
   Object.values(mockTimingCollector).forEach(fn => fn.mockClear())
+  Object.values(mockSoundFeedback).forEach(fn => fn.mockClear())
   mockGetAdvancedSettings.mockClear()
   mockStore.get.mockClear()
   mockStore.get.mockReturnValue({ interactionSounds: false })
-  mockShell.beep.mockClear()
 
   mockItoStreamController.getAudioDurationMs.mockReturnValue(500)
   mockItoStreamController.processLocalTranscription.mockResolvedValue({
@@ -178,7 +178,7 @@ describe('itoSessionManager (local mode)', () => {
     expect(mockItoStreamController.processLocalTranscription).toHaveBeenCalled()
     expect(mockTextInserter.insertText).toHaveBeenCalledWith('test transcript')
     expect(mockInteractionManager.createInteraction).toHaveBeenCalled()
-    expect(mockShell.beep).not.toHaveBeenCalled()
+    expect(mockSoundFeedback.playInteractionCompletionSound).not.toHaveBeenCalled()
   })
 
   test('plays completion sound when interaction sounds are enabled', async () => {
@@ -189,7 +189,9 @@ describe('itoSessionManager (local mode)', () => {
     await session.startSession(ItoMode.TRANSCRIBE)
     await session.completeSession()
 
-    expect(mockShell.beep).toHaveBeenCalledTimes(1)
+    expect(mockSoundFeedback.playInteractionCompletionSound).toHaveBeenCalledTimes(
+      1,
+    )
   })
 
   test('does not play completion sound when no transcript is returned', async () => {
@@ -206,7 +208,7 @@ describe('itoSessionManager (local mode)', () => {
     await session.startSession(ItoMode.TRANSCRIBE)
     await session.completeSession()
 
-    expect(mockShell.beep).not.toHaveBeenCalled()
+    expect(mockSoundFeedback.playInteractionCompletionSound).not.toHaveBeenCalled()
   })
 
   test('does not play completion sound when transcription fails', async () => {
@@ -220,7 +222,7 @@ describe('itoSessionManager (local mode)', () => {
     await session.startSession(ItoMode.TRANSCRIBE)
     await session.completeSession()
 
-    expect(mockShell.beep).not.toHaveBeenCalled()
+    expect(mockSoundFeedback.playInteractionCompletionSound).not.toHaveBeenCalled()
   })
 
   test('skips processing when audio is too short', async () => {
@@ -234,6 +236,6 @@ describe('itoSessionManager (local mode)', () => {
 
     expect(mockItoStreamController.cancelTranscription).toHaveBeenCalled()
     expect(mockItoStreamController.processLocalTranscription).not.toHaveBeenCalled()
-    expect(mockShell.beep).not.toHaveBeenCalled()
+    expect(mockSoundFeedback.playInteractionCompletionSound).not.toHaveBeenCalled()
   })
 })

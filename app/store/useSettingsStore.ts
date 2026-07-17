@@ -5,7 +5,10 @@ import {
   updateAnalyticsFromSettings,
 } from '@/app/components/analytics'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
-import type { KeyboardShortcutConfig } from '@/lib/main/store'
+import type {
+  InteractionSoundTheme,
+  KeyboardShortcutConfig,
+} from '@/lib/main/store'
 import { ItoMode } from '../generated/ito_pb'
 
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '@/lib/constants/keyboard-defaults'
@@ -24,6 +27,7 @@ interface SettingsState {
   showAppInDock: boolean
   runInBackground: boolean
   interactionSounds: boolean
+  interactionSoundTheme: InteractionSoundTheme
   muteAudioWhenDictating: boolean
   pasteCombo: 'auto' | 'ctrl-v' | 'ctrl-shift-v' | 'shift-insert'
   microphoneDeviceId: string
@@ -36,8 +40,9 @@ interface SettingsState {
   setShowAppInDock: (show: boolean) => void
   setRunInBackground: (enabled: boolean) => void
   setInteractionSounds: (enabled: boolean) => void
+  setInteractionSoundTheme: (theme: InteractionSoundTheme) => void
   setMuteAudioWhenDictating: (enabled: boolean) => void
-    setPasteCombo: (combo: SettingsState['pasteCombo']) => void
+  setPasteCombo: (combo: SettingsState['pasteCombo']) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   createKeyboardShortcut: (mode: ItoMode) => ShortcutResult
@@ -62,6 +67,7 @@ const getInitialState = () => {
     showAppInDock: storedSettings?.showAppInDock ?? true,
     runInBackground: storedSettings?.runInBackground ?? true,
     interactionSounds: storedSettings?.interactionSounds ?? false,
+    interactionSoundTheme: storedSettings?.interactionSoundTheme ?? 'pop',
     muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? false,
     pasteCombo: storedSettings?.pasteCombo ?? 'auto',
     microphoneDeviceId: storedSettings?.microphoneDeviceId ?? 'default',
@@ -176,6 +182,10 @@ export const useSettingsStore = create<SettingsState>(set => {
     },
     setRunInBackground: createSetter('runInBackground', 'general'),
     setInteractionSounds: createSetter('interactionSounds', 'audio&mic'),
+    setInteractionSoundTheme: createSetter(
+      'interactionSoundTheme',
+      'audio&mic',
+    ),
     setMuteAudioWhenDictating: createSetter(
       'muteAudioWhenDictating',
       'audio&mic',

@@ -14,7 +14,7 @@ import log from 'electron-log'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 import { LocalTranscriptionError } from './transcription/LocalTranscriptionService'
 import { STORE_KEYS } from '../constants/store-keys'
-import { shell } from 'electron'
+import { playInteractionCompletionSound } from './soundFeedback'
 
 export class ItoSessionManager {
   private readonly MINIMUM_AUDIO_DURATION_MS = 100
@@ -157,7 +157,7 @@ export class ItoSessionManager {
   private playInteractionCompletionSoundIfEnabled() {
     const settings = store.get(STORE_KEYS.SETTINGS)
     if (settings?.interactionSounds) {
-      shell.beep()
+      playInteractionCompletionSound()
     }
   }
 }
