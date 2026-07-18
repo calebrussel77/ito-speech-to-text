@@ -25,6 +25,7 @@ import { STORE_KEYS } from '../constants/store-keys'
 import { selectedTextReaderService } from '../media/selected-text-reader'
 import { macOSAccessibilityContextProvider } from '../media/macOSAccessibilityContextProvider'
 import { voiceInputService } from './voiceInputService'
+import { itoStreamController } from './itoStreamController'
 import { initializeMicrophoneSelection } from '../media/microphoneSetUp'
 import { validateStoredTokens, ensureValidTokens } from '../auth/events'
 import { Auth0Config, validateAuth0Config } from '../auth/config'
@@ -191,6 +192,15 @@ app.whenReady().then(async () => {
 
   // Warm the native audio stream so the hotkey can record immediately
   voiceInputService.prepareAudioStream()
+
+  // Recover dictations whose transcription failed in a previous run
+  setTimeout(() => {
+    itoStreamController
+      .flushPendingDictations()
+      .catch(error =>
+        console.warn('[main] Pending dictation recovery failed:', error),
+      )
+  }, 10_000)
 
   // Create system tray after audio recorder is initialized and devices are available
   await createAppTray()

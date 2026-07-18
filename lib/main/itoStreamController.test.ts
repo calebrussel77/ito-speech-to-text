@@ -33,6 +33,23 @@ mock.module('./transcription/LocalAudioProcessor', () => ({
   localAudioProcessor: mockLocalAudioProcessor,
 }))
 
+const mockPendingDictationStore = {
+  save: mock(() => 'C:/pending/dictation-1.wav'),
+  delete: mock(),
+  read: mock(() => Buffer.from('wav')),
+  list: mock((): string[] => []),
+}
+mock.module('./transcription/PendingDictationStore', () => ({
+  pendingDictationStore: mockPendingDictationStore,
+}))
+
+const mockInteractionManager = {
+  createRecoveredInteraction: mock(() => Promise.resolve()),
+}
+mock.module('./interactions/InteractionManager', () => ({
+  interactionManager: mockInteractionManager,
+}))
+
 const mockContextGrabber = {
   gatherContext: mock(() =>
     Promise.resolve({
@@ -122,6 +139,15 @@ describe('ItoStreamController (local)', () => {
     Object.values(mockLocalAudioProcessor).forEach(fn => fn.mockClear())
     Object.values(mockContextGrabber).forEach(fn => fn.mockClear())
     Object.values(mockLocalTranscriptionService).forEach(fn => fn.mockClear())
+    Object.values(mockPendingDictationStore).forEach(fn => fn.mockClear())
+    Object.values(mockInteractionManager).forEach(fn => fn.mockClear())
+
+    mockAudioStreamManager.isCurrentlyStreaming.mockReturnValue(false)
+    mockLocalTranscriptionService.transcribeAudio.mockResolvedValue(
+      'raw transcript',
+    )
+    mockPendingDictationStore.save.mockReturnValue('C:/pending/dictation-1.wav')
+    mockPendingDictationStore.list.mockReturnValue([])
   })
 
   test('initializes and processes audio locally', async () => {
@@ -135,5 +161,126 @@ describe('ItoStreamController (local)', () => {
     expect(mockLocalAudioProcessor.prepareAudioForTranscription).toHaveBeenCalled()
     expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
     expect(result.transcript).toBe('adjusted transcript')
+  })
+
+  test('persists the dictation before transcription and deletes it on success', async () => {
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.processLocalTranscription()
+
+    expect(mockPendingDictationStore.save).toHaveBeenCalled()
+    expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
+      'C:/pending/dictation-1.wav',
+    )
+  })
+
+  test('retries transient errors and eventually succeeds', async () => {
+    const { LocalTranscriptionError } = await import(
+      './transcription/LocalTranscriptionService'
+    )
+    const transientError = Object.assign(
+      new (LocalTranscriptionError as any)('rate limited'),
+      { code: 'RATE_LIMIT', retryAfterMs: 1 },
+    )
+    mockLocalTranscriptionService.transcribeAudio
+      .mockRejectedValueOnce(transientError)
+      .mockRejectedValueOnce(transientError)
+      .mockResolvedValueOnce('raw transcript')
+
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    await controller.initialize(ItoMode.TRANSCRIBE)
+    const result = await controller.processLocalTranscription()
+
+    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(3)
+    expect(result.transcript).toBe('adjusted transcript')
+    expect(mockPendingDictationStore.delete).toHaveBeenCalled()
+  })
+
+  test('does not retry non-retryable errors and keeps the saved audio', async () => {
+    const { LocalTranscriptionError } = await import(
+      './transcription/LocalTranscriptionService'
+    )
+    const fatalError = Object.assign(
+      new (LocalTranscriptionError as any)('bad key'),
+      { code: 'INVALID_API_KEY' },
+    )
+    mockLocalTranscriptionService.transcribeAudio.mockRejectedValue(fatalError)
+
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    await controller.initialize(ItoMode.TRANSCRIBE)
+    await expect(controller.processLocalTranscription()).rejects.toMatchObject({
+      code: 'INVALID_API_KEY',
+    })
+
+    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(1)
+    expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
+  })
+
+  test('drops the saved audio when the failure is unrecoverable (silence)', async () => {
+    const { LocalTranscriptionError } = await import(
+      './transcription/LocalTranscriptionService'
+    )
+    const noSpeechError = Object.assign(
+      new (LocalTranscriptionError as any)('no speech'),
+      { code: 'NO_SPEECH' },
+    )
+    mockLocalTranscriptionService.transcribeAudio.mockRejectedValue(
+      noSpeechError,
+    )
+
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    await controller.initialize(ItoMode.TRANSCRIBE)
+    await expect(controller.processLocalTranscription()).rejects.toMatchObject({
+      code: 'NO_SPEECH',
+    })
+
+    expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
+      'C:/pending/dictation-1.wav',
+    )
+  })
+
+  test('flushPendingDictations recovers pending files into the history', async () => {
+    mockPendingDictationStore.list.mockReturnValue([
+      'C:/pending/a.wav',
+      'C:/pending/b.wav',
+    ])
+
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    const recovered = await controller.flushPendingDictations()
+
+    expect(recovered).toBe(2)
+    expect(mockInteractionManager.createRecoveredInteraction).toHaveBeenCalledTimes(2)
+    expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
+  })
+
+  test('flushPendingDictations stops on transient failure and keeps files', async () => {
+    const { LocalTranscriptionError } = await import(
+      './transcription/LocalTranscriptionService'
+    )
+    mockPendingDictationStore.list.mockReturnValue(['C:/pending/a.wav'])
+    mockLocalTranscriptionService.transcribeAudio.mockRejectedValue(
+      Object.assign(new (LocalTranscriptionError as any)('offline'), {
+        code: 'NETWORK',
+      }),
+    )
+
+    const { ItoStreamController } = await import('./itoStreamController')
+    const controller = new ItoStreamController()
+
+    const recovered = await controller.flushPendingDictations()
+
+    expect(recovered).toBe(0)
+    expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
+    expect(mockInteractionManager.createRecoveredInteraction).not.toHaveBeenCalled()
   })
 })

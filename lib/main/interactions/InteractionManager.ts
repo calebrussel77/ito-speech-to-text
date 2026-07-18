@@ -114,6 +114,61 @@ export class InteractionManager {
     this.currentInteractionId = null
     this.interactionStartTime = null
   }
+
+  /**
+   * Stores a transcript recovered from a previously failed dictation.
+   * Mints its own id and never touches currentInteractionId, so it is safe
+   * to call while a live session is in progress.
+   */
+  async createRecoveredInteraction(transcript: string, sampleRate: number) {
+    try {
+      const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
+      const userId = userProfile?.id || 'self-hosted'
+      const id = uuidv4()
+      const now = new Date().toISOString()
+      const title =
+        transcript.length > 50
+          ? transcript.substring(0, 50) + '...'
+          : transcript || 'Recovered dictation'
+
+      await InteractionsTable.upsert({
+        id,
+        user_id: userId,
+        title,
+        asr_output: {
+          transcript,
+          totalAudioBytes: 0,
+          error: null,
+          errorCode: null,
+          timestamp: now,
+          durationMs: 0,
+          recovered: true,
+        },
+        llm_output: {},
+        raw_audio: null,
+        raw_audio_id: null,
+        duration_ms: 0,
+        sample_rate: sampleRate,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      })
+
+      BrowserWindow.getAllWindows().forEach(window => {
+        window.webContents.send('interaction-created', {
+          id,
+          transcript,
+          timestamp: now,
+          durationMs: 0,
+        })
+      })
+    } catch (error) {
+      log.error(
+        '[InteractionManager] Failed to store recovered interaction:',
+        error,
+      )
+    }
+  }
 }
 
 export const interactionManager = new InteractionManager()

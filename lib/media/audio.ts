@@ -268,6 +268,9 @@ class AudioRecorderService extends EventEmitter {
         if (!settled) {
           settled = true
           this.#drainPromise = null
+          console.warn(
+            `[AudioService] Drain did not complete within ${timeoutMs}ms — tail audio may be truncated`,
+          )
           resolve() // fallback: do not hang the stop flow
         }
       }, timeoutMs)

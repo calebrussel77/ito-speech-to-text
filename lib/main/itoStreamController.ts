@@ -1,14 +1,34 @@
 import { ItoMode } from '@/app/generated/ito_pb'
+import { Notification } from 'electron'
 import log from 'electron-log'
 import { AudioStreamManager } from './audio/AudioStreamManager'
 import { localAudioProcessor } from './transcription/LocalAudioProcessor'
 import {
   localTranscriptionService,
   LocalTranscriptionError,
+  TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
+import { pendingDictationStore } from './transcription/PendingDictationStore'
+import { interactionManager } from './interactions/InteractionManager'
 import { contextGrabber } from './context/ContextGrabber'
 import { getAdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
+
+const RETRYABLE_CODES = new Set(['RATE_LIMIT', 'NETWORK'])
+// Codes for which keeping the audio makes no sense (there is nothing to
+// recover from silence or sub-100ms clips).
+const UNRECOVERABLE_CODES = new Set(['NO_SPEECH', 'AUDIO_TOO_SHORT'])
+const MAX_TRANSCRIPTION_ATTEMPTS = 3
+
+function showNotification(title: string, body: string) {
+  try {
+    if (Notification?.isSupported?.()) {
+      new Notification({ title, body }).show()
+    }
+  } catch (error) {
+    console.warn('[ItoStreamController] Failed to show notification:', error)
+  }
+}
 
 export interface LocalTranscriptionResult {
   transcript: string
@@ -94,6 +114,8 @@ export class ItoStreamController {
 
   /**
    * Process the buffered audio through Groq and return the final transcript.
+   * The WAV is persisted to disk before the network call and removed after
+   * success, so a failure at any point never loses the dictation.
    */
   public async processLocalTranscription(): Promise<LocalTranscriptionResult> {
     const rawAudio = this.audioStreamManager.getAllAudio()
@@ -103,6 +125,16 @@ export class ItoStreamController {
       rawAudio,
       { sampleRate },
     )
+
+    let pendingPath: string | null = null
+    try {
+      pendingPath = pendingDictationStore.save(wavAudio)
+    } catch (error) {
+      console.warn(
+        '[ItoStreamController] Could not persist dictation audio:',
+        error,
+      )
+    }
 
     const context = await contextGrabber.gatherContext(this.currentMode)
     const advancedSettings = getAdvancedSettings()
@@ -122,18 +154,43 @@ export class ItoStreamController {
       )
     }
 
-    const transcript = await timingCollector.timeAsync(
-      timingEvent,
-      async () =>
-        await localTranscriptionService.transcribeAudio(wavAudio, {
-          asrModel: advancedSettings.llm.asrModel,
-          vocabulary: context.vocabularyWords,
-          noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-          fileType: 'wav',
-          language: advancedSettings.llm.asrLanguage,
-          customPrompt: advancedSettings.llm.asrPrompt,
-        }),
-    )
+    let transcript: string
+    try {
+      transcript = await timingCollector.timeAsync(
+        timingEvent,
+        async () =>
+          await this.transcribeWithRetry(wavAudio, {
+            asrModel: advancedSettings.llm.asrModel,
+            vocabulary: context.vocabularyWords,
+            noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+            fileType: 'wav',
+            language: advancedSettings.llm.asrLanguage,
+            customPrompt: advancedSettings.llm.asrPrompt,
+          }),
+      )
+    } catch (error: any) {
+      if (pendingPath) {
+        if (UNRECOVERABLE_CODES.has(error?.code)) {
+          pendingDictationStore.delete(pendingPath)
+        } else {
+          showNotification(
+            'Ito — dictée sauvegardée',
+            'La transcription a échoué. Votre dictée sera récupérée automatiquement dans l’historique.',
+          )
+        }
+      }
+      throw error
+    }
+
+    if (pendingPath) {
+      pendingDictationStore.delete(pendingPath)
+    }
+    // Network is clearly up: try to recover previously failed dictations.
+    setTimeout(() => {
+      this.flushPendingDictations().catch(error =>
+        console.warn('[ItoStreamController] Pending flush failed:', error),
+      )
+    }, 5000)
 
     const adjusted = await localTranscriptionService.adjustTranscript(
       transcript,
@@ -147,6 +204,104 @@ export class ItoStreamController {
       audioBuffer: Buffer.alloc(0), // We intentionally avoid persisting audio
       sampleRate,
       durationMs,
+    }
+  }
+
+  private async transcribeWithRetry(
+    wavAudio: Buffer,
+    options: TranscriptionOptions,
+  ): Promise<string> {
+    let lastError: unknown
+    for (let attempt = 1; attempt <= MAX_TRANSCRIPTION_ATTEMPTS; attempt++) {
+      try {
+        return await localTranscriptionService.transcribeAudio(
+          wavAudio,
+          options,
+        )
+      } catch (error: any) {
+        lastError = error
+        const retryable =
+          error instanceof LocalTranscriptionError &&
+          RETRYABLE_CODES.has(error.code)
+        if (!retryable || attempt === MAX_TRANSCRIPTION_ATTEMPTS) {
+          throw error
+        }
+        const delayMs = error.retryAfterMs ?? 500 * 2 ** (attempt - 1)
+        console.warn(
+          `[ItoStreamController] Transcription attempt ${attempt} failed (${error.code}), retrying in ${delayMs}ms`,
+        )
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
+    }
+    throw lastError
+  }
+
+  private flushingPending = false
+
+  /**
+   * Transcribes dictations that previously failed and stores them in the
+   * interaction history (no text insertion: the original cursor context is
+   * long gone). Called at startup and after each successful transcription.
+   */
+  public async flushPendingDictations(): Promise<number> {
+    if (this.flushingPending) return 0
+    this.flushingPending = true
+    let recovered = 0
+
+    try {
+      const pending = pendingDictationStore.list()
+      if (pending.length === 0) return 0
+
+      const advancedSettings = getAdvancedSettings()
+      try {
+        localTranscriptionService.initialize(advancedSettings.groqApiKey || '')
+      } catch {
+        return 0
+      }
+
+      for (const filePath of pending) {
+        // A live recording takes priority over recovery work.
+        if (this.audioStreamManager.isCurrentlyStreaming()) break
+
+        try {
+          const wavAudio = pendingDictationStore.read(filePath)
+          const transcript = await localTranscriptionService.transcribeAudio(
+            wavAudio,
+            {
+              asrModel: advancedSettings.llm.asrModel,
+              noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+              fileType: 'wav',
+              language: advancedSettings.llm.asrLanguage,
+              customPrompt: advancedSettings.llm.asrPrompt,
+            },
+          )
+          if (transcript) {
+            await interactionManager.createRecoveredInteraction(
+              transcript,
+              16000,
+            )
+            recovered++
+          }
+          pendingDictationStore.delete(filePath)
+        } catch (error: any) {
+          if (UNRECOVERABLE_CODES.has(error?.code)) {
+            pendingDictationStore.delete(filePath)
+            continue
+          }
+          // Still failing (offline, rate limit...): stop and retry later.
+          break
+        }
+      }
+
+      if (recovered > 0) {
+        showNotification(
+          'Ito — dictées récupérées',
+          `${recovered} dictée(s) transcrite(s) et disponible(s) dans l'historique.`,
+        )
+      }
+      return recovered
+    } finally {
+      this.flushingPending = false
     }
   }
 }
