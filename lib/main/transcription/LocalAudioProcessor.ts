@@ -59,6 +59,31 @@ export class LocalAudioProcessor {
     return header
   }
 
+  /**
+   * Detects buffers with no audible speech. Whisper hallucinates on silence
+   * ("Sous-titres réalisés par la communauté d'Amara.org"...), so silent
+   * clips are rejected before any network call. Must run on the RAW pcm:
+   * enhancement normalizes gain and would amplify room noise.
+   * Thresholds are conservative (~-50 dBFS RMS): only near-digital-silence
+   * is rejected, a quiet voice passes.
+   */
+  isLikelySilence(pcm: Buffer): boolean {
+    const sampleCount = Math.floor(pcm.length / 2)
+    if (sampleCount === 0) return true
+
+    let sumSquares = 0
+    let peak = 0
+    for (let i = 0; i < sampleCount; i++) {
+      const v = pcm.readInt16LE(i * 2)
+      sumSquares += v * v
+      const abs = Math.abs(v)
+      if (abs > peak) peak = abs
+    }
+
+    const rms = Math.sqrt(sumSquares / sampleCount)
+    return rms < 100 && peak < 500
+  }
+
   enhancePcm16(pcm: Buffer, sampleRate: number): Buffer {
     if (!pcm || pcm.length < 2) return pcm
 
@@ -146,6 +171,10 @@ export class LocalAudioProcessor {
 
     if (durationMs < this.minDurationMs) {
       throw new Error('Audio too short to transcribe')
+    }
+
+    if (this.isLikelySilence(audioPcm)) {
+      throw new Error('No audible speech in audio (silence)')
     }
 
     const enhanced = options.enhance ?? true

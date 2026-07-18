@@ -306,6 +306,11 @@ export class SyncService {
             asrPrompt:
               remoteSettings.llm?.asrPrompt ||
               DEFAULT_ADVANCED_SETTINGS.asrPrompt,
+            // Not in the server proto yet — keep the local value
+            asrLanguage:
+              (remoteSettings.llm as any)?.asrLanguage ??
+              currentLocalSettings?.llm?.asrLanguage ??
+              DEFAULT_ADVANCED_SETTINGS.asrLanguage,
             llmProvider:
               remoteSettings.llm?.llmProvider ||
               DEFAULT_ADVANCED_SETTINGS.llmProvider,

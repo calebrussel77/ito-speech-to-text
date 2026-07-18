@@ -9,6 +9,8 @@ export const DEFAULT_ADVANCED_SETTINGS = {
   asrProvider: 'groq',
   asrModel: 'whisper-large-v3',
   asrPrompt: ``,
+  // ISO-639-1 hint passed to Whisper; empty string = auto-detect
+  asrLanguage: 'fr',
 
   // LLM (Large Language Model) settings
   llmProvider: 'groq',

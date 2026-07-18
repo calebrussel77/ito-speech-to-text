@@ -130,6 +130,8 @@ export class ItoStreamController {
           vocabulary: context.vocabularyWords,
           noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
           fileType: 'wav',
+          language: advancedSettings.llm.asrLanguage,
+          customPrompt: advancedSettings.llm.asrPrompt,
         }),
     )
 

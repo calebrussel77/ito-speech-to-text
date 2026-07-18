@@ -58,6 +58,14 @@ const llmSettingsConfig: LlmSettingConfig[] = [
     maxLength: modelProviderLengthLimit,
   },
   {
+    name: 'asrLanguage',
+    label: 'ASR Language',
+    placeholder: 'fr',
+    description:
+      'ISO-639-1 language hint for transcription (e.g. fr, en). Improves accuracy and latency. Leave empty for auto-detection.',
+    maxLength: 5,
+  },
+  {
     name: 'asrPrompt',
     label: 'ASR Prompt',
     placeholder: 'Enter custom ASR prompt',

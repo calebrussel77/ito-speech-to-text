@@ -160,6 +160,7 @@ export const defaultValues: AppStore = {
       asrProvider: DEFAULT_ADVANCED_SETTINGS.asrProvider,
       asrModel: DEFAULT_ADVANCED_SETTINGS.asrModel,
       asrPrompt: DEFAULT_ADVANCED_SETTINGS.asrPrompt,
+      asrLanguage: DEFAULT_ADVANCED_SETTINGS.asrLanguage,
       llmProvider: DEFAULT_ADVANCED_SETTINGS.llmProvider,
       llmTemperature: DEFAULT_ADVANCED_SETTINGS.llmTemperature,
       llmModel: DEFAULT_ADVANCED_SETTINGS.llmModel,

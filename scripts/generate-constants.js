@@ -23,6 +23,8 @@ export const DEFAULT_ADVANCED_SETTINGS = {
   asrProvider: '${DEFAULT_ADVANCED_SETTINGS.asrProvider}',
   asrModel: '${DEFAULT_ADVANCED_SETTINGS.asrModel}',
   asrPrompt: \`${DEFAULT_ADVANCED_SETTINGS.asrPrompt}\`,
+  // ISO-639-1 hint passed to Whisper; empty string = auto-detect
+  asrLanguage: '${DEFAULT_ADVANCED_SETTINGS.asrLanguage}',
   
   // LLM (Large Language Model) settings
   llmProvider: '${DEFAULT_ADVANCED_SETTINGS.llmProvider}',

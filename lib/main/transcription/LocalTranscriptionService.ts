@@ -9,6 +9,10 @@ export type TranscriptionOptions = {
   vocabulary?: string[]
   noSpeechThreshold?: number
   fileType?: string
+  // ISO-639-1 hint forwarded to Whisper; empty/undefined = auto-detect
+  language?: string
+  // User-provided ASR prompt from Advanced Settings; vocabulary is appended
+  customPrompt?: string
 }
 
 export type AdjustOptions = {
@@ -29,18 +33,32 @@ const DECOMMISSIONED_MODELS: Record<string, string> = {
 const normalizeModel = (model?: string) =>
   model && DECOMMISSIONED_MODELS[model] ? DECOMMISSIONED_MODELS[model] : model
 
-function createTranscriptionPrompt(vocabulary: string[]): string {
-  const suffix = ''
+// Whisper's prompt is style/context priming, not instructions: the model
+// mimics its language, punctuation and casing. A French, punctuated base
+// prompt pulls the output toward well-punctuated French; the user dictionary
+// rides along as vocabulary priming.
+const DEFAULT_PROMPT_BASE = `Voici une dictée en français, correctement ponctuée et accentuée, qui peut mêler des termes techniques anglais du développement logiciel.`
+
+export function createTranscriptionPrompt(
+  vocabulary: string[],
+  customPrompt?: string,
+): string {
   const maxTokens = 224
+  const basePrompt = customPrompt?.trim() || DEFAULT_PROMPT_BASE
+
+  const estimateTokens = (text: string) => Math.ceil(text.length / 4)
 
   if (vocabulary.length === 0) {
-    return suffix
+    return basePrompt
   }
 
-  const basePrompt = 'Dictionary entries include: '
-  const estimateTokens = (text: string) => Math.ceil(text.length / 4)
-  const baseTokens = estimateTokens(basePrompt + '. ' + suffix)
-  const availableTokensForVocab = maxTokens - baseTokens
+  const vocabPrefix = ' Vocabulaire : '
+  const availableTokensForVocab =
+    maxTokens - estimateTokens(basePrompt + vocabPrefix + '.')
+
+  if (availableTokensForVocab <= 0) {
+    return basePrompt
+  }
 
   let vocabString = vocabulary.join(', ')
   if (estimateTokens(vocabString) > availableTokensForVocab) {
@@ -51,10 +69,51 @@ function createTranscriptionPrompt(vocabulary: string[]): string {
   }
 
   if (vocabString.trim() === '') {
-    return suffix
+    return basePrompt
   }
 
-  return `${basePrompt}${vocabString}. ${suffix}`
+  return `${basePrompt}${vocabPrefix}${vocabString}.`
+}
+
+type TranscriptionSegment = {
+  text?: string
+  no_speech_prob?: number
+  avg_logprob?: number
+  compression_ratio?: number
+}
+
+// A segment is considered hallucinated when Whisper itself reports it is
+// probably not speech AND has low confidence in the tokens it produced
+// (classic silence hallucinations like "Sous-titres réalisés par Amara.org").
+const HALLUCINATION_AVG_LOGPROB = -0.5
+
+export function filterSpeechSegments(
+  segments: TranscriptionSegment[],
+  noSpeechThreshold: number,
+): { text: string | null; allNoSpeech: boolean } {
+  if (segments.length === 0) {
+    return { text: null, allNoSpeech: false }
+  }
+
+  const isNoSpeech = (s: TranscriptionSegment) =>
+    (s.no_speech_prob ?? 0) > noSpeechThreshold
+
+  if (segments.every(isNoSpeech)) {
+    return { text: null, allNoSpeech: true }
+  }
+
+  const kept = segments.filter(
+    s =>
+      !(isNoSpeech(s) && (s.avg_logprob ?? 0) < HALLUCINATION_AVG_LOGPROB),
+  )
+
+  return {
+    text: kept
+      .map(s => s.text || '')
+      .join('')
+      .trim(),
+    allNoSpeech: false,
+  }
 }
 
 class LocalTranscriptionError extends Error {
@@ -65,13 +124,71 @@ class LocalTranscriptionError extends Error {
       | 'INVALID_API_KEY'
       | 'NO_SPEECH'
       | 'AUDIO_TOO_SHORT'
+      | 'RATE_LIMIT'
       | 'NETWORK'
       | 'MODEL_ERROR'
       | 'UNKNOWN',
+    // HTTP status and server-suggested retry delay, when the Groq SDK
+    // provides them — consumed by the retry layer.
+    public readonly status?: number,
+    public readonly retryAfterMs?: number,
   ) {
     super(message)
     this.name = 'LocalTranscriptionError'
   }
+}
+
+// Map a Groq SDK error to a typed LocalTranscriptionError using the HTTP
+// status when available, falling back to message sniffing for older shapes.
+function mapGroqError(
+  error: any,
+  fallbackMessage: string,
+): LocalTranscriptionError {
+  const message: string = error?.message || fallbackMessage
+  const status: number | undefined =
+    typeof error?.status === 'number' ? error.status : undefined
+  const retryAfterHeader = error?.headers?.['retry-after']
+  const retryAfterMs = retryAfterHeader
+    ? Number(retryAfterHeader) * 1000 || undefined
+    : undefined
+
+  if (status === 401 || status === 403 || message.includes('401')) {
+    return new LocalTranscriptionError(
+      'Groq rejected the API key',
+      'INVALID_API_KEY',
+      status,
+    )
+  }
+  if (status === 429 || message.toLowerCase().includes('rate limit')) {
+    return new LocalTranscriptionError(
+      'Groq rate limit hit, please retry shortly',
+      'RATE_LIMIT',
+      status,
+      retryAfterMs,
+    )
+  }
+  if (status === 400 && message.toLowerCase().includes('short')) {
+    return new LocalTranscriptionError(
+      'Audio file is too short',
+      'AUDIO_TOO_SHORT',
+      status,
+    )
+  }
+  if (message.toLowerCase().includes('short')) {
+    return new LocalTranscriptionError(
+      'Audio file is too short',
+      'AUDIO_TOO_SHORT',
+      status,
+    )
+  }
+  if (
+    (status !== undefined && status >= 500) ||
+    error?.name === 'APIConnectionError' ||
+    error?.name === 'APIConnectionTimeoutError'
+  ) {
+    return new LocalTranscriptionError(message, 'NETWORK', status, retryAfterMs)
+  }
+  return new LocalTranscriptionError(message, 'UNKNOWN', status)
 }
 
 class LocalTranscriptionService {
@@ -131,10 +248,14 @@ class LocalTranscriptionService {
     }
     const effectiveModel = normalizeModel(asrModel) || asrModel
 
-    const prompt = createTranscriptionPrompt(options.vocabulary || [])
+    const prompt = createTranscriptionPrompt(
+      options.vocabulary || [],
+      options.customPrompt,
+    )
     const fileType = options.fileType || 'wav'
     const noSpeechThreshold =
       options.noSpeechThreshold ?? DEFAULT_NO_SPEECH_THRESHOLD
+    const language = options.language?.trim()
 
     try {
       const file = await toFile(audioBuffer, `audio.${fileType}`)
@@ -143,41 +264,30 @@ class LocalTranscriptionService {
         model: effectiveModel,
         prompt,
         response_format: 'verbose_json',
+        temperature: 0,
+        ...(language ? { language } : {}),
       })
 
-      const segments = (transcription as any)?.segments || []
-      const firstSegment = segments[0]
-      if (firstSegment?.no_speech_prob > noSpeechThreshold) {
+      const segments: TranscriptionSegment[] =
+        (transcription as any)?.segments || []
+      const { text: filteredText, allNoSpeech } = filterSpeechSegments(
+        segments,
+        noSpeechThreshold,
+      )
+      if (allNoSpeech) {
         throw new LocalTranscriptionError(
           'No speech detected in audio',
           'NO_SPEECH',
         )
       }
 
+      if (filteredText !== null) {
+        return filteredText
+      }
       return (transcription as any)?.text?.trim?.() || ''
     } catch (error: any) {
       if (error instanceof LocalTranscriptionError) throw error
-
-      const message = error?.message || 'Failed to transcribe audio'
-      if (message.includes('401')) {
-        throw new LocalTranscriptionError(
-          'Groq rejected the API key',
-          'INVALID_API_KEY',
-        )
-      }
-      if (message.toLowerCase().includes('short')) {
-        throw new LocalTranscriptionError(
-          'Audio file is too short',
-          'AUDIO_TOO_SHORT',
-        )
-      }
-      if (message.toLowerCase().includes('rate limit')) {
-        throw new LocalTranscriptionError(
-          'Groq rate limit hit, please retry shortly',
-          'NETWORK',
-        )
-      }
-      throw new LocalTranscriptionError(message, 'UNKNOWN')
+      throw mapGroqError(error, 'Failed to transcribe audio')
     }
   }
 
