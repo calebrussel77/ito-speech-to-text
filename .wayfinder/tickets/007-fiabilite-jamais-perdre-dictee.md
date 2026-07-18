@@ -14,4 +14,4 @@ Décision de cadrage (2026-07-17) : une dictée ne doit **jamais** être perdue.
 
 À implémenter : persistance locale temporaire de l'audio jusqu'à transcription réussie (suppression après succès), retries avec backoff, file d'attente hors-ligne, notification visible en échec définitif avec possibilité de rejouer la transcription. Traiter aussi la troncature silencieuse du drain timeout (`lib/media/audio.ts:266-273`).
 
-Le design dépend de l'architecture ([Décision streaming ou batch](004-decision-streaming-ou-batch.md)) : en streaming, définir ce qu'on persiste (frames envoyées + transcript partiel) et le fallback batch sur coupure en cours de stream. Approche /tdd recommandée.
+*(Mise à jour 2026-07-18 : la [décision de routage](004-decision-streaming-ou-batch.md) a retenu Groq seul en batch — le design se simplifie : persister le WAV/PCM du clip jusqu'à succès, pas de cas streaming.)* Inclure le backoff sur `retry-after`/headers `x-ratelimit-*` de Groq pour les retries. Approche /tdd recommandée.

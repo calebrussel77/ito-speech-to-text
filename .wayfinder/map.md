@@ -9,9 +9,9 @@ tracker: local-markdown
 
 ## Destination
 
-Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : la voie par défaut est Groq optimisé au maximum (modèle, langue, prompts — quasi gratuit dans le cas de Caleb), AssemblyAI n'intervient que là où il apporte une valeur nette justifiant son prix (routage à trancher : longues dictées ? streaming ? code-switching ?), aucune dictée jamais perdue (persistance locale + retries + rejeu), et démarrer un enregistrement n'interrompt plus jamais l'application au premier plan (bug « Ctrl+C dans le terminal Claude » corrigé). Décisions **et** exécution : la carte est finie quand ces changements sont livrés et validés sur la machine de Caleb.
+Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : **Groq seul, optimisé à fond** (language 'fr', prompt FR + lexique, temperature 0, filtrage anti-hallucination, garde-fou VAD — coût zéro sur le free tier), aucune dictée jamais perdue (persistance locale + retries + rejeu), et démarrer un enregistrement n'interrompt plus jamais l'application au premier plan (bug « Ctrl+C dans le terminal Claude » corrigé ✅). Décisions **et** exécution : la carte est finie quand ces changements sont livrés et validés sur la machine de Caleb.
 
-*Révision du 2026-07-17 : le cadrage initial « passer à AssemblyAI direct » est remplacé par cette stratégie hybride coût d'abord, à la demande de Caleb.*
+*Révisions : 2026-07-17 — le cadrage initial « passer à AssemblyAI direct » devient une stratégie coût d'abord ; 2026-07-18 — la décision de routage retient Groq seul, AssemblyAI en réserve hors périmètre.*
 
 ## Notes
 
@@ -26,6 +26,7 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : l
 
 <!-- une ligne par ticket clos : [titre](tickets/xxx.md) — gist de la réponse -->
 
+- [Décision : stratégie de routage ASR coût/exactitude](tickets/004-decision-streaming-ou-batch.md) — Groq seul, optimisé à fond (le free tier absorbe l'usage 8x, la fluidité visée est atteignable en batch) ; post-traitement EDIT reste sur Groq ; `language: 'fr'` par défaut avec réglage ; AssemblyAI en réserve hors périmètre, réactivable seulement si la validation finale déçoit sur l'exactitude.
 - [Stabilité : machine à états de session explicite](tickets/008-fsm-session.md) — FSM `idle → starting → recording → processing` posée dans `ItoSessionManager` (commit `22a0392`) : double-start impossible, complete attend le start en vol, start échoué re-synchronise l'UI, cancel pendant processing jette le transcript tardif. 6 tests de races ajoutés.
 - [Diagnostic + correctif : l'enregistrement envoie un Ctrl+C au terminal](tickets/002-fix-ctrl-c-terminal.md) — Cause confirmée : la capture de contexte au démarrage de session simule Shift+Gauche + Ctrl+C (SIGINT en terminal), et le garde-fou anti-terminal ratait les noms de process Windows et l'app Claude. Corrigé (`f1369a2`) : détection normalisée + fragments, garde ajouté au mode EDIT ; validation réelle par Caleb dans le ticket Validation finale.
 - [Commit du travail en cours « son de complétion »](tickets/001-commit-wip-son-completion.md) — Livré en trois commits (`4ad759f`, `b5b0bd0`, `a37a7d0`) : feature + correctifs de types, exclusions lint/git (`opensrc/`, `.history/` — le lint passait de 2h+ à ~60 s), et la carte. Arbre propre ; 11 erreurs `@ts-nocheck` préexistantes hors WIP signalées à part.
@@ -34,12 +35,8 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : l
 
 ## Not yet specified
 
-- Post-traitement LLM (mode EDIT, aujourd'hui Groq `llama-3.1-8b-instant`) : reste sur Groq, migre vers le LLM Gateway d'AssemblyAI (LeMUR est mort depuis mars 2026), ou disparaît — à trancher dans la décision d'architecture.
-- Indication de langue : auto-détection vs sélecteur/hint FR-EN explicite — dépend de ce qu'AssemblyAI accepte.
-- UX du texte partiel si le streaming est retenu (affichage live dans la pill ?).
-- Groq conservé comme fournisseur de secours ou retiré des settings ?
-- Micro-latences résiduelles (drain 500 ms à l'arrêt, settle clipboard ~1 s, gathering de contexte synchrone dans le chemin critique) — à re-mesurer après la refonte, avant de micro-optimiser.
-- Visibilité des coûts : suivi de la consommation par fournisseur (minutes Groq vs AssemblyAI, estimation $) dans l'app ou les logs — utile si le routage hybride est retenu.
+- Micro-latences résiduelles (drain 500 ms à l'arrêt, settle clipboard ~1 s, gathering de contexte synchrone dans le chemin critique) — à re-mesurer après l'optimisation Groq, avant de micro-optimiser.
+- Méthodologie de la validation finale : comment mesurer « mesurablement plus exact » (échantillons avant/après ? ressenti seul ?) — à préciser quand les tickets d'exécution seront livrés.
 
 ## Out of scope
 
@@ -47,3 +44,4 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : l
 - Nettoyage/décommission du serveur gRPC — il ne participe plus à la transcription (auth/sync uniquement).
 - Modèle ASR local/on-device — écarté au profit d'AssemblyAI.
 - Bake-off multi-fournisseurs (Deepgram, ElevenLabs, etc.) — la comparaison se limite à Groq et AssemblyAI ; à rouvrir seulement si la validation finale déçoit.
+- **AssemblyAI en entier** (décision de routage du 2026-07-18) : [compte/clé API](tickets/005-compte-assemblyai.md) clos sans exécution, intégration retirée du ticket 006 (recentré Groq), streaming/texte live abandonné. Se rouvre uniquement si la [validation finale](tickets/009-validation-finale.md) montre que Groq optimisé ne suffit pas — les deux recherches (003, 010) restent la base factuelle prête à l'emploi.

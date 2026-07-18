@@ -3,9 +3,10 @@ id: 004
 title: "Décision : stratégie de routage ASR coût/exactitude (Groq par défaut, AssemblyAI ciblé)"
 label: wayfinder:grilling
 mode: HITL
-status: open
-assignee:
+status: closed
+assignee: claude (session du 2026-07-18)
 blocked-by: [003, 010]
+resolved: 2026-07-18
 ---
 
 ## Question
@@ -28,3 +29,12 @@ Faits Groq (recherche close) qui cadrent la décision : **le free tier tient l'u
 - Hint de langue côté Groq (forcer `fr` ? auto ?) et côté AssemblyAI.
 - Si streaming retenu quelque part : affichage du texte partiel dans l'UI (pill) ou insertion à la fin.
 - Un essai comparatif rapide sur tes vrais audios (crédits gratuits AssemblyAI + free tier Groq) avant de figer, ou décision directe sur pièces.
+
+## Résolution (2026-07-18, décidé avec Caleb)
+
+1. **Groq seul, optimisé à fond.** Pas d'AssemblyAI dans cette carte : le free tier Groq absorbe l'usage avec 8x de marge, la fluidité visée (insertion au relâchement, ~0,3-1 s) est atteignable en batch — Whisperflow fonctionne pareil. Leviers à appliquer : `language`, prompt FR ponctué avec lexique, `temperature: 0`, filtrage anti-hallucination par segment, garde-fou VAD/durée, erreurs typées, modèle en config.
+2. **Post-traitement LLM du mode EDIT : reste sur Groq** (`llama-3.1-8b-instant` ou successeur en config). Le LLM Gateway d'AssemblyAI n'apporte rien sans AssemblyAI au périmètre.
+3. **Langue : `language: 'fr'` par défaut**, avec un réglage dans Advanced Settings pour changer/désactiver (protège le cas dictée 100 % anglaise où forcer `fr` risque une traduction silencieuse).
+4. **AssemblyAI : en réserve, hors périmètre.** Les tickets [compte AssemblyAI](005-compte-assemblyai.md) et le volet AssemblyAI de [l'intégration](006-integration-assemblyai.md) sortent de la carte. AssemblyAI redevient d'actualité uniquement si la [validation finale](009-validation-finale.md) montre que l'exactitude Groq optimisé ne suffit pas — notamment sur le code-switching FR/EN, faiblesse structurelle de Whisper.
+
+Conséquences sur la carte : ticket 005 clos (hors périmètre), ticket 006 recentré « Optimisation Groq », ticket 007 débloqué.

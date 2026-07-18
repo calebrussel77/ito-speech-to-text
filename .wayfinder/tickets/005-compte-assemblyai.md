@@ -3,9 +3,10 @@ id: 005
 title: Compte AssemblyAI et clé API
 label: wayfinder:task
 mode: HITL
-status: open
+status: closed
 assignee:
 blocked-by: []
+resolved: 2026-07-18 (hors périmètre — voir la décision de routage, ticket 004)
 ---
 
 ## Question
