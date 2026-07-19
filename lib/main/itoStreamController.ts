@@ -9,6 +9,7 @@ import {
   TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
+import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
 import { interactionManager } from './interactions/InteractionManager'
 import { contextGrabber } from './context/ContextGrabber'
 import { getAdvancedSettings } from './store'
@@ -181,6 +182,10 @@ export class ItoStreamController {
       }
       throw error
     }
+
+    // The dictionary is authoritative: fix near-miss spellings of user terms
+    // that Whisper mangled (deterministic, local, no added latency).
+    transcript = applyDictionaryCorrections(transcript, context.vocabularyWords)
 
     if (pendingPath) {
       pendingDictationStore.delete(pendingPath)

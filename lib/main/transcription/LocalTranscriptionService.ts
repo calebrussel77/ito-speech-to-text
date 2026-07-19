@@ -37,7 +37,10 @@ const normalizeModel = (model?: string) =>
 // mimics its language, punctuation and casing. A French, punctuated base
 // prompt pulls the output toward well-punctuated French; the user dictionary
 // rides along as vocabulary priming.
-const DEFAULT_PROMPT_BASE = `Voici une dictée en français, correctement ponctuée et accentuée, qui peut mêler des termes techniques anglais du développement logiciel.`
+// The base deliberately DEMONSTRATES French/English code-switching with real
+// dev terms: Whisper mimics the prompt's style, so showing mixed-language
+// text primes it far better than describing it.
+const DEFAULT_PROMPT_BASE = `Voici une dictée en français, correctement ponctuée et accentuée. Je mélange souvent des termes techniques anglais : je viens de push un commit sur GitHub, le backend expose une API gRPC, et je teste la feature dans l'app Electron avec TypeScript.`
 
 export function createTranscriptionPrompt(
   vocabulary: string[],
