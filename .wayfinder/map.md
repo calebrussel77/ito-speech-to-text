@@ -26,6 +26,7 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : *
 
 <!-- une ligne par ticket clos : [titre](tickets/xxx.md) — gist de la réponse -->
 
+- [Vocabulaire technique : faire respecter le dictionnaire](tickets/012-vocabulaire-technique.md) — Livré (`bbd4f2f`) : correcteur déterministe post-ASR qui force la graphie canonique des termes du dictionnaire (fuzzy conservateur, multi-mots, mots coupés/collés) + prompt v2 qui démontre le code-switching FR/EN. Option passe LLM notée au brouillard.
 - [Correctif : « ©© » tapé au lancement de l'enregistrement](tickets/011-fix-copyright-chars.md) — Cause confirmée : capture grammaire au démarrage simulant Ctrl+C pendant que Win+Alt (le raccourci de Caleb) est encore tenu → Ctrl+Alt+C = ©. Corrigé (`e53f40e`) : capture déplacée à la complétion + aucune simulation clavier tant que des touches sont enfoncées.
 - [Fiabilité : ne jamais perdre une dictée](tickets/007-fiabilite-jamais-perdre-dictee.md) — Livré (`d9bc9f3`) : WAV persisté avant l'appel réseau et supprimé après succès, retries avec backoff sur `retry-after`, notification d'échec, récupération automatique vers l'historique au démarrage et après chaque succès. 9 tests.
 - [Optimisation Groq : appliquer tous les leviers d'exactitude et de latence](tickets/006-integration-assemblyai.md) — Livré (`02a7fe1`) : `language: 'fr'` (réglage `asrLanguage`), prompt français + dictionnaire (réglage `asrPrompt` ravivé), temperature 0, filtrage anti-hallucination sur tous les segments, garde silence pré-réseau, erreurs typées avec `retryAfterMs` pour la couche retry. 21 tests.
@@ -40,6 +41,7 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : *
 
 - Micro-latences résiduelles (drain 500 ms à l'arrêt, settle clipboard ~1 s, gathering de contexte synchrone dans le chemin critique) — à re-mesurer après l'optimisation Groq, avant de micro-optimiser.
 - Méthodologie de la validation finale : comment mesurer « mesurablement plus exact » (échantillons avant/après ? ressenti seul ?) — à préciser quand les tickets d'exécution seront livrés.
+- Passe LLM légère en mode TRANSCRIBE (llama-3.1-8b + dictionnaire, ~300 ms de latence) — seulement si le correcteur déterministe du ticket 012 ne suffit pas à l'usage sur les termes techniques.
 
 ## Out of scope
 
