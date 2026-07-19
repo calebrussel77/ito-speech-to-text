@@ -5,6 +5,7 @@ import { getNativeBinaryPath } from './native-interface'
 import { BrowserWindow } from 'electron'
 import { itoSessionManager } from '../main/itoSessionManager'
 import { KeyName, keyNameMap, normalizeLegacyKey } from '../types/keyboard'
+import { pressedKeys } from './keyboardState'
 
 interface KeyEvent {
   type: 'keydown' | 'keyup'
@@ -95,7 +96,7 @@ function restartKeyListener() {
 }
 
 // This set will track the state of all currently pressed keys.
-const pressedKeys = new Set<string>()
+// Set of currently pressed keys (moved to keyboardState to avoid import cycles)
 
 // Track when each key was first pressed to detect stuck keys
 const keyPressTimestamps = new Map<KeyName, number>()

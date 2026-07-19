@@ -77,9 +77,10 @@ export class ItoSessionManager {
     itoStreamController.setMode(mode)
     recordingStateNotifier.notifyRecordingStarted(mode)
 
-    this.prepareGrammarContext().catch(error => {
-      log.error('[itoSessionManager] Failed to fetch grammar context:', error)
-    })
+    // Grammar context is NOT gathered here: it simulates keystrokes, and the
+    // push-to-talk keys are still physically held at this point (held Alt +
+    // simulated Ctrl+C = "©" typed into the focused app). It runs during
+    // completeSession instead, in parallel with the transcription call.
 
     timingCollector.startInteraction()
     timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
@@ -89,6 +90,7 @@ export class ItoSessionManager {
   }
 
   private async prepareGrammarContext() {
+    this.grammarRulesService = new GrammarRulesService('')
     const { grammarServiceEnabled } = getAdvancedSettings()
     if (grammarServiceEnabled) {
       const cursorContext = await timingCollector.timeAsync(
@@ -158,8 +160,15 @@ export class ItoSessionManager {
       recordingStateNotifier.notifyRecordingStopped()
       recordingStateNotifier.notifyProcessingStarted()
 
+      // Runs in parallel with the transcription network call; it waits for
+      // the keyboard to be fully released before simulating anything.
+      const grammarContextReady = this.prepareGrammarContext().catch(error => {
+        log.error('[itoSessionManager] Failed to fetch grammar context:', error)
+      })
+
       try {
         const result = await itoStreamController.processLocalTranscription()
+        await grammarContextReady
         await this.handleTranscriptionResponse(result)
       } catch (error) {
         await this.handleTranscriptionError(error)

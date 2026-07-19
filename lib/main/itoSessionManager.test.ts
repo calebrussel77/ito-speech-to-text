@@ -148,15 +148,19 @@ describe('itoSessionManager (local mode)', () => {
     expect(mockVoiceInputService.startAudioRecording).toHaveBeenCalled()
   })
 
-  test('collects grammar context when enabled', async () => {
+  test('collects grammar context at completion, not at session start', async () => {
     mockGetAdvancedSettings.mockReturnValue({ grammarServiceEnabled: true })
 
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
+    // Starting a session must NOT simulate keystrokes: the push-to-talk keys
+    // are still physically held (held Alt + simulated Ctrl+C types "©").
     await session.startSession(ItoMode.TRANSCRIBE)
     await new Promise(resolve => setTimeout(resolve, 40))
+    expect(mockContextGrabber.getCursorContextForGrammar).not.toHaveBeenCalled()
 
+    await session.completeSession()
     expect(mockContextGrabber.getCursorContextForGrammar).toHaveBeenCalled()
   })
 

@@ -7,6 +7,7 @@ import {
   getCursorContext,
 } from '../../media/selected-text-reader'
 import { canGetContextFromCurrentApp } from '../../utils/applicationDetection'
+import { waitForAllKeysReleased } from '../../media/keyboardState'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from '../timing/TimingCollector'
 import { macOSAccessibilityContextProvider } from '../../media/macOSAccessibilityContextProvider'
@@ -128,13 +129,23 @@ export class ContextGrabber {
     }
 
     // Fallback to keyboard-based method. This simulates Ctrl+C, which is a
-    // SIGINT in terminals — never do it when a terminal-like app has focus.
+    // SIGINT in terminals — never do it when a terminal-like app has focus,
+    // and never while the user still holds keys (held Alt + simulated
+    // Ctrl+C = Ctrl+Alt+C = "©" typed into the focused app).
     console.log('[ContextGrabber] Using keyboard method for selected text')
     try {
       const canGetContext = await canGetContextFromCurrentApp()
       if (!canGetContext) {
         console.log(
           '[ContextGrabber] Skipping selected text read for current app',
+        )
+        return ''
+      }
+
+      const keyboardIdle = await waitForAllKeysReleased()
+      if (!keyboardIdle) {
+        console.log(
+          '[ContextGrabber] Keys still held, skipping selected text read',
         )
         return ''
       }
@@ -193,7 +204,8 @@ export class ContextGrabber {
       }
     }
 
-    // Fallback to keyboard-based method
+    // Fallback to keyboard-based method (simulates Shift+Left and Ctrl+C —
+    // same rules as above: no terminals, no simulation while keys are held)
     console.log('[ContextGrabber] Using keyboard method for cursor context')
     try {
       const canGetContext = await canGetContextFromCurrentApp()
@@ -201,6 +213,14 @@ export class ContextGrabber {
       if (!canGetContext) {
         console.log(
           '[ContextGrabber] Cannot get cursor context from current app',
+        )
+        return ''
+      }
+
+      const keyboardIdle = await waitForAllKeysReleased()
+      if (!keyboardIdle) {
+        console.log(
+          '[ContextGrabber] Keys still held, skipping cursor context read',
         )
         return ''
       }
