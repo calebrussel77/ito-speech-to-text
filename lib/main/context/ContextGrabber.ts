@@ -6,7 +6,10 @@ import {
   getSelectedTextString,
   getCursorContext,
 } from '../../media/selected-text-reader'
-import { canGetContextFromCurrentApp } from '../../utils/applicationDetection'
+import {
+  canGetContextFromCurrentApp,
+  canSimulateContextKeystrokes,
+} from '../../utils/applicationDetection'
 import { waitForAllKeysReleased } from '../../media/keyboardState'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from '../timing/TimingCollector'
@@ -204,8 +207,17 @@ export class ContextGrabber {
       }
     }
 
-    // Fallback to keyboard-based method (simulates Shift+Left and Ctrl+C —
-    // same rules as above: no terminals, no simulation while keys are held)
+    // The keyboard fallback simulates Shift+Left and Ctrl+C. This automatic
+    // path is macOS-only: on Windows the app-name guard has failed twice at
+    // protecting terminals (simulated Ctrl+C = SIGINT killed the running
+    // process at paste time), and no blocklist can guarantee "never".
+    if (!canSimulateContextKeystrokes()) {
+      console.log(
+        '[ContextGrabber] Automatic cursor context is macOS-only, skipping',
+      )
+      return ''
+    }
+
     console.log('[ContextGrabber] Using keyboard method for cursor context')
     try {
       const canGetContext = await canGetContextFromCurrentApp()

@@ -128,6 +128,20 @@ export function isTerminalApplication(appName: string): boolean {
   )
 }
 
+/**
+ * Whether AUTOMATIC keyboard-simulated context reading is allowed at all.
+ * Only macOS qualifies: it has an accessibility-API path, and its keyboard
+ * fallback has not been observed interrupting foreground apps. On Windows,
+ * app-name blocklists have failed twice at protecting terminals from the
+ * simulated Ctrl+C (SIGINT), so automatic simulation is disabled entirely —
+ * a blocklist cannot guarantee "never".
+ */
+export function canSimulateContextKeystrokes(
+  targetPlatform: NodeJS.Platform = process.platform,
+): boolean {
+  return targetPlatform === 'darwin'
+}
+
 export async function canGetContextFromCurrentApp(): Promise<boolean> {
   try {
     const window = await getActiveWindow()

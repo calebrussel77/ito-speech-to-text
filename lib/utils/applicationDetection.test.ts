@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test'
-import { isTerminalApplication } from './applicationDetection'
+import {
+  isTerminalApplication,
+  canSimulateContextKeystrokes,
+} from './applicationDetection'
+
+describe('canSimulateContextKeystrokes', () => {
+  test('only macOS allows automatic keystroke-simulated context reads', () => {
+    expect(canSimulateContextKeystrokes('darwin')).toBe(true)
+    expect(canSimulateContextKeystrokes('win32')).toBe(false)
+    expect(canSimulateContextKeystrokes('linux')).toBe(false)
+  })
+})
 
 describe('isTerminalApplication', () => {
   test('matches classic terminal app names', () => {
