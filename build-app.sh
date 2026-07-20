@@ -193,31 +193,45 @@ create_dmg() {
     fi
 }
 
-# Create Windows installer
-create_windows_installer() {
-    print_status "Creating Windows installer..."
+# Detect whether we are running on a Windows host (MinGW/MSYS2 shell)
+is_windows_host() {
+    [[ "${OSTYPE:-}" == "msys" ]] || [[ "${OSTYPE:-}" == "win32" ]] || [[ "${OS:-}" == "Windows_NT" ]]
+}
 
-    print_info "Packaging application with Electron Builder..."
-    # Ensure Vite embeds the stage for runtime
-    if [ -z "${VITE_ITO_ENV:-}" ]; then
-      export VITE_ITO_ENV="${ITO_ENV:-dev}"
-      print_info "Set VITE_ITO_ENV=${VITE_ITO_ENV} for build-time embedding"
+# Package the Windows app natively (Windows host only: no Docker, no wine)
+build_windows_native() {
+    print_info "Windows host detected: packaging natively (no Docker)..."
+
+    # Use the shared system cache so Electron/NSIS are not re-downloaded every build
+    unset ELECTRON_BUILDER_CACHE || true
+
+    # electron-builder does not recognise bun.lock, so it falls back to probing the
+    # environment and picks pnpm whenever PNPM_HOME is set. pnpm then refuses to run
+    # because package.json still declares "packageManager": "yarn". Pin the npm
+    # collector instead: bun installs a hoisted, npm-like node_modules layout, and this
+    # is the same collector the Docker build ends up using.
+    unset PNPM_HOME || true
+    export npm_config_user_agent="npm"
+
+    local targets="nsis"
+    if [ "$WITH_ZIP" = true ]; then
+        targets="nsis zip"
+    else
+        print_info "Building NSIS installer only (pass --with-zip to also produce the .zip)"
     fi
-    bun run electron-vite build
-    
+
+    # shellcheck disable=SC2086
+    bunx electron-builder --config electron-builder.config.js --win $targets --x64 --publish=never
+}
+
+# Package the Windows app through Docker + wine (cross-compilation from macOS/Linux)
+build_windows_docker() {
+    print_info "Using Docker for Windows build on ${OSTYPE:-unknown}..."
+
     # Set npm config to avoid symlink issues on Windows
     export npm_config_cache=$PWD/.npm-cache
-    export ELECTRON_BUILDER_CACHE=$PWD/.electron-builder-cache  
-    
-    # Disable code signing completely
-    export CSC_IDENTITY_AUTO_DISCOVERY=false
-    export CSC_LINK=""
-    export CSC_KEY_PASSWORD=""
-    export SKIP_SIGNING=true
-    export WIN_CSC_LINK=""
-    
-    print_info "Using Docker for Windows build on ${OSTYPE:-unknown}..."
-    
+    export ELECTRON_BUILDER_CACHE=$PWD/.electron-builder-cache
+
     # Check if Docker is available
     if ! command -v docker &> /dev/null; then
         print_error "Docker is not installed. Please install Docker Desktop."
@@ -291,14 +305,64 @@ create_windows_installer() {
           echo 'No Windows installer .exe found to copy'
         fi
       "
-    
+}
+
+# Copy the versioned installer to a stable name (used by the CDN and for local installs)
+copy_installer_static_name() {
+    local exe_path
+    exe_path=$(ls -t dist/Ito*.exe 2>/dev/null | grep -v 'Ito-Installer.exe' | head -n 1 || true)
+
+    if [ -z "$exe_path" ]; then
+        print_warning "No Windows installer .exe found to copy"
+        return
+    fi
+
+    local dest_name
+    if [ "${ITO_ENV:-dev}" = "prod" ]; then
+        dest_name="Ito-Installer.exe"
+    else
+        dest_name="Ito-${ITO_ENV}-Installer.exe"
+    fi
+
+    print_info "Copying $exe_path to dist/$dest_name"
+    cp "$exe_path" "dist/$dest_name"
+}
+
+# Create Windows installer
+create_windows_installer() {
+    print_status "Creating Windows installer..."
+
+    print_info "Packaging application with Electron Builder..."
+    # Ensure Vite embeds the stage for runtime
+    if [ -z "${VITE_ITO_ENV:-}" ]; then
+      export VITE_ITO_ENV="${ITO_ENV:-dev}"
+      print_info "Set VITE_ITO_ENV=${VITE_ITO_ENV} for build-time embedding"
+    fi
+    bun run electron-vite build
+
+    # Disable code signing completely
+    export CSC_IDENTITY_AUTO_DISCOVERY=false
+    export CSC_LINK=""
+    export CSC_KEY_PASSWORD=""
+    export SKIP_SIGNING=true
+    export WIN_CSC_LINK=""
+
+    # Native packaging on a Windows host is dramatically faster than Docker + wine,
+    # which exists only to cross-compile from macOS/Linux.
+    if is_windows_host && [ "$FORCE_DOCKER" = false ]; then
+        build_windows_native
+    else
+        build_windows_docker
+    fi
+
+    copy_installer_static_name
+
     print_status "Windows installer created successfully!"
-    
+
     # Show output location
     if [ -d "dist" ]; then
         print_info "Build output location: $(pwd)/dist"
         ls -la dist/*.exe 2>/dev/null || print_warning "No .exe files found in dist directory"
-        ls -la dist/*.nsis.7z 2>/dev/null || print_warning "No .nsis.7z files found in dist directory"
     fi
 }
 
@@ -312,6 +376,8 @@ show_usage() {
     echo ""
     echo "OPTIONS:"
     echo "  --skip-binaries     Skip building native Rust modules"
+    echo "  --with-zip          Windows: also build the .zip target (nsis only by default)"
+    echo "  --docker            Windows: force the Docker + wine path even on a Windows host"
     echo "  --help, -h          Show this help message"
     echo ""
     echo "Examples:"
@@ -319,6 +385,9 @@ show_usage() {
     echo "  $0 mac              # Build for macOS"
     echo "  $0 windows          # Build for Windows"
     echo "  $0 mac --skip-binaries    # Build macOS without rebuilding Rust modules"
+    echo ""
+    echo "NOTE: On a Windows host the Windows build runs natively (no Docker, no wine),"
+    echo "      which is far faster. Docker is only used to cross-compile from macOS/Linux."
 }
 
 # Main build function
@@ -326,7 +395,9 @@ main() {
     # Parse command line arguments
     PLATFORM="mac"  # default platform
     SKIP_BINARIES=false
-    
+    WITH_ZIP=false
+    FORCE_DOCKER=false
+
     for arg in "$@"; do
         case $arg in
             "mac"|"macos")
@@ -339,6 +410,14 @@ main() {
                 ;;
             --skip-binaries)
                 SKIP_BINARIES=true
+                shift
+                ;;
+            --with-zip)
+                WITH_ZIP=true
+                shift
+                ;;
+            --docker)
+                FORCE_DOCKER=true
                 shift
                 ;;
             --help|-h)
