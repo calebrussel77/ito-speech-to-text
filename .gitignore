@@ -26,3 +26,10 @@ server/deploy-dev.sh
 
 # Vendored third-party reference apps (not part of the build)
 opensrc/
+
+# Agent handoff notes and scratch files
+tmp/
+
+# Stray build-output backups (dist/* above does not cover sibling names,
+# and electron-builder swallows anything left at the repo root into app.asar)
+dist.*/

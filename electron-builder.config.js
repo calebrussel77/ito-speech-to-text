@@ -52,6 +52,19 @@ module.exports = {
     '!tsconfig.web.json',
     '!native/**',
     '!build-*.sh',
+    // `files` has no allowlist, so electron-builder's default **/* applies:
+    // everything at the repo root ships in app.asar unless negated here.
+    '!dist',
+    '!dist.*',
+    '!.history',
+    '!opensrc',
+    '!server',
+    '!.wayfinder',
+    '!tmp',
+    '!.github',
+    '!.claude',
+    '!bun.lock',
+    '!out.json',
     {
       from: 'out',
       filter: ['**/*'],
