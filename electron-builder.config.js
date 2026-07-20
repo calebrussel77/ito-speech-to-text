@@ -73,7 +73,17 @@ module.exports = {
   asar: true,
   asarUnpack: ['resources/**'],
   extraMetadata: {
-    version: process.env.VITE_ITO_VERSION || '0.0.0-dev',
+    // package.json is the source of truth; VITE_ITO_VERSION can still
+    // override for one-off builds.
+    version: process.env.VITE_ITO_VERSION || require('./package.json').version,
+  },
+  // Embeds app-update.yml and generates latest.yml so electron-updater can
+  // consume the fork's GitHub Releases. Never auto-published: build-app.sh
+  // passes --publish=never; assets are uploaded to the release manually.
+  publish: {
+    provider: 'github',
+    owner: 'calebrussel77',
+    repo: 'ito-speech-to-text',
   },
   protocols: {
     name: 'ito',

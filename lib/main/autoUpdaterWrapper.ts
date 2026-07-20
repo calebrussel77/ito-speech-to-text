@@ -36,22 +36,14 @@ export function initializeAutoUpdater() {
           : 'Development auto-updater enabled, initializing...',
       )
 
-      const bucket = import.meta.env.VITE_UPDATER_BUCKET
-      if (!bucket) {
-        throw new Error('VITE_UPDATER_BUCKET environment variable is not set')
-      }
-
       // Force dev updates if in development mode
       if (!app.isPackaged) {
         autoUpdater.forceDevUpdateConfig = true
       }
 
-      autoUpdater.setFeedURL({
-        provider: 's3',
-        bucket,
-        path: 'releases/',
-        region: 'us-west-2',
-      })
+      // Feed URL comes from the app-update.yml embedded by electron-builder
+      // (publish: github in electron-builder.config.js) — the app checks the
+      // fork's GitHub Releases, no S3 bucket involved.
 
       log.transports.file.level = 'debug'
       autoUpdater.logger = log

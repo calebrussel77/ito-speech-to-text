@@ -1,6 +1,6 @@
 {
   "name": "ito",
-  "version": "0.2.3",
+  "version": "0.1.2",
   "description": "Ito, a smart voice assistant",
   "main": "./out/main/main.js",
   "license": "MIT",
@@ -40,8 +40,7 @@
     "build:win": "bash ./build-app.sh windows",
     "build:mac": "bash ./build-app.sh mac",
     "generate:constants": "bun scripts/generate-constants.js",
-    "build:app": "bash ./build-app.sh",
-    "prepare": "husky"
+    "build:app": "bash ./build-app.sh"
   },
   "repository": {
     "type": "git",
@@ -110,8 +109,6 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "framer-motion": "^12.15.0",
     "happy-dom": "^20.0.10",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.1.2",
     "prettier": "^3.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
