@@ -126,7 +126,7 @@ export const defaultValues: AppStore = {
     runInBackground: true,
     interactionSounds: false,
     interactionSoundTheme: 'pop',
-    muteAudioWhenDictating: false,
+    muteAudioWhenDictating: true,
     pasteCombo: 'auto',
     microphoneDeviceId: 'default',
     microphoneName: 'Auto-detect',
@@ -293,7 +293,8 @@ const migrations: Migration[] = [
   {
     id: '2026-03-05-interaction-sound-theme-default',
     run: s => {
-      const settings = (s.get(STORE_KEYS.SETTINGS) || {}) as Partial<SettingsStore>
+      const settings = (s.get(STORE_KEYS.SETTINGS) ||
+        {}) as Partial<SettingsStore>
       const currentTheme = settings.interactionSoundTheme
       if (
         currentTheme !== 'pop' &&
@@ -341,6 +342,17 @@ const migrations: Migration[] = [
         }
         s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
       }
+    },
+  },
+  {
+    id: '2026-07-26-mute-audio-when-dictating-default-on',
+    run: s => {
+      // Muting other audio while dictating is now on by default: it removes
+      // the main source of distraction during recording (and, on Windows,
+      // stops other apps' audio from bleeding into the mic). Existing
+      // installs predate the Windows implementation, so their stored `false`
+      // is a platform limitation, not a user choice — flip it once.
+      s.set('settings.muteAudioWhenDictating', true)
     },
   },
   {

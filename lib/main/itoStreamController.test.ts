@@ -57,6 +57,7 @@ const mockContextGrabber = {
       appName: 'App',
       contextText: 'Ctx',
       vocabularyWords: [],
+      dictionaryEntries: [],
       advancedSettings: {
         llm: {
           asrModel: 'whisper',
@@ -158,7 +159,9 @@ describe('ItoStreamController (local)', () => {
     const result = await controller.processLocalTranscription()
 
     expect(mockAudioStreamManager.initialize).toHaveBeenCalled()
-    expect(mockLocalAudioProcessor.prepareAudioForTranscription).toHaveBeenCalled()
+    expect(
+      mockLocalAudioProcessor.prepareAudioForTranscription,
+    ).toHaveBeenCalled()
     expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
     expect(result.transcript).toBe('adjusted transcript')
   })
@@ -195,7 +198,9 @@ describe('ItoStreamController (local)', () => {
     await controller.initialize(ItoMode.TRANSCRIBE)
     const result = await controller.processLocalTranscription()
 
-    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(3)
+    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(
+      3,
+    )
     expect(result.transcript).toBe('adjusted transcript')
     expect(mockPendingDictationStore.delete).toHaveBeenCalled()
   })
@@ -218,7 +223,9 @@ describe('ItoStreamController (local)', () => {
       code: 'INVALID_API_KEY',
     })
 
-    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(1)
+    expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(
+      1,
+    )
     expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
   })
 
@@ -259,7 +266,9 @@ describe('ItoStreamController (local)', () => {
     const recovered = await controller.flushPendingDictations()
 
     expect(recovered).toBe(2)
-    expect(mockInteractionManager.createRecoveredInteraction).toHaveBeenCalledTimes(2)
+    expect(
+      mockInteractionManager.createRecoveredInteraction,
+    ).toHaveBeenCalledTimes(2)
     expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
   })
 
@@ -281,6 +290,8 @@ describe('ItoStreamController (local)', () => {
 
     expect(recovered).toBe(0)
     expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
-    expect(mockInteractionManager.createRecoveredInteraction).not.toHaveBeenCalled()
+    expect(
+      mockInteractionManager.createRecoveredInteraction,
+    ).not.toHaveBeenCalled()
   })
 })

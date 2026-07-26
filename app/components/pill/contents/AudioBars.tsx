@@ -1,7 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { AudioBarsBase, BAR_COUNT } from './AudioBarsBase'
 
-// Premium audio visualization component with smooth animations
+const MIN_HEIGHT = 2
+const MAX_HEIGHT = 14
+
+// Live waveform: newest volume samples flow in from the right and scroll left.
+// When the user is silent, bars settle into a gentle idle ripple.
 export const AudioBars = ({
   volumeHistory,
   barColor = 'hsl(210, 20%, 96%)',
@@ -9,42 +13,32 @@ export const AudioBars = ({
   volumeHistory: number[]
   barColor?: string
 }) => {
-  const [activeBarIndex, setActiveBarIndex] = useState(0)
+  const [phase, setPhase] = useState(0)
 
   useEffect(() => {
-    setActiveBarIndex(prevIndex => (prevIndex + 1) % BAR_COUNT)
+    setPhase(prev => prev + 1)
   }, [volumeHistory])
 
-  // Calculate dynamic heights with smooth wave-like interpolation
   const dynamicHeights = useMemo(() => {
     return Array(BAR_COUNT)
-      .fill(1)
+      .fill(0)
       .map((_, index) => {
-        // Get volume from history with mirrored effect from center
-        const centerIndex = Math.floor(BAR_COUNT / 2)
-        const distanceFromCenter = Math.abs(index - centerIndex)
-        const historyIndex = volumeHistory.length - distanceFromCenter - 1
+        // Map each bar to a slot in the volume history (newest on the right)
+        const historyIndex = volumeHistory.length - (BAR_COUNT - index)
+        const volume = historyIndex >= 0 ? volumeHistory[historyIndex] || 0 : 0
 
-        const volume = volumeHistory[Math.max(0, historyIndex)] || 0
+        // Exponential curve for a punchier response to speech
+        const normalizedVolume = Math.min(1, volume * 18)
+        const scale = Math.pow(normalizedVolume, 0.8)
 
-        // Smooth scaling with exponential curve for more dynamic response
-        const normalizedVolume = Math.max(0.03, Math.min(1, volume * 18))
-        const scale = Math.pow(normalizedVolume, 0.85)
+        // Gentle idle ripple so the waveform feels alive during silence
+        const idleRipple = (Math.sin(phase * 0.55 + index * 0.85) + 1) * 0.75
 
-        // Add subtle wave motion based on position
-        const waveOffset = Math.sin((index / BAR_COUNT) * Math.PI) * 0.3
-        const activeBoost = index === activeBarIndex ? 1.15 : 1
-
-        // Calculate final height with minimum visibility
-        const baseHeight = 2
-        const maxHeight = 20
         const height =
-          (baseHeight + scale * (maxHeight - baseHeight) + waveOffset) *
-          activeBoost
-
-        return Math.min(Math.max(height, 2), maxHeight)
+          MIN_HEIGHT + idleRipple + scale * (MAX_HEIGHT - MIN_HEIGHT)
+        return Math.min(Math.max(height, MIN_HEIGHT), MAX_HEIGHT)
       })
-  }, [volumeHistory, activeBarIndex])
+  }, [volumeHistory, phase])
 
   return <AudioBarsBase heights={dynamicHeights} barColor={barColor} />
 }

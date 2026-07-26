@@ -1,5 +1,9 @@
 import { audioRecorderService } from '../media/audio'
-import { muteSystemAudio, unmuteSystemAudio } from '../media/systemAudio'
+import {
+  muteSystemAudio,
+  unmuteSystemAudio,
+  warmUpSystemAudioControl,
+} from '../media/systemAudio'
 import { getPillWindow, mainWindow } from './app'
 import store from './store'
 import { STORE_KEYS } from '../constants/store-keys'
@@ -16,7 +20,10 @@ export class VoiceInputService {
     const deviceId = settings.microphoneDeviceId
     if (!deviceId) return
 
-    console.log('[VoiceInputService] Preparing audio stream with device:', deviceId)
+    console.log(
+      '[VoiceInputService] Preparing audio stream with device:',
+      deviceId,
+    )
     audioRecorderService.prepareStream(deviceId)
   }
 
@@ -95,6 +102,12 @@ export class VoiceInputService {
     })
 
     audioRecorderService.initialize()
+
+    // Pre-spawn the Windows mute helper so the first dictation mutes
+    // instantly instead of paying the PowerShell startup cost.
+    if (store.get(STORE_KEYS.SETTINGS).muteAudioWhenDictating) {
+      warmUpSystemAudioControl()
+    }
   }
 
   /**

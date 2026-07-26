@@ -4,6 +4,7 @@ import {
   IPC_EVENTS,
   RecordingStatePayload,
   ProcessingStatePayload,
+  PendingDictationsPayload,
 } from '../types/ipc'
 
 /**
@@ -41,9 +42,16 @@ export class RecordingStateNotifier {
     })
   }
 
+  public notifyPendingDictations(count: number) {
+    this.sendToWindows(IPC_EVENTS.PENDING_DICTATIONS_UPDATE, { count })
+  }
+
   private sendToWindows(
     event: string,
-    payload: RecordingStatePayload | ProcessingStatePayload,
+    payload:
+      | RecordingStatePayload
+      | ProcessingStatePayload
+      | PendingDictationsPayload,
   ) {
     // Send to pill window
     getPillWindow()?.webContents.send(event, payload)

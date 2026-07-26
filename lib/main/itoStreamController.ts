@@ -8,17 +8,16 @@ import {
   LocalTranscriptionError,
   TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
+import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
 import { interactionManager } from './interactions/InteractionManager'
+import { recordingStateNotifier } from './recordingStateNotifier'
 import { contextGrabber } from './context/ContextGrabber'
 import { getAdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 
 const RETRYABLE_CODES = new Set(['RATE_LIMIT', 'NETWORK'])
-// Codes for which keeping the audio makes no sense (there is nothing to
-// recover from silence or sub-100ms clips).
-const UNRECOVERABLE_CODES = new Set(['NO_SPEECH', 'AUDIO_TOO_SHORT'])
 const MAX_TRANSCRIPTION_ATTEMPTS = 3
 
 function showNotification(title: string, body: string) {
@@ -92,6 +91,10 @@ export class ItoStreamController {
     return this.audioStreamManager.getAudioDurationMs()
   }
 
+  public getCurrentSampleRate(): number {
+    return this.audioStreamManager.getCurrentSampleRate()
+  }
+
   private stopStreaming() {
     this.audioStreamManager.stopStreaming()
   }
@@ -122,10 +125,8 @@ export class ItoStreamController {
     const rawAudio = this.audioStreamManager.getAllAudio()
     const sampleRate = this.audioStreamManager.getCurrentSampleRate()
 
-    const { wavAudio, durationMs } = localAudioProcessor.prepareAudioForTranscription(
-      rawAudio,
-      { sampleRate },
-    )
+    const { wavAudio, durationMs } =
+      localAudioProcessor.prepareAudioForTranscription(rawAudio, { sampleRate })
 
     let pendingPath: string | null = null
     try {
@@ -178,17 +179,26 @@ export class ItoStreamController {
             'Ito — dictée sauvegardée',
             'La transcription a échoué. Votre dictée sera récupérée automatiquement dans l’historique.',
           )
+          // Let the session manager link the history row to this WAV, so the
+          // later recovery updates that row instead of duplicating it.
+          error.pendingDictationPath = pendingPath
         }
+        this.notifyPendingCount()
       }
+      error.audioDurationMs = durationMs
       throw error
     }
 
     // The dictionary is authoritative: fix near-miss spellings of user terms
     // that Whisper mangled (deterministic, local, no added latency).
-    transcript = applyDictionaryCorrections(transcript, context.vocabularyWords)
+    transcript = applyDictionaryCorrections(
+      transcript,
+      context.dictionaryEntries,
+    )
 
     if (pendingPath) {
       pendingDictationStore.delete(pendingPath)
+      this.notifyPendingCount()
     }
     // Network is clearly up: try to recover previously failed dictations.
     setTimeout(() => {
@@ -243,6 +253,18 @@ export class ItoStreamController {
 
   private flushingPending = false
 
+  // Keeps the dashboard's "pending dictations" banner in sync with the disk
+  // queue whenever it changes.
+  private notifyPendingCount() {
+    try {
+      recordingStateNotifier.notifyPendingDictations(
+        pendingDictationStore.list().length,
+      )
+    } catch (error) {
+      console.warn('[ItoStreamController] Pending count notify failed:', error)
+    }
+  }
+
   /**
    * Transcribes dictations that previously failed and stores them in the
    * interaction history (no text insertion: the original cursor context is
@@ -284,6 +306,7 @@ export class ItoStreamController {
             await interactionManager.createRecoveredInteraction(
               transcript,
               16000,
+              filePath,
             )
             recovered++
           }
@@ -307,6 +330,7 @@ export class ItoStreamController {
       return recovered
     } finally {
       this.flushingPending = false
+      this.notifyPendingCount()
     }
   }
 }

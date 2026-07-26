@@ -3,9 +3,13 @@ import { InteractionManager } from './InteractionManager'
 import { STORE_KEYS } from '../../constants/store-keys'
 
 const mockUpsert = mock((_interaction: unknown) => Promise.resolve())
+const mockFindAll = mock(
+  (_userId?: string): Promise<any[]> => Promise.resolve([]),
+)
 mock.module('../sqlite/repo', () => ({
   InteractionsTable: {
     upsert: mockUpsert,
+    findAll: mockFindAll,
   },
 }))
 
@@ -36,6 +40,8 @@ describe('InteractionManager', () => {
   beforeEach(() => {
     interactionManager = new InteractionManager()
     mockUpsert.mockClear()
+    mockFindAll.mockClear()
+    mockFindAll.mockResolvedValue([])
     mockMainStore.get.mockClear()
     mockMainStore.get.mockReturnValue({ id: 'test-user-123' })
   })
@@ -93,14 +99,18 @@ describe('InteractionManager', () => {
 
       expect(mockUpsert).toHaveBeenCalled()
       const interactionData = mockUpsert.mock.calls[0][0] as any
-      expect(interactionData.id).toBe(interactionManager.getCurrentInteractionId())
+      expect(interactionData.id).toBe(
+        interactionManager.getCurrentInteractionId(),
+      )
       expect(interactionData.user_id).toBe('test-user-123')
       expect(interactionData.title).toBe(transcript)
       expect(interactionData.raw_audio).toBeNull()
       expect(interactionData.sample_rate).toBe(sampleRate)
       expect(interactionData.duration_ms).toBeGreaterThanOrEqual(0)
       expect(interactionData.asr_output?.transcript).toBe(transcript)
-      expect(interactionData.asr_output?.totalAudioBytes).toBe(audioBuffer.length)
+      expect(interactionData.asr_output?.totalAudioBytes).toBe(
+        audioBuffer.length,
+      )
     })
 
     test('should skip creation when no current interaction ID', async () => {
@@ -223,7 +233,9 @@ describe('InteractionManager', () => {
       const interactionData = mockUpsert.mock.calls[0][0] as any
       // We intentionally do not persist audio in local-only mode.
       expect(interactionData.raw_audio).toBeNull()
-      expect(interactionData.asr_output?.totalAudioBytes).toBe(audioBuffer.length)
+      expect(interactionData.asr_output?.totalAudioBytes).toBe(
+        audioBuffer.length,
+      )
     })
 
     test('should set null for empty audio buffer', async () => {
@@ -236,6 +248,106 @@ describe('InteractionManager', () => {
       const interactionData = mockUpsert.mock.calls[0][0] as any
       expect(interactionData.raw_audio).toBeNull()
       expect(interactionData.asr_output?.totalAudioBytes).toBe(0)
+    })
+  })
+
+  describe('Speaking duration for the WPM stat', () => {
+    test('uses the audio duration, not the interaction wall-clock', async () => {
+      interactionManager.initialize()
+      // Simulate transcription latency between recording and storage
+      await new Promise(resolve => setTimeout(resolve, 30))
+
+      await interactionManager.createInteraction(
+        'bonjour tout le monde',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        1200, // 1.2s actually spoken
+      )
+
+      const interactionData = mockUpsert.mock.calls[0][0] as any
+      expect(interactionData.duration_ms).toBe(1200)
+      // Wall-clock is kept separately for diagnostics
+      expect(
+        interactionData.asr_output?.interactionDurationMs,
+      ).toBeGreaterThanOrEqual(30)
+    })
+  })
+
+  describe('Failed and recovered dictations', () => {
+    test('records a failed dictation as pending when audio is queued', async () => {
+      const id = interactionManager.initialize()
+
+      await interactionManager.createFailedInteraction({
+        errorMessage: 'Network unreachable',
+        errorCode: 'NETWORK',
+        sampleRate: 16000,
+        audioDurationMs: 2000,
+        pendingPath: 'C:/tmp/dictation-1.wav',
+      })
+
+      const data = mockUpsert.mock.calls[0][0] as any
+      expect(data.id).toBe(id)
+      expect(data.asr_output.error).toBe('Network unreachable')
+      expect(data.asr_output.pending).toBe(true)
+      expect(data.asr_output.pendingPath).toBe('C:/tmp/dictation-1.wav')
+      expect(data.duration_ms).toBe(2000)
+    })
+
+    test('marks a failure without queued audio as not pending', async () => {
+      interactionManager.initialize()
+
+      await interactionManager.createFailedInteraction({
+        errorMessage: 'Invalid API key',
+        errorCode: 'INVALID_API_KEY',
+        sampleRate: 16000,
+      })
+
+      const data = mockUpsert.mock.calls[0][0] as any
+      expect(data.asr_output.pending).toBe(false)
+      expect(data.title).toBe('Failed dictation')
+    })
+
+    test('recovery updates the pending row instead of duplicating it', async () => {
+      const pendingPath = 'C:/tmp/dictation-2.wav'
+      mockFindAll.mockResolvedValueOnce([
+        {
+          id: 'existing-row-id',
+          created_at: '2026-07-20T10:00:00.000Z',
+          asr_output: { pending: true, pendingPath },
+        },
+      ])
+
+      await interactionManager.createRecoveredInteraction(
+        'texte récupéré',
+        16000,
+        pendingPath,
+        1500,
+      )
+
+      const data = mockUpsert.mock.calls[0][0] as any
+      expect(data.id).toBe('existing-row-id')
+      // The dictation keeps its original place in the history
+      expect(data.created_at).toBe('2026-07-20T10:00:00.000Z')
+      expect(data.asr_output.pending).toBe(false)
+      expect(data.asr_output.recovered).toBe(true)
+      expect(data.asr_output.transcript).toBe('texte récupéré')
+      expect(data.duration_ms).toBe(1500)
+    })
+
+    test('recovery creates a fresh row when no pending row matches', async () => {
+      mockFindAll.mockResolvedValueOnce([])
+
+      await interactionManager.createRecoveredInteraction(
+        'orpheline',
+        16000,
+        'C:/tmp/dictation-unknown.wav',
+      )
+
+      const data = mockUpsert.mock.calls[0][0] as any
+      expect(data.id).not.toBe('existing-row-id')
+      expect(data.asr_output.recovered).toBe(true)
     })
   })
 

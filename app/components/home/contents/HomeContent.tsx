@@ -86,6 +86,8 @@ export default function HomeContent({
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [loading, setLoading] = useState(true)
   const [isClearingAll, setIsClearingAll] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [isRetryingPending, setIsRetryingPending] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
@@ -327,6 +329,42 @@ export default function HomeContent({
     return unsubscribe
   }, [loadInteractions])
 
+  // Track failed dictations waiting on disk for a network retry
+  useEffect(() => {
+    window.api.pendingDictations
+      .count()
+      .then(setPendingCount)
+      .catch(() => {})
+
+    const unsubscribe = window.api.on(
+      'pending-dictations-update',
+      (payload: { count: number }) => setPendingCount(payload.count),
+    )
+
+    // When the network comes back, resume recovery right away instead of
+    // waiting for the next app start or successful dictation.
+    const handleOnline = () => {
+      window.api.pendingDictations.retry().catch(() => {})
+    }
+    window.addEventListener('online', handleOnline)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [])
+
+  const handleRetryPending = async () => {
+    setIsRetryingPending(true)
+    try {
+      await window.api.pendingDictations.retry()
+    } catch (error) {
+      console.error('Failed to retry pending dictations:', error)
+    } finally {
+      setIsRetryingPending(false)
+    }
+  }
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleString('en-US', {
@@ -371,15 +409,34 @@ export default function HomeContent({
     return groups
   }
 
-  const getDisplayText = (interaction: Interaction) => {
+  const getDisplayText = (
+    interaction: Interaction,
+  ): {
+    text: string
+    isError: boolean
+    tone: 'ok' | 'error' | 'pending'
+    tooltip: string | null
+  } => {
     // Check for errors first
     if (interaction.asr_output?.error) {
+      // A pending dictation still has its audio on disk: it is queued, not
+      // lost, so it gets a warning tone rather than the destructive one.
+      if (interaction.asr_output?.pending) {
+        return {
+          text: 'Waiting for network — will retry automatically',
+          isError: true,
+          tone: 'pending',
+          tooltip: `Transcription failed (${interaction.asr_output.error}). The audio is saved and will be transcribed as soon as the connection is back.`,
+        }
+      }
+
       // Prefer precise error code mapping when available
       const code = interaction.asr_output?.errorCode
       if (code === 'CLIENT_TRANSCRIPTION_QUALITY_ERROR') {
         return {
           text: 'Audio quality too low',
           isError: true,
+          tone: 'error',
           tooltip:
             'Audio quality was too low to generate a reliable transcript',
         }
@@ -391,12 +448,14 @@ export default function HomeContent({
         return {
           text: 'Audio is silent',
           isError: true,
+          tone: 'error',
           tooltip: "Ito didn't detect any words so the transcript is empty",
         }
       }
       return {
         text: 'Transcription failed',
         isError: true,
+        tone: 'error',
         tooltip: interaction.asr_output.error,
       }
     }
@@ -408,6 +467,7 @@ export default function HomeContent({
       return {
         text: 'Audio is silent.',
         isError: true,
+        tone: 'error',
         tooltip: "Ito didn't detect any words so the transcript is empty",
       }
     }
@@ -416,6 +476,7 @@ export default function HomeContent({
     return {
       text: transcript,
       isError: false,
+      tone: 'ok',
       tooltip: null,
     }
   }
@@ -612,6 +673,27 @@ export default function HomeContent({
           </button>
         </div>
 
+        {/* Pending dictations banner — failed transcriptions waiting for network */}
+        {pendingCount > 0 && (
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <div className="flex items-center gap-2.5 text-sm text-amber-600 dark:text-amber-400">
+              <InfoCircle className="w-4 h-4 shrink-0" />
+              <span>
+                {pendingCount} dictation{pendingCount > 1 ? 's' : ''} could not
+                be transcribed and {pendingCount > 1 ? 'are' : 'is'} waiting for
+                the network — recovery will resume automatically.
+              </span>
+            </div>
+            <button
+              className="shrink-0 rounded-md border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleRetryPending}
+              disabled={isRetryingPending}
+            >
+              {isRetryingPending ? 'Retrying…' : 'Retry now'}
+            </button>
+          </div>
+        )}
+
         {/* Recent Activity Header */}
         <div className="mb-4 pl-1 flex items-center justify-between">
           <div className="text-sm font-medium text-muted-foreground">
@@ -672,7 +754,13 @@ export default function HomeContent({
                             {formatTime(interaction.created_at)}
                           </div>
                           <div
-                            className={`${displayInfo.isError ? 'text-destructive' : 'text-foreground'} flex items-center gap-2`}
+                            className={`${
+                              displayInfo.tone === 'pending'
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : displayInfo.isError
+                                  ? 'text-destructive'
+                                  : 'text-foreground'
+                            } flex items-center gap-2`}
                           >
                             {displayInfo.text}
                             {displayInfo.tooltip && (

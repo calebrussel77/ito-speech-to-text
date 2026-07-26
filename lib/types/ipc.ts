@@ -10,6 +10,7 @@ export const IPC_EVENTS = {
   INTERACTION_SOUND_PLAY: 'interaction-sound-play',
   ONBOARDING_UPDATE: 'onboarding-update',
   USER_AUTH_UPDATE: 'user-auth-update',
+  PENDING_DICTATIONS_UPDATE: 'pending-dictations-update',
 } as const
 
 // IPC Payload Types
@@ -25,6 +26,10 @@ export interface ProcessingStatePayload {
 
 export interface VolumeUpdatePayload {
   volume: number
+}
+
+export interface PendingDictationsPayload {
+  count: number
 }
 
 export interface InteractionSoundPlayPayload {

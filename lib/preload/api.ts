@@ -134,6 +134,12 @@ const api = {
     delete: (id: string) => ipcRenderer.invoke('interactions:delete', id),
     clearAll: () => ipcRenderer.invoke('interactions:clear-all'),
   },
+  pendingDictations: {
+    count: (): Promise<number> =>
+      ipcRenderer.invoke('pending-dictations:count'),
+    retry: (): Promise<number> =>
+      ipcRenderer.invoke('pending-dictations:retry'),
+  },
   trial: {
     complete: () => ipcRenderer.invoke('trial:complete'),
     startAfterOnboarding: () =>

@@ -57,4 +57,14 @@ export interface IpcApi {
     accessToken: string,
   ) => void
   deleteUserData: () => Promise<void>
+  interactions: {
+    getAll: () => Promise<any[]>
+    getById: (id: string) => Promise<any>
+    delete: (id: string) => Promise<void>
+    clearAll: () => Promise<void>
+  }
+  pendingDictations: {
+    count: () => Promise<number>
+    retry: () => Promise<number>
+  }
 }

@@ -36,7 +36,8 @@ export default function AudioSettingsContent() {
                 Mute audio when dictating
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Automatically silence other active audio during dictation.
+                Silence every other sound on your machine (music, videos,
+                notifications) while you record, and restore it right after.
               </div>
             </div>
             <Switch

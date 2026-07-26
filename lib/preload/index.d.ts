@@ -93,6 +93,10 @@ declare global {
         delete: (id: string) => Promise<void>
         clearAll: () => Promise<void>
       }
+      pendingDictations: {
+        count: () => Promise<number>
+        retry: () => Promise<number>
+      }
       loginItem: {
         setSettings: (enabled: boolean) => Promise<void>
         getSettings: () => Promise<Electron.LoginItemSettings>

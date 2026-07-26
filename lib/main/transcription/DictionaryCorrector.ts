@@ -59,9 +59,14 @@ function parseToken(raw: string): Token {
   return { prefix: match[1], core: match[2], suffix: match[3] }
 }
 
+// A dictionary term is either a canonical word ("GitHub") or an explicit
+// replacement pair ({ from: 'Influenso', to: 'Nfluenzo' }) where `from` is
+// the misspelling the ASR tends to produce and `to` the wanted spelling.
+export type DictionaryTerm = string | { from: string; to: string }
+
 export function applyDictionaryCorrections(
   transcript: string,
-  vocabulary: string[],
+  vocabulary: DictionaryTerm[],
 ): string {
   if (!transcript || vocabulary.length === 0) return transcript
 
@@ -78,46 +83,68 @@ export function applyDictionaryCorrections(
 
   const consumed = new Set<number>() // word positions already rewritten
 
-  // Longer terms first so "Claude Code" wins over a hypothetical "Code"
-  const terms = [...vocabulary]
-    .filter(term => term.trim().length > 0)
-    .sort((a, b) => b.length - a.length)
+  // Both sides of a replacement pair are matched (the ASR may produce either
+  // a near-miss of the misspelling or of the correct form); the rewrite
+  // always targets the correct form.
+  const entries = vocabulary
+    .map(term =>
+      typeof term === 'string'
+        ? { matchKeys: [term], written: term }
+        : {
+            matchKeys: term.from === term.to ? [term.to] : [term.from, term.to],
+            written: term.to,
+          },
+    )
+    .filter(entry => entry.written.trim().length > 0)
+    // Longer terms first so "Claude Code" wins over a hypothetical "Code"
+    .sort(
+      (a, b) =>
+        Math.max(...b.matchKeys.map(k => k.length)) -
+        Math.max(...a.matchKeys.map(k => k.length)),
+    )
 
-  for (const term of terms) {
-    const normalizedTerm = normalize(term)
-    if (normalizedTerm.length < 3) continue // too short to correct safely
-    const budget = maxDistanceFor(normalizedTerm)
-    const termWordCount = term.trim().split(/\s+/).length
+  for (const entry of entries) {
+    for (const key of entry.matchKeys) {
+      const normalizedTerm = normalize(key)
+      if (normalizedTerm.length < 3) continue // too short to correct safely
+      const budget = maxDistanceFor(normalizedTerm)
+      const termWordCount = key.trim().split(/\s+/).length
 
-    const windowSizes = [...new Set([termWordCount, termWordCount + 1, termWordCount - 1])]
-      .filter(size => size >= 1)
+      const windowSizes = [
+        ...new Set([termWordCount, termWordCount + 1, termWordCount - 1]),
+      ].filter(size => size >= 1)
 
-    for (const windowSize of windowSizes) {
-      for (let start = 0; start + windowSize <= tokens.length; start++) {
-        const positions = Array.from({ length: windowSize }, (_, k) => start + k)
-        if (positions.some(p => consumed.has(p))) continue
+      for (const windowSize of windowSizes) {
+        for (let start = 0; start + windowSize <= tokens.length; start++) {
+          const positions = Array.from(
+            { length: windowSize },
+            (_, k) => start + k,
+          )
+          if (positions.some(p => consumed.has(p))) continue
 
-        const candidate = normalize(
-          positions.map(p => tokens[p].core).join(''),
-        )
-        if (candidate.length === 0) continue
-        // Cheap pre-filter before the DP
-        if (Math.abs(candidate.length - normalizedTerm.length) > budget) {
-          continue
+          const candidate = normalize(
+            positions.map(p => tokens[p].core).join(''),
+          )
+          if (candidate.length === 0) continue
+          // Cheap pre-filter before the DP
+          if (Math.abs(candidate.length - normalizedTerm.length) > budget) {
+            continue
+          }
+          if (levenshtein(candidate, normalizedTerm) > budget) continue
+
+          // Rewrite the window with the canonical spelling, keeping outer
+          // punctuation of the first and last words.
+          const first = tokens[positions[0]]
+          const last = tokens[positions[windowSize - 1]]
+          rawTokens[wordIndices[positions[0]]] =
+            first.prefix + entry.written + last.suffix
+          for (let k = 1; k < windowSize; k++) {
+            // Blank out the rest of the window and its leading separator
+            rawTokens[wordIndices[positions[k]]] = ''
+            rawTokens[wordIndices[positions[k]] - 1] = ''
+          }
+          positions.forEach(p => consumed.add(p))
         }
-        if (levenshtein(candidate, normalizedTerm) > budget) continue
-
-        // Rewrite the window with the canonical spelling, keeping outer
-        // punctuation of the first and last words.
-        const first = tokens[positions[0]]
-        const last = tokens[positions[windowSize - 1]]
-        rawTokens[wordIndices[positions[0]]] = first.prefix + term + last.suffix
-        for (let k = 1; k < windowSize; k++) {
-          // Blank out the rest of the window and its leading separator
-          rawTokens[wordIndices[positions[k]]] = ''
-          rawTokens[wordIndices[positions[k]] - 1] = ''
-        }
-        positions.forEach(p => consumed.add(p))
       }
     }
   }

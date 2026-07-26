@@ -3,23 +3,29 @@ import { applyDictionaryCorrections } from './DictionaryCorrector'
 
 describe('applyDictionaryCorrections', () => {
   test('fixes casing to the canonical spelling', () => {
-    expect(applyDictionaryCorrections('je pousse sur github ce soir', ['GitHub'])).toBe(
-      'je pousse sur GitHub ce soir',
-    )
+    expect(
+      applyDictionaryCorrections('je pousse sur github ce soir', ['GitHub']),
+    ).toBe('je pousse sur GitHub ce soir')
   })
 
   test('fixes near-miss spellings of technical terms', () => {
     expect(
-      applyDictionaryCorrections('le backend utilise guithub actions', ['GitHub']),
+      applyDictionaryCorrections('le backend utilise guithub actions', [
+        'GitHub',
+      ]),
     ).toBe('le backend utilise GitHub actions')
     expect(
-      applyDictionaryCorrections('je configure tailwinde pour le style', ['Tailwind']),
+      applyDictionaryCorrections('je configure tailwinde pour le style', [
+        'Tailwind',
+      ]),
     ).toBe('je configure Tailwind pour le style')
   })
 
   test('merges words Whisper split apart', () => {
     expect(
-      applyDictionaryCorrections('la carte way finder est à jour', ['wayfinder']),
+      applyDictionaryCorrections('la carte way finder est à jour', [
+        'wayfinder',
+      ]),
     ).toBe('la carte wayfinder est à jour')
   })
 
@@ -64,6 +70,30 @@ describe('applyDictionaryCorrections', () => {
         'Claude Code',
       ]),
     ).toBe('ouvre Claude Code maintenant')
+  })
+
+  test('applies replacement pairs (misspelling → wanted spelling)', () => {
+    expect(
+      applyDictionaryCorrections('je bosse sur Influenso ce soir', [
+        { from: 'Influenso', to: 'Nfluenzo' },
+      ]),
+    ).toBe('je bosse sur Nfluenzo ce soir')
+  })
+
+  test('replacement pairs also canonicalize near-misses of the wanted spelling', () => {
+    expect(
+      applyDictionaryCorrections('le site nfluenzo est en ligne', [
+        { from: 'Influenso', to: 'Nfluenzo' },
+      ]),
+    ).toBe('le site Nfluenzo est en ligne')
+  })
+
+  test('does not rewrite the corrected word back to the misspelling', () => {
+    expect(
+      applyDictionaryCorrections('Nfluenzo grandit vite', [
+        { from: 'Influenso', to: 'Nfluenzo' },
+      ]),
+    ).toBe('Nfluenzo grandit vite')
   })
 
   test('is a no-op without vocabulary or transcript', () => {

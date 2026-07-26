@@ -120,10 +120,12 @@ class GrpcClient {
       const user_id = getCurrentUserId()
       const dictionaryItems = await DictionaryTable.findAll(user_id)
 
-      // Convert to vocabulary format for transcription
+      // Convert to vocabulary format for transcription. For replacement
+      // entries (non-empty pronunciation), send the wanted spelling — never
+      // the misspelling, which would prime the ASR toward the wrong word.
       const vocabularyWords = dictionaryItems
         .filter(item => item.deleted_at === null)
-        .map(item => item.word)
+        .map(item => item.pronunciation?.trim() || item.word)
 
       // Add vocabulary to headers if available
       if (vocabularyWords.length > 0) {

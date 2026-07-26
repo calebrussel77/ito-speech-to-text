@@ -36,13 +36,10 @@ const THEME = {
     recording: 'hsla(0, 72%, 51%, 0.5)',
   },
   glow: {
-    idle: '0 4px 12px hsla(0, 0%, 0%, 0.4), 0 1px 4px hsla(0, 0%, 0%, 0.3)',
-    hover:
-      '0 8px 24px hsla(263, 70%, 55%, 0.12), 0 4px 12px hsla(0, 0%, 0%, 0.4)',
-    recording:
-      '0 0 24px hsla(0, 80%, 55%, 0.25), 0 4px 16px hsla(0, 0%, 0%, 0.5)',
-    processing:
-      '0 0 24px hsla(263, 70%, 55%, 0.2), 0 4px 16px hsla(0, 0%, 0%, 0.5)',
+    idle: '0 2px 8px hsla(0, 0%, 0%, 0.35)',
+    hover: '0 3px 10px hsla(0, 0%, 0%, 0.4)',
+    recording: '0 3px 12px hsla(0, 0%, 0%, 0.45)',
+    processing: '0 3px 12px hsla(0, 0%, 0%, 0.45)',
   },
   accent: {
     violet: 'hsl(263, 70%, 55%)',
@@ -77,30 +74,12 @@ const globalStyles = `
       sans-serif;
   }
 
-  @keyframes pulseGlow {
-    0%, 100% {
-      box-shadow: ${THEME.glow.recording};
-    }
-    50% {
-      box-shadow: 0 0 32px hsla(0, 80%, 55%, 0.35), 0 8px 24px hsla(0, 0%, 0%, 0.6);
-    }
-  }
-
   @keyframes subtleBreathe {
     0%, 100% {
       transform: scale(1);
     }
     50% {
       transform: scale(1.02);
-    }
-  }
-
-  @keyframes recordingPulse {
-    0%, 100% {
-      border-color: hsla(0, 72%, 51%, 0.5);
-    }
-    50% {
-      border-color: hsla(0, 72%, 51%, 0.8);
     }
   }
 `
@@ -257,17 +236,17 @@ const Pill = () => {
     }
   }, [volumeHistory, lastVolumeUpdate, recordingMode])
 
-  // Premium dimensions for different states
-  const idleWidth = 40
-  const idleHeight = 10
-  const hoveredWidth = 100
-  const hoveredHeight = 36
-  const recordingWidth = 100
-  const recordingHeight = 38
-  const manualRecordingWidth = 200
-  const manualRecordingHeight = 46
-  const processingWidth = 100
-  const processingHeight = 38
+  // Compact dimensions — small and subtle, Wispr Flow style
+  const idleWidth = 28
+  const idleHeight = 6
+  const hoveredWidth = 68
+  const hoveredHeight = 22
+  const recordingWidth = 76
+  const recordingHeight = 24
+  const manualRecordingWidth = 148
+  const manualRecordingHeight = 32
+  const processingWidth = 76
+  const processingHeight = 24
 
   // Determine current state
   const anyRecording = isRecording || isManualRecording
@@ -288,17 +267,14 @@ const Pill = () => {
     currentWidth = manualRecordingWidth
     currentHeight = manualRecordingHeight
     backgroundColor = THEME.background.primary
-    borderColor = THEME.border.recording
+    borderColor = THEME.border.hover
     boxShadow = THEME.glow.recording
-    animationName =
-      'pulseGlow 2s ease-in-out infinite, recordingPulse 1.5s ease-in-out infinite'
   } else if (anyRecording) {
     currentWidth = recordingWidth
     currentHeight = recordingHeight
     backgroundColor = THEME.background.primary
-    borderColor = THEME.border.recording
+    borderColor = THEME.border.hover
     boxShadow = THEME.glow.recording
-    animationName = 'pulseGlow 2s ease-in-out infinite'
   } else if (isProcessing) {
     currentWidth = processingWidth
     currentHeight = processingHeight
@@ -419,12 +395,12 @@ const Pill = () => {
   const actionButtonStyle: React.CSSProperties = {
     background: 'hsla(210, 20%, 96%, 0.08)',
     border: '1px solid hsla(210, 20%, 96%, 0.12)',
-    borderRadius: '10px',
+    borderRadius: '8px',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '8px',
+    padding: '4px',
     transition: 'all 0.2s ease',
     backdropFilter: 'blur(4px)',
     flexShrink: 0,
@@ -439,15 +415,15 @@ const Pill = () => {
             alignItems: 'center',
             width: '100%',
             justifyContent: 'space-between',
-            padding: '0 18px',
-            gap: '12px',
+            padding: '0 8px',
+            gap: '8px',
           }}
         >
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={handleCancel}
-                style={{ ...actionButtonStyle, marginLeft: '3px' }}
+                style={actionButtonStyle}
                 onMouseEnter={e => {
                   e.currentTarget.style.background = 'hsla(210, 20%, 96%, 0.12)'
                   e.currentTarget.style.borderColor = 'hsla(210, 20%, 96%, 0.2)'
@@ -458,8 +434,8 @@ const Pill = () => {
                 }}
               >
                 <X
-                  width={16}
-                  height={16}
+                  width={12}
+                  height={12}
                   color={THEME.accent.foreground}
                   style={{ opacity: 0.85 }}
                 />
@@ -494,7 +470,6 @@ const Pill = () => {
                 onClick={handleStop}
                 style={{
                   ...actionButtonStyle,
-                  marginRight: '3px',
                   background: 'hsla(0, 72%, 51%, 0.15)',
                   borderColor: 'hsla(0, 72%, 51%, 0.3)',
                 }}
@@ -507,7 +482,7 @@ const Pill = () => {
                   e.currentTarget.style.borderColor = 'hsla(0, 72%, 51%, 0.3)'
                 }}
               >
-                <StopSquare width={16} height={16} color={THEME.accent.red} />
+                <StopSquare width={12} height={12} color={THEME.accent.red} />
               </button>
             </TooltipTrigger>
             <TooltipContent

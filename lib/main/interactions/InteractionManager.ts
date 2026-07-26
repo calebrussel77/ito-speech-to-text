@@ -35,6 +35,7 @@ export class InteractionManager {
     sampleRate: number,
     errorMessage?: string,
     errorCode?: string,
+    audioDurationMs?: number,
   ) {
     if (!this.currentInteractionId) {
       log.warn(
@@ -47,11 +48,17 @@ export class InteractionManager {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
       const userId = userProfile?.id || 'self-hosted'
 
-      // Calculate interaction duration
+      // Wall-clock time of the whole interaction, transcription latency
+      // included. Kept for diagnostics only.
       const interactionEndTime = Date.now()
-      const durationMs = this.interactionStartTime
+      const interactionDurationMs = this.interactionStartTime
         ? interactionEndTime - this.interactionStartTime
         : 0
+
+      // The `duration_ms` column feeds the dashboard's words-per-minute stat,
+      // so it must be the time actually spent SPEAKING. Wall-clock would
+      // include the transcription round-trip and halve the reported speed.
+      const durationMs = audioDurationMs ?? interactionDurationMs
 
       // Create ASR output object with comprehensive information
       const asrOutput = {
@@ -61,6 +68,7 @@ export class InteractionManager {
         errorCode: errorCode || null,
         timestamp: new Date().toISOString(),
         durationMs,
+        interactionDurationMs,
       }
 
       // Generate a meaningful title from the transcript
@@ -116,20 +124,94 @@ export class InteractionManager {
   }
 
   /**
-   * Stores a transcript recovered from a previously failed dictation.
-   * Mints its own id and never touches currentInteractionId, so it is safe
-   * to call while a live session is in progress.
+   * Records a dictation whose transcription failed. The audio is still on
+   * disk, so the row is marked `pending` and the history shows it as waiting
+   * for the network instead of silently dropping the dictation.
+   *
+   * `pendingPath` links the row to its WAV so the later recovery can update
+   * this same row rather than adding a duplicate.
    */
-  async createRecoveredInteraction(transcript: string, sampleRate: number) {
+  async createFailedInteraction(params: {
+    errorMessage: string
+    errorCode?: string
+    sampleRate: number
+    audioDurationMs?: number
+    pendingPath?: string | null
+  }) {
+    if (!this.currentInteractionId) {
+      log.warn(
+        '[InteractionManager] No current interaction ID, skipping failed interaction.',
+      )
+      return
+    }
+
     try {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
       const userId = userProfile?.id || 'self-hosted'
-      const id = uuidv4()
+      const now = new Date().toISOString()
+      const isPending = !!params.pendingPath
+
+      await InteractionsTable.upsert({
+        id: this.currentInteractionId,
+        user_id: userId,
+        title: isPending ? 'Dictation awaiting retry' : 'Failed dictation',
+        asr_output: {
+          transcript: '',
+          totalAudioBytes: 0,
+          error: params.errorMessage,
+          errorCode: params.errorCode || null,
+          timestamp: now,
+          durationMs: params.audioDurationMs ?? 0,
+          pending: isPending,
+          pendingPath: params.pendingPath ?? null,
+        },
+        llm_output: { error: params.errorMessage },
+        raw_audio: null,
+        raw_audio_id: null,
+        duration_ms: params.audioDurationMs ?? null,
+        sample_rate: params.sampleRate,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      })
+
+      this.notifyInteractionCreated(this.currentInteractionId, '', now, 0)
+    } catch (error) {
+      log.error(
+        '[InteractionManager] Failed to store failed interaction:',
+        error,
+      )
+    }
+  }
+
+  /**
+   * Stores a transcript recovered from a previously failed dictation.
+   *
+   * When the dictation already has a `pending` row (created by
+   * createFailedInteraction), that row is updated in place — otherwise the
+   * history would show both a failure and a success for the same dictation.
+   * Falls back to a fresh row when no match exists (audio recovered from a
+   * previous app version, or a row the user deleted meanwhile).
+   */
+  async createRecoveredInteraction(
+    transcript: string,
+    sampleRate: number,
+    pendingPath?: string | null,
+    audioDurationMs?: number,
+  ) {
+    try {
+      const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
+      const userId = userProfile?.id || 'self-hosted'
       const now = new Date().toISOString()
       const title =
         transcript.length > 50
           ? transcript.substring(0, 50) + '...'
           : transcript || 'Recovered dictation'
+
+      const existing = pendingPath
+        ? await this.findPendingInteraction(userId, pendingPath)
+        : undefined
+      const id = existing?.id ?? uuidv4()
 
       await InteractionsTable.upsert({
         id,
@@ -141,33 +223,57 @@ export class InteractionManager {
           error: null,
           errorCode: null,
           timestamp: now,
-          durationMs: 0,
+          durationMs: audioDurationMs ?? 0,
+          pending: false,
           recovered: true,
         },
         llm_output: {},
         raw_audio: null,
         raw_audio_id: null,
-        duration_ms: 0,
+        duration_ms: audioDurationMs ?? null,
         sample_rate: sampleRate,
-        created_at: now,
+        // Keep the original timestamp so the dictation stays where the user
+        // expects it in the history, not at the top hours later.
+        created_at: existing?.created_at ?? now,
         updated_at: now,
         deleted_at: null,
       })
 
-      BrowserWindow.getAllWindows().forEach(window => {
-        window.webContents.send('interaction-created', {
-          id,
-          transcript,
-          timestamp: now,
-          durationMs: 0,
-        })
-      })
+      this.notifyInteractionCreated(id, transcript, now, audioDurationMs ?? 0)
     } catch (error) {
       log.error(
         '[InteractionManager] Failed to store recovered interaction:',
         error,
       )
     }
+  }
+
+  private async findPendingInteraction(userId: string, pendingPath: string) {
+    try {
+      const interactions = await InteractionsTable.findAll(userId)
+      return interactions.find(
+        interaction => interaction.asr_output?.pendingPath === pendingPath,
+      )
+    } catch (error) {
+      log.warn('[InteractionManager] Pending interaction lookup failed:', error)
+      return undefined
+    }
+  }
+
+  private notifyInteractionCreated(
+    id: string,
+    transcript: string,
+    timestamp: string,
+    durationMs: number,
+  ) {
+    BrowserWindow.getAllWindows().forEach(window => {
+      window.webContents.send('interaction-created', {
+        id,
+        transcript,
+        timestamp,
+        durationMs,
+      })
+    })
   }
 }
 

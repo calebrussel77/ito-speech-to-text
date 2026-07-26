@@ -13,6 +13,7 @@ import store, { getAdvancedSettings } from './store'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 import { LocalTranscriptionError } from './transcription/LocalTranscriptionService'
+import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import { STORE_KEYS } from '../constants/store-keys'
 import { playInteractionCompletionSound } from './soundFeedback'
 
@@ -210,6 +211,8 @@ export class ItoSessionManager {
         Buffer.alloc(0),
         sampleRate,
         undefined,
+        undefined,
+        durationMs,
       )
       this.playInteractionCompletionSoundIfEnabled()
       console.log(
@@ -232,6 +235,29 @@ export class ItoSessionManager {
         : error?.message || 'Unknown transcription error'
 
     log.error('[itoSessionManager] Transcription failed:', message)
+
+    // Silence and sub-100ms clips are not worth a history row — the user
+    // simply tapped the shortcut. Everything else is a real failure the user
+    // must be able to see, with the audio still queued for a retry.
+    // Never let bookkeeping throw here: this is the last chance to leave a
+    // trace of the dictation.
+    if (!UNRECOVERABLE_CODES.has(error?.code)) {
+      try {
+        await interactionManager.createFailedInteraction({
+          errorMessage: message,
+          errorCode: error?.code,
+          sampleRate: itoStreamController.getCurrentSampleRate(),
+          audioDurationMs: error?.audioDurationMs,
+          pendingPath: error?.pendingDictationPath,
+        })
+      } catch (bookkeepingError) {
+        log.error(
+          '[itoSessionManager] Could not record the failed dictation:',
+          bookkeepingError,
+        )
+      }
+    }
+
     timingCollector.clearInteraction()
     interactionManager.clearCurrentInteraction()
   }

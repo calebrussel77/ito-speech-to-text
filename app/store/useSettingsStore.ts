@@ -68,7 +68,7 @@ const getInitialState = () => {
     runInBackground: storedSettings?.runInBackground ?? true,
     interactionSounds: storedSettings?.interactionSounds ?? false,
     interactionSoundTheme: storedSettings?.interactionSoundTheme ?? 'pop',
-    muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? false,
+    muteAudioWhenDictating: storedSettings?.muteAudioWhenDictating ?? true,
     pasteCombo: storedSettings?.pasteCombo ?? 'auto',
     microphoneDeviceId: storedSettings?.microphoneDeviceId ?? 'default',
     microphoneName: storedSettings?.microphoneName ?? 'Default Microphone',

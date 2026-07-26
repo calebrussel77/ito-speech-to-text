@@ -37,6 +37,8 @@ import {
 import { audioRecorderService } from '../media/audio'
 import { voiceInputService } from '../main/voiceInputService'
 import { itoSessionManager } from '../main/itoSessionManager'
+import { itoStreamController } from '../main/itoStreamController'
+import { pendingDictationStore } from '../main/transcription/PendingDictationStore'
 import {
   getCustomInteractionSoundInfo,
   hasCustomInteractionSound,
@@ -825,6 +827,15 @@ export function registerIPC() {
   handleIPC('interactions:clear-all', async () => {
     const user_id = getCurrentUserId()
     return InteractionsTable.softDeleteAllVisible(user_id)
+  })
+
+  // Pending dictations (failed transcriptions waiting for the network)
+  handleIPC('pending-dictations:count', () => {
+    return pendingDictationStore.list().length
+  })
+
+  handleIPC('pending-dictations:retry', async () => {
+    return await itoStreamController.flushPendingDictations()
   })
 
   // User Data Deletion

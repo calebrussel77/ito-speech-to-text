@@ -14,9 +14,14 @@ import { waitForAllKeysReleased } from '../../media/keyboardState'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from '../timing/TimingCollector'
 import { macOSAccessibilityContextProvider } from '../../media/macOSAccessibilityContextProvider'
+import type { DictionaryTerm } from '../transcription/DictionaryCorrector'
 
 export interface ContextData {
+  // Correct spellings only — used to prime the ASR prompt
   vocabularyWords: string[]
+  // Full entries, including misspelling → correction pairs, for the
+  // deterministic post-ASR corrector
+  dictionaryEntries: DictionaryTerm[]
   windowTitle: string
   appName: string
   contextText: string
@@ -35,7 +40,7 @@ export class ContextGrabber {
     console.log('[ContextGrabber] Gathering context for mode:', mode)
 
     // Get vocabulary words from dictionary
-    const vocabularyWords = await this.getVocabulary()
+    const { vocabularyWords, dictionaryEntries } = await this.getVocabulary()
 
     // Get active window context
     const { windowTitle, appName } = await timingCollector.timeAsync(
@@ -53,6 +58,7 @@ export class ContextGrabber {
 
     return {
       vocabularyWords,
+      dictionaryEntries,
       windowTitle,
       appName,
       contextText,
@@ -60,16 +66,33 @@ export class ContextGrabber {
     }
   }
 
-  private async getVocabulary(): Promise<string[]> {
+  private async getVocabulary(): Promise<{
+    vocabularyWords: string[]
+    dictionaryEntries: DictionaryTerm[]
+  }> {
     try {
       const userId = getCurrentUserId()
       const dictionaryItems = await DictionaryTable.findAll(userId)
-      return dictionaryItems
-        .filter(item => item.deleted_at === null)
-        .map(item => item.word)
+      const activeItems = dictionaryItems.filter(
+        item => item.deleted_at === null,
+      )
+
+      // A non-empty `pronunciation` marks a replacement entry: `word` is the
+      // misspelling the ASR produces, `pronunciation` the wanted spelling.
+      // The ASR prompt must only ever see the wanted spelling.
+      const vocabularyWords = activeItems.map(
+        item => item.pronunciation?.trim() || item.word,
+      )
+      const dictionaryEntries: DictionaryTerm[] = activeItems.map(item =>
+        item.pronunciation?.trim()
+          ? { from: item.word, to: item.pronunciation.trim() }
+          : item.word,
+      )
+
+      return { vocabularyWords, dictionaryEntries }
     } catch (error) {
       log.error('[ContextGrabber] Error getting vocabulary:', error)
-      return []
+      return { vocabularyWords: [], dictionaryEntries: [] }
     }
   }
 

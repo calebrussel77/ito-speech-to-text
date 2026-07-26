@@ -32,6 +32,56 @@ describe('InteractionsTable - Business Logic', () => {
     resetSqliteMocks()
   })
 
+  describe('duration and sample rate persistence', () => {
+    // These columns used to be missing from both statements, so duration_ms
+    // was always NULL and the dashboard's WPM stat always read 0.
+    test('upsert writes duration_ms and sample_rate', async () => {
+      mockRun.mockResolvedValue(undefined)
+
+      await InteractionsTable.upsert({
+        id: 'interaction-1',
+        user_id: TEST_USER_ID,
+        title: 'Spoken',
+        asr_output: { transcript: 'Spoken' },
+        llm_output: {},
+        raw_audio: null,
+        raw_audio_id: null,
+        duration_ms: 4200,
+        sample_rate: 16000,
+        created_at: '2026-07-26T10:00:00.000Z',
+        updated_at: '2026-07-26T10:00:00.000Z',
+        deleted_at: null,
+      })
+
+      const [query, params] = mockRun.mock.calls[0]
+      expect(query).toContain('duration_ms')
+      expect(query).toContain('sample_rate')
+      expect(query).toContain('duration_ms = excluded.duration_ms')
+      expect(params).toContain(4200)
+      expect(params).toContain(16000)
+    })
+
+    test('insert writes duration_ms and sample_rate', async () => {
+      mockRun.mockResolvedValue(undefined)
+
+      await InteractionsTable.insert({
+        user_id: TEST_USER_ID,
+        title: 'Spoken',
+        asr_output: { transcript: 'Spoken' },
+        llm_output: {},
+        raw_audio: null,
+        raw_audio_id: null,
+        duration_ms: 1800,
+        sample_rate: 48000,
+      })
+
+      const [query, params] = mockRun.mock.calls[0]
+      expect(query).toContain('duration_ms')
+      expect(params).toContain(1800)
+      expect(params).toContain(48000)
+    })
+  })
+
   describe('JSON field handling', () => {
     test('should handle complex JSON objects in asr_output and llm_output', async () => {
       const complexAsrOutput = {
