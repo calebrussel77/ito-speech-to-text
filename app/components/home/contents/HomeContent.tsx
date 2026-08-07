@@ -89,6 +89,7 @@ export default function HomeContent({
   const [pendingCount, setPendingCount] = useState(0)
   const [isRetryingPending, setIsRetryingPending] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
     streakDays: 0,
@@ -481,6 +482,65 @@ export default function HomeContent({
     }
   }
 
+  // Engine that produced the transcript, shown as a small badge. Older rows
+  // predate the attribution and simply show no badge.
+  const ENGINE_BADGES: { match: string; label: string; className: string }[] = [
+    {
+      match: 'gpt-transcribe',
+      label: 'GPT Transcribe',
+      className:
+        'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25',
+    },
+    {
+      match: 'voxtral',
+      label: 'Mistral Voxtral',
+      className:
+        'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25',
+    },
+    {
+      match: 'whisper',
+      label: 'Whisper · Groq',
+      className:
+        'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25',
+    },
+  ]
+
+  const getEngineBadge = (interaction: Interaction) => {
+    const engine: string = interaction.asr_output?.engine || ''
+    if (!engine) return null
+    return (
+      ENGINE_BADGES.find(badge => engine.includes(badge.match)) ?? {
+        match: engine,
+        label: engine,
+        className: 'bg-muted text-muted-foreground border-border/60',
+      }
+    )
+  }
+
+  const formatDuration = (durationMs?: number | null): string | null => {
+    if (!durationMs || durationMs < 1000) return null
+    const totalSeconds = Math.round(durationMs / 1000)
+    if (totalSeconds < 60) return `${totalSeconds}s`
+    return `${Math.floor(totalSeconds / 60)}min ${String(totalSeconds % 60).padStart(2, '0')}s`
+  }
+
+  // Long transcripts are clamped to 3 lines; the threshold only decides
+  // whether the toggle is offered, the visual clamp itself is CSS.
+  const isClampable = (text: string) =>
+    text.length > 240 || text.split('\n').length > 3
+
+  const toggleExpanded = (interactionId: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(interactionId)) {
+        next.delete(interactionId)
+      } else {
+        next.add(interactionId)
+      }
+      return next
+    })
+  }
+
   const handleDeleteInteraction = async (interactionId: string) => {
     try {
       await window.api.interactions.delete(interactionId)
@@ -743,26 +803,37 @@ export default function HomeContent({
                 <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
+                    const engineBadge = getEngineBadge(interaction)
+                    const durationLabel = formatDuration(
+                      interaction.duration_ms,
+                    )
+                    const isExpanded = expandedItems.has(interaction.id)
+                    const showToggle =
+                      !displayInfo.isError && isClampable(displayInfo.text)
 
                     return (
                       <div
                         key={interaction.id}
-                        className="flex items-center justify-between px-6 py-4 gap-10 hover:bg-secondary/40 transition-colors duration-200 group"
+                        className="flex items-start justify-between px-6 py-4 gap-6 hover:bg-secondary/40 transition-colors duration-200 group"
                       >
-                        <div className="flex items-center gap-10">
-                          <div className="text-muted-foreground text-xs min-w-[60px] font-medium">
-                            {formatTime(interaction.created_at)}
-                          </div>
-                          <div
-                            className={`${
-                              displayInfo.tone === 'pending'
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : displayInfo.isError
-                                  ? 'text-destructive'
-                                  : 'text-foreground'
-                            } flex items-center gap-2`}
-                          >
-                            {displayInfo.text}
+                        <div className="flex-1 min-w-0">
+                          {/* Meta line: time, engine badge, duration */}
+                          <div className="flex items-center flex-wrap gap-2 mb-1.5">
+                            <span className="text-muted-foreground text-xs font-medium tabular-nums">
+                              {formatTime(interaction.created_at)}
+                            </span>
+                            {engineBadge && (
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2 py-px text-[11px] font-medium leading-4 ${engineBadge.className}`}
+                              >
+                                {engineBadge.label}
+                              </span>
+                            )}
+                            {durationLabel && (
+                              <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                                {durationLabel}
+                              </span>
+                            )}
                             {displayInfo.tooltip && (
                               <Tooltip>
                                 <TooltipTrigger>
@@ -774,10 +845,33 @@ export default function HomeContent({
                               </Tooltip>
                             )}
                           </div>
+
+                          <div
+                            className={`${
+                              displayInfo.tone === 'pending'
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : displayInfo.isError
+                                  ? 'text-destructive'
+                                  : 'text-foreground'
+                            } text-sm leading-relaxed whitespace-pre-wrap ${
+                              isExpanded ? '' : 'line-clamp-3'
+                            }`}
+                          >
+                            {displayInfo.text}
+                          </div>
+
+                          {showToggle && (
+                            <button
+                              className="mt-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              onClick={() => toggleExpanded(interaction.id)}
+                            >
+                              {isExpanded ? 'Show less' : 'Show more'}
+                            </button>
+                          )}
                         </div>
 
                         {/* Copy, Download, and Play buttons - only show on hover or when playing */}
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <div className="flex items-center gap-2 pt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                           {/* Copy button */}
                           {!displayInfo.isError && (
                             <Tooltip

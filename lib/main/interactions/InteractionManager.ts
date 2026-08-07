@@ -36,6 +36,7 @@ export class InteractionManager {
     errorMessage?: string,
     errorCode?: string,
     audioDurationMs?: number,
+    asrEngine?: string,
   ) {
     if (!this.currentInteractionId) {
       log.warn(
@@ -69,6 +70,7 @@ export class InteractionManager {
         timestamp: new Date().toISOString(),
         durationMs,
         interactionDurationMs,
+        engine: asrEngine || null,
       }
 
       // Generate a meaningful title from the transcript
@@ -198,6 +200,7 @@ export class InteractionManager {
     sampleRate: number,
     pendingPath?: string | null,
     audioDurationMs?: number,
+    asrEngine?: string,
   ) {
     try {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
@@ -226,6 +229,7 @@ export class InteractionManager {
           durationMs: audioDurationMs ?? 0,
           pending: false,
           recovered: true,
+          engine: asrEngine || null,
         },
         llm_output: {},
         raw_audio: null,

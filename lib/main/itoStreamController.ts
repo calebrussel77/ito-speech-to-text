@@ -39,6 +39,9 @@ export interface LocalTranscriptionResult {
   audioBuffer: Buffer
   sampleRate: number
   durationMs: number
+  // Model that actually produced the transcript (e.g. 'whisper-large-v3',
+  // 'openai/gpt-transcribe') — shown as a badge in the history.
+  asrEngine: string
 }
 
 /**
@@ -170,19 +173,25 @@ export class ItoStreamController {
     }
 
     let transcript: string
+    // Groq is the default attribution; overwritten when OpenRouter answers.
+    let asrEngine = advancedSettings.llm.asrModel || 'whisper-large-v3'
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
         if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
+          const openRouterModel =
+            advancedSettings.openRouterModel || 'openai/gpt-transcribe'
           try {
-            return await openRouterTranscriptionService.transcribeAudio(
+            const text = await openRouterTranscriptionService.transcribeAudio(
               wavAudio,
               {
                 apiKey: advancedSettings.openRouterApiKey || '',
-                model: advancedSettings.openRouterModel,
+                model: openRouterModel,
                 vocabulary: context.vocabularyWords,
                 language: advancedSettings.llm.asrLanguage,
               },
             )
+            asrEngine = openRouterModel
+            return text
           } catch (error: any) {
             // The precise engine must never lose or block a dictation:
             // whatever went wrong, the Groq path (and its retry/persistence
@@ -248,6 +257,7 @@ export class ItoStreamController {
       audioBuffer: Buffer.alloc(0), // We intentionally avoid persisting audio
       sampleRate,
       durationMs,
+      asrEngine,
     }
   }
 
@@ -360,6 +370,8 @@ export class ItoStreamController {
               transcript,
               16000,
               filePath,
+              undefined,
+              advancedSettings.llm.asrModel,
             )
             recovered++
           }
