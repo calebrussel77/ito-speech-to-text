@@ -26,6 +26,8 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : *
 
 <!-- une ligne par ticket clos : [titre](tickets/xxx.md) — gist de la réponse -->
 
+- [Historique : badge du moteur + liste d'activité modernisée](tickets/019-historique-badge-moteur.md) — Livré (`cd5b67c`) : chaque dictée enregistre son moteur (`asr_output.engine`) et l'affiche en badge coloré ; transcripts limités à 3 lignes avec Show more ; ligne méta heure/moteur/durée.
+- [Presse-papier : conserver le transcript après le collage](tickets/018-clipboard-conserve-transcript.md) — Livré (`7854a67`) : plus de restauration du presse-papier après le collage — un paste raté (focus ailleurs pendant une longue transcription) se rattrape d'un Ctrl+V ; le sleep de 1 s disparaît de chaque insertion.
 - [Exécution : implémenter le routage multi-moteurs et les réglages](tickets/017-implementation-routage-multi-moteurs.md) — Livré (`5988bf4`) : service OpenRouter + routage 60 s avec repli Groq branché sur la couche fiabilité, sélecteur de moteur + dropdown du modèle long + clé OpenRouter chiffrée dans les settings. 18 tests ajoutés, build complet vérifié. Reste la recette en usage réel par Caleb (clé durable à poser dans les settings).
 - [Décision : routage Auto court/long + UX des réglages + post-traitement](tickets/016-decision-routage-modes-settings.md) — Validée par Caleb : seuil 60 s ; moteur long **gpt-transcribe** par défaut avec **voxtral-mini sélectionnable dans les settings sans rebuild** (id de modèle = chaîne de réglage) ; sélecteur Auto/Groq/OpenRouter + clé OpenRouter ; fallback Groq + couche fiabilité ; post-traitement inchangé (la question « passe LLM » du brouillard est close).
 - [Prototype : bake-off des moteurs longs sur de vraies dictées de Caleb](tickets/015-bakeoff-vraies-dictees.md) — **`openai/gpt-transcribe` gagne les deux manches** (jugement à l'aveugle) ; voxtral-mini 2e (plus rapide, moins cher, le repli) ; nova-3 éliminé (sorties vides/anglais via OpenRouter) ; whisper non chunké reproduit le défaut (« OpenHooter », « Allez, bouc ! »). Latence du gagnant ~81 s pour 2,5 min — la donnée clé pour la décision 016.
@@ -45,7 +47,7 @@ Sur Windows, Ito dicte avec la fluidité de Whisperflow **au coût minimal** : *
 
 ## Not yet specified
 
-- Micro-latences résiduelles (drain 500 ms à l'arrêt, settle clipboard ~1 s, gathering de contexte synchrone dans le chemin critique) — à re-mesurer après la livraison du routage, avant de micro-optimiser.
+- Micro-latences résiduelles (drain 500 ms à l'arrêt, gathering de contexte synchrone dans le chemin critique — le settle clipboard de 1 s a été éliminé par le ticket 018) — à re-mesurer avant de micro-optimiser.
 - Recette de la livraison 017 : comment Caleb valide le mode long en usage réel (mini-ticket HITL à créer à la livraison).
 
 ## Out of scope
