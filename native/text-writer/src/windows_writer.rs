@@ -197,9 +197,6 @@ fn detect_combo_from_foreground() -> PasteCombo {
 /// This mimics the macOS implementation to avoid character-by-character typing
 /// issues
 pub fn type_text_windows(text: &str, _char_delay: u64) -> Result<(), String> {
-    // Store current clipboard contents to restore later
-    let old_contents: Result<String, _> = get_clipboard(formats::Unicode);
-
     // Set our text to clipboard
     set_clipboard(formats::Unicode, text)
         .map_err(|e| format!("Failed to set clipboard: {:?}", e))?;
@@ -236,10 +233,11 @@ pub fn type_text_windows(text: &str, _char_delay: u64) -> Result<(), String> {
 
     paste_with_combo(&mut enigo, combo_to_use)?;
 
-    if let Ok(old_text) = old_contents {
-        thread::sleep(Duration::from_secs(1));
-        let _ = set_clipboard(formats::Unicode, &old_text);
-    }
+    // The transcript deliberately stays in the clipboard (no restore of the
+    // previous contents): if the paste landed on a window without a text
+    // field — the user moved away during a long transcription — the dictation
+    // remains one Ctrl+V away instead of being lost. This also removes the
+    // 1s settle delay the restore needed.
 
     Ok(())
 }
