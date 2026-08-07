@@ -1,0 +1,14 @@
+{
+  "enregistrement-code.m4a": {
+    "A": "voxtral-mini-transcribe",
+    "B": "gpt-transcribe",
+    "C": "nova-3",
+    "D": "whisper-large-v3 (baseline)"
+  },
+  "enregistrement-feature-ito.m4a": {
+    "A": "whisper-large-v3 (baseline)",
+    "B": "voxtral-mini-transcribe",
+    "C": "gpt-transcribe",
+    "D": "nova-3"
+  }
+}
