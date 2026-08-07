@@ -868,6 +868,17 @@ export function registerIPC() {
     }
   })
 
+  handleIPC('test-openrouter-api-key', async (_e, apiKey: string) => {
+    const { openRouterTranscriptionService } = await import(
+      '../main/transcription/OpenRouterTranscriptionService'
+    )
+    try {
+      return await openRouterTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
   // Server health check
   handleIPC('check-server-health', async () => {
     try {

@@ -234,6 +234,8 @@ const api = {
   },
   testGroqApiKey: (apiKey: string) =>
     ipcRenderer.invoke('test-groq-api-key', apiKey),
+  testOpenRouterApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-openrouter-api-key', apiKey),
 
   // Check if the local server is healthy and accessible
   checkServerHealth: () => {

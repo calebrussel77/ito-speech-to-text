@@ -1,6 +1,10 @@
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
+import {
+  DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
+  TranscriptionEngineMode,
+} from '../constants/transcription'
 import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
 import { ItoMode } from '@/app/generated/ito_pb.js'
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
@@ -9,6 +13,10 @@ import { KeyValueStore } from './sqlite/repo'
 import * as electron from 'electron'
 
 const safeStorageApi: any = (electron as any).safeStorage
+
+// API keys stored inside advancedSettings that are encrypted at rest via
+// safeStorage (persisted as `<field>Encrypted`, decrypted back on load).
+const ENCRYPTED_API_KEY_FIELDS = ['groqApiKey', 'openRouterApiKey'] as const
 
 export interface KeyboardShortcutConfig {
   id: string
@@ -80,6 +88,13 @@ export interface AdvancedSettings {
   grammarServiceEnabled: boolean
   macosAccessibilityContextEnabled: boolean
   groqApiKey?: string
+  // Engine routing: 'auto' sends recordings >= 60s to OpenRouter, the rest
+  // to Groq; 'groq'/'openrouter' force one engine for every dictation.
+  transcriptionEngineMode?: TranscriptionEngineMode
+  // OpenRouter model id for long dictations — a plain string setting so
+  // switching engines never requires a rebuild.
+  openRouterModel?: string
+  openRouterApiKey?: string
 }
 
 interface AppStore {
@@ -169,6 +184,9 @@ export const defaultValues: AppStore = {
       noSpeechThreshold: DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
     groqApiKey: '',
+    transcriptionEngineMode: 'auto',
+    openRouterModel: DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
+    openRouterApiKey: '',
   },
   openMic: false,
   selectedAudioInput: null,
@@ -229,21 +247,23 @@ async function persistTopLevelKey(key: string) {
     if (key === STORE_KEYS.ADVANCED_SETTINGS) {
       const value = cache[key] || {}
       const toPersist: any = { ...value }
-      if (toPersist.groqApiKey) {
-        try {
-          if (safeStorageApi?.isEncryptionAvailable?.()) {
-            toPersist.groqApiKeyEncrypted = safeStorageApi
-              .encryptString(toPersist.groqApiKey)
-              .toString('base64')
-          } else {
-            toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
+      for (const keyField of ENCRYPTED_API_KEY_FIELDS) {
+        if (toPersist[keyField]) {
+          try {
+            if (safeStorageApi?.isEncryptionAvailable?.()) {
+              toPersist[`${keyField}Encrypted`] = safeStorageApi
+                .encryptString(toPersist[keyField])
+                .toString('base64')
+            } else {
+              toPersist[`${keyField}Encrypted`] = toPersist[keyField]
+            }
+          } catch {
+            console.warn(`[store] Failed to encrypt ${keyField}, storing as-is`)
+            toPersist[`${keyField}Encrypted`] = toPersist[keyField]
           }
-        } catch {
-          console.warn('[store] Failed to encrypt Groq API key, storing as-is')
-          toPersist.groqApiKeyEncrypted = toPersist.groqApiKey
         }
+        delete toPersist[keyField]
       }
-      delete toPersist.groqApiKey
       await KeyValueStore.set(key, JSON.stringify(toPersist))
       return
     }
@@ -451,25 +471,27 @@ export async function initializeStore() {
 
         if (key === STORE_KEYS.ADVANCED_SETTINGS) {
           const stored = cache[key] as any
-          let decrypted = ''
-          if (stored?.groqApiKeyEncrypted) {
-            try {
-              if (safeStorageApi?.isEncryptionAvailable?.()) {
-                decrypted = safeStorageApi.decryptString(
-                  Buffer.from(stored.groqApiKeyEncrypted, 'base64'),
-                )
-              } else {
-                decrypted = stored.groqApiKeyEncrypted
+          const restored: any = { ...stored }
+          for (const keyField of ENCRYPTED_API_KEY_FIELDS) {
+            let decrypted = ''
+            const encrypted = stored?.[`${keyField}Encrypted`]
+            if (encrypted) {
+              try {
+                if (safeStorageApi?.isEncryptionAvailable?.()) {
+                  decrypted = safeStorageApi.decryptString(
+                    Buffer.from(encrypted, 'base64'),
+                  )
+                } else {
+                  decrypted = encrypted
+                }
+              } catch (err) {
+                console.warn(`[store] Failed to decrypt ${keyField}`, err)
               }
-            } catch (err) {
-              console.warn('[store] Failed to decrypt Groq API key', err)
             }
+            restored[keyField] = decrypted || stored?.[keyField] || ''
+            delete restored[`${keyField}Encrypted`]
           }
-          cache[key] = {
-            ...stored,
-            groqApiKey: decrypted || stored?.groqApiKey || '',
-          }
-          delete (cache[key] as any).groqApiKeyEncrypted
+          cache[key] = restored
         }
       }
     } catch (err) {

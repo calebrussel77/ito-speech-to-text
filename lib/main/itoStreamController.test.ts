@@ -91,7 +91,15 @@ mock.module('./transcription/LocalTranscriptionService', () => ({
   LocalTranscriptionError: class extends Error {},
 }))
 
-const mockGetAdvancedSettings = mock(() => ({
+const mockOpenRouterService = {
+  transcribeAudio: mock(() => Promise.resolve('openrouter transcript')),
+  testConnection: mock(() => Promise.resolve({ ok: true })),
+}
+mock.module('./transcription/OpenRouterTranscriptionService', () => ({
+  openRouterTranscriptionService: mockOpenRouterService,
+}))
+
+const baseAdvancedSettings = () => ({
   llm: {
     asrModel: 'whisper',
     noSpeechThreshold: 0.5,
@@ -106,7 +114,9 @@ const mockGetAdvancedSettings = mock(() => ({
   grammarServiceEnabled: false,
   macosAccessibilityContextEnabled: false,
   groqApiKey: 'gsk_test',
-}))
+})
+
+const mockGetAdvancedSettings = mock(() => baseAdvancedSettings() as any)
 
 const mockCreateNewAuthState = mock(() => ({
   state: '',
@@ -143,12 +153,24 @@ describe('ItoStreamController (local)', () => {
     Object.values(mockPendingDictationStore).forEach(fn => fn.mockClear())
     Object.values(mockInteractionManager).forEach(fn => fn.mockClear())
 
+    Object.values(mockOpenRouterService).forEach(fn => fn.mockClear())
+    mockGetAdvancedSettings.mockClear()
+
     mockAudioStreamManager.isCurrentlyStreaming.mockReturnValue(false)
     mockLocalTranscriptionService.transcribeAudio.mockResolvedValue(
       'raw transcript',
     )
+    mockOpenRouterService.transcribeAudio.mockResolvedValue(
+      'openrouter transcript',
+    )
     mockPendingDictationStore.save.mockReturnValue('C:/pending/dictation-1.wav')
     mockPendingDictationStore.list.mockReturnValue([])
+    mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
+      wavAudio: Buffer.from('wav'),
+      sampleRate: 16000,
+      durationMs: 500,
+    })
+    mockGetAdvancedSettings.mockReturnValue(baseAdvancedSettings())
   })
 
   test('initializes and processes audio locally', async () => {
@@ -270,6 +292,116 @@ describe('ItoStreamController (local)', () => {
       mockInteractionManager.createRecoveredInteraction,
     ).toHaveBeenCalledTimes(2)
     expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
+  })
+
+  describe('engine routing (OpenRouter for long dictations)', () => {
+    const longAudio = () =>
+      mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
+        wavAudio: Buffer.from('wav'),
+        sampleRate: 16000,
+        durationMs: 120_000,
+      })
+    const withOpenRouter = (overrides: Record<string, unknown> = {}) =>
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        transcriptionEngineMode: 'auto',
+        openRouterModel: 'openai/gpt-transcribe',
+        openRouterApiKey: 'sk-or-test',
+        ...overrides,
+      } as any)
+
+    test('auto mode routes long recordings to OpenRouter', async () => {
+      longAudio()
+      withOpenRouter()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      const result = await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({
+          apiKey: 'sk-or-test',
+          model: 'openai/gpt-transcribe',
+        }),
+      )
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      expect(result.transcript).toBe('adjusted transcript')
+    })
+
+    test('auto mode keeps short recordings on Groq', async () => {
+      withOpenRouter()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+    })
+
+    test('falls back to Groq when the OpenRouter call fails', async () => {
+      longAudio()
+      withOpenRouter()
+      mockOpenRouterService.transcribeAudio.mockRejectedValue(
+        Object.assign(new Error('empty transcript'), { code: 'MODEL_ERROR' }),
+      )
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      const result = await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+      expect(result.transcript).toBe('adjusted transcript')
+      expect(mockPendingDictationStore.delete).toHaveBeenCalled()
+    })
+
+    test('forced openrouter mode routes even short recordings', async () => {
+      withOpenRouter({ transcriptionEngineMode: 'openrouter' })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+    })
+
+    test('forced groq mode never calls OpenRouter, even for long recordings', async () => {
+      longAudio()
+      withOpenRouter({ transcriptionEngineMode: 'groq' })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+    })
+
+    test('without an OpenRouter key, long recordings stay on Groq', async () => {
+      longAudio()
+      withOpenRouter({ openRouterApiKey: '' })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+    })
   })
 
   test('flushPendingDictations stops on transient failure and keeps files', async () => {

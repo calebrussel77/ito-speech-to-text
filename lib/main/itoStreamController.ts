@@ -8,7 +8,11 @@ import {
   LocalTranscriptionError,
   TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
-import { UNRECOVERABLE_CODES } from '../constants/transcription'
+import {
+  UNRECOVERABLE_CODES,
+  LONG_DICTATION_THRESHOLD_MS,
+} from '../constants/transcription'
+import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
 import { interactionManager } from './interactions/InteractionManager'
@@ -156,20 +160,45 @@ export class ItoStreamController {
       )
     }
 
+    const groqOptions: TranscriptionOptions = {
+      asrModel: advancedSettings.llm.asrModel,
+      vocabulary: context.vocabularyWords,
+      noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+      fileType: 'wav',
+      language: advancedSettings.llm.asrLanguage,
+      customPrompt: advancedSettings.llm.asrPrompt,
+    }
+
     let transcript: string
     try {
-      transcript = await timingCollector.timeAsync(
-        timingEvent,
-        async () =>
-          await this.transcribeWithRetry(wavAudio, {
-            asrModel: advancedSettings.llm.asrModel,
-            vocabulary: context.vocabularyWords,
-            noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-            fileType: 'wav',
-            language: advancedSettings.llm.asrLanguage,
-            customPrompt: advancedSettings.llm.asrPrompt,
-          }),
-      )
+      transcript = await timingCollector.timeAsync(timingEvent, async () => {
+        if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
+          try {
+            return await openRouterTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                apiKey: advancedSettings.openRouterApiKey || '',
+                model: advancedSettings.openRouterModel,
+                vocabulary: context.vocabularyWords,
+                language: advancedSettings.llm.asrLanguage,
+              },
+            )
+          } catch (error: any) {
+            // The precise engine must never lose or block a dictation:
+            // whatever went wrong, the Groq path (and its retry/persistence
+            // layer) takes over.
+            console.warn(
+              `[ItoStreamController] OpenRouter transcription failed (${error?.code}), falling back to Groq:`,
+              error?.message,
+            )
+            showNotification(
+              'Ito — repli sur Groq',
+              'La transcription OpenRouter a échoué ; la dictée est transcrite par Groq.',
+            )
+          }
+        }
+        return await this.transcribeWithRetry(wavAudio, groqOptions)
+      })
     } catch (error: any) {
       if (pendingPath) {
         if (UNRECOVERABLE_CODES.has(error?.code)) {
@@ -220,6 +249,30 @@ export class ItoStreamController {
       sampleRate,
       durationMs,
     }
+  }
+
+  // 'auto' routes recordings >= 60s to the precise OpenRouter engine; the
+  // forced modes override the duration. Without an OpenRouter key everything
+  // stays on Groq.
+  private shouldUseOpenRouter(
+    advancedSettings: ReturnType<typeof getAdvancedSettings>,
+    durationMs: number,
+  ): boolean {
+    const mode = advancedSettings.transcriptionEngineMode ?? 'auto'
+    const wantsOpenRouter =
+      mode === 'openrouter' ||
+      (mode === 'auto' && durationMs >= LONG_DICTATION_THRESHOLD_MS)
+    if (!wantsOpenRouter) return false
+
+    if (!advancedSettings.openRouterApiKey?.trim()) {
+      if (mode === 'openrouter') {
+        console.warn(
+          '[ItoStreamController] OpenRouter mode selected but no API key configured, using Groq',
+        )
+      }
+      return false
+    }
+    return true
   }
 
   private async transcribeWithRetry(

@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
 import { DEFAULT_ADVANCED_SETTINGS } from '../../lib/constants/generated-defaults'
+import {
+  DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
+  TranscriptionEngineMode,
+} from '../../lib/constants/transcription'
 
 export interface LlmSettings {
   asrProvider: string
@@ -20,10 +24,16 @@ interface AdvancedSettingsState {
   grammarServiceEnabled: boolean
   macosAccessibilityContextEnabled: boolean
   groqApiKey: string
+  transcriptionEngineMode: TranscriptionEngineMode
+  openRouterModel: string
+  openRouterApiKey: string
   setLlmSettings: (settings: Partial<LlmSettings>) => void
   setGrammarServiceEnabled: (enabled: boolean) => void
   setMacosAccessibilityContextEnabled: (enabled: boolean) => void
   setGroqApiKey: (apiKey: string) => void
+  setTranscriptionEngineMode: (mode: TranscriptionEngineMode) => void
+  setOpenRouterModel: (model: string) => void
+  setOpenRouterApiKey: (apiKey: string) => void
 }
 
 // Initialize from electron store
@@ -50,7 +60,8 @@ const getInitialState = () => {
         storedLlm.asrLanguage ?? DEFAULT_ADVANCED_SETTINGS.asrLanguage,
       llmProvider:
         storedLlm.llmProvider ?? DEFAULT_ADVANCED_SETTINGS.llmProvider,
-      llmModel: mapModel(storedLlm.llmModel) ?? DEFAULT_ADVANCED_SETTINGS.llmModel,
+      llmModel:
+        mapModel(storedLlm.llmModel) ?? DEFAULT_ADVANCED_SETTINGS.llmModel,
       llmTemperature:
         storedLlm.llmTemperature ?? DEFAULT_ADVANCED_SETTINGS.llmTemperature,
       transcriptionPrompt:
@@ -67,6 +78,12 @@ const getInitialState = () => {
     macosAccessibilityContextEnabled:
       storedAdvancedSettings.macosAccessibilityContextEnabled ?? false,
     groqApiKey: storedAdvancedSettings.groqApiKey || '',
+    transcriptionEngineMode:
+      storedAdvancedSettings.transcriptionEngineMode ?? 'auto',
+    openRouterModel:
+      storedAdvancedSettings.openRouterModel ??
+      DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
+    openRouterApiKey: storedAdvancedSettings.openRouterApiKey || '',
   }
 }
 
@@ -116,6 +133,27 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>(set => {
     setGroqApiKey: (apiKey: string) => {
       set(() => {
         const partialState = { groqApiKey: apiKey }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setTranscriptionEngineMode: (mode: TranscriptionEngineMode) => {
+      set(() => {
+        const partialState = { transcriptionEngineMode: mode }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setOpenRouterModel: (model: string) => {
+      set(() => {
+        const partialState = { openRouterModel: model }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setOpenRouterApiKey: (apiKey: string) => {
+      set(() => {
+        const partialState = { openRouterApiKey: apiKey }
         syncToStore(partialState)
         return partialState
       })

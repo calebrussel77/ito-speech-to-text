@@ -1,27 +1,53 @@
 import { useState } from 'react'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/app/components/ui/card'
 import { Input } from '@/app/components/ui/input'
 import { Button } from '@/app/components/ui/button'
 import { cn } from '@/lib/utils'
 
 type Status = 'idle' | 'testing' | 'ok' | 'error'
+type ApiTestResult = { ok: boolean; message?: string }
 
-export default function ApiKeySettings() {
-  const { groqApiKey, setGroqApiKey } = useAdvancedSettingsStore()
-  const [localKey, setLocalKey] = useState(groqApiKey || '')
+interface ApiKeyCardProps {
+  title: string
+  description: string
+  placeholder: string
+  consoleLabel: string
+  consoleUrl: string
+  storedKey: string
+  onSave: (key: string) => void
+  onTest: (key: string) => Promise<ApiTestResult>
+}
+
+function ApiKeyCard({
+  title,
+  description,
+  placeholder,
+  consoleLabel,
+  consoleUrl,
+  storedKey,
+  onSave,
+  onTest,
+}: ApiKeyCardProps) {
+  const [localKey, setLocalKey] = useState(storedKey || '')
   const [status, setStatus] = useState<Status>('idle')
   const [message, setMessage] = useState<string>('')
 
   const handleSave = () => {
-    setGroqApiKey(localKey.trim())
+    onSave(localKey.trim())
     setMessage('Saved locally')
     setStatus('idle')
   }
 
   const handleClear = () => {
     setLocalKey('')
-    setGroqApiKey('')
+    onSave('')
     setMessage('Cleared')
     setStatus('idle')
   }
@@ -36,7 +62,7 @@ export default function ApiKeySettings() {
     setStatus('testing')
     setMessage('Testing connection...')
     try {
-      const result = await window.api.testGroqApiKey(localKey.trim())
+      const result = await onTest(localKey.trim())
       setStatus(result.ok ? 'ok' : 'error')
       setMessage(result.message || (result.ok ? 'Connected' : 'Failed'))
     } catch (error: any) {
@@ -50,10 +76,8 @@ export default function ApiKeySettings() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="space-y-1.5">
-            <CardTitle>API Configuration</CardTitle>
-            <CardDescription>
-              Store your Groq API key locally. It never leaves this device.
-            </CardDescription>
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
           </div>
           <Button
             variant="link"
@@ -61,10 +85,10 @@ export default function ApiKeySettings() {
             className="text-xs"
             onClick={e => {
               e.preventDefault()
-              window.api['web-open-url']('https://console.groq.com/keys')
+              window.api['web-open-url'](consoleUrl)
             }}
           >
-            Open Groq Console
+            {consoleLabel}
           </Button>
         </div>
       </CardHeader>
@@ -73,7 +97,7 @@ export default function ApiKeySettings() {
         <Input
           type="password"
           value={localKey}
-          placeholder="gsk_..."
+          placeholder={placeholder}
           onChange={e => setLocalKey(e.target.value)}
         />
         <div className="flex gap-2">
@@ -107,5 +131,35 @@ export default function ApiKeySettings() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+export default function ApiKeySettings() {
+  const { groqApiKey, setGroqApiKey, openRouterApiKey, setOpenRouterApiKey } =
+    useAdvancedSettingsStore()
+
+  return (
+    <>
+      <ApiKeyCard
+        title="Groq API Key"
+        description="Store your Groq API key locally. It never leaves this device."
+        placeholder="gsk_..."
+        consoleLabel="Open Groq Console"
+        consoleUrl="https://console.groq.com/keys"
+        storedKey={groqApiKey}
+        onSave={setGroqApiKey}
+        onTest={key => window.api.testGroqApiKey(key)}
+      />
+      <ApiKeyCard
+        title="OpenRouter API Key"
+        description="Used by the precise engine for long dictations. Stored locally only."
+        placeholder="sk-or-..."
+        consoleLabel="Open OpenRouter Keys"
+        consoleUrl="https://openrouter.ai/settings/keys"
+        storedKey={openRouterApiKey}
+        onSave={setOpenRouterApiKey}
+        onTest={key => window.api.testOpenRouterApiKey(key)}
+      />
+    </>
   )
 }
