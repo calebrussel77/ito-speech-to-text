@@ -803,8 +803,11 @@ export default function HomeContent({
                       interaction.duration_ms,
                     )
                     const isExpanded = expandedItems.has(interaction.id)
+                    // Clampability must follow shownText, not displayInfo.text:
+                    // the rendered element shows shownText, so the "Show more"
+                    // affordance has to match whichever variant is on screen.
                     const showToggle =
-                      !displayInfo.isError && isClampable(displayInfo.text)
+                      !displayInfo.isError && isClampable(shownText)
 
                     return (
                       <div
@@ -908,10 +911,8 @@ export default function HomeContent({
                                       : 'text-muted-foreground hover:text-foreground'
                                   }`}
                                   onClick={() =>
-                                    copyToClipboard(
-                                      displayInfo.text,
-                                      interaction.id,
-                                    )
+                                    // Copy whatever is displayed, not always the rewrite.
+                                    copyToClipboard(shownText, interaction.id)
                                   }
                                 >
                                   {copiedItems.has(interaction.id) ? (
