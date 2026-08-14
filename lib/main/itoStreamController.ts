@@ -18,6 +18,7 @@ import {
   resolveModel,
 } from '../constants/modelCatalog'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
+import { transcriptAdjuster } from './transcription/TranscriptAdjuster'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
 import { interactionManager } from './interactions/InteractionManager'
@@ -257,7 +258,7 @@ export class ItoStreamController {
       )
     }, 5000)
 
-    const adjusted = await localTranscriptionService.adjustTranscript(
+    const adjusted = await transcriptAdjuster.adjust(
       transcript,
       this.currentMode,
       context,

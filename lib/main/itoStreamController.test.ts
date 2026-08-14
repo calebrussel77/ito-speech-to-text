@@ -84,11 +84,18 @@ mock.module('./context/ContextGrabber', () => ({
 const mockLocalTranscriptionService = {
   initialize: mock(() => {}),
   transcribeAudio: mock(() => Promise.resolve('raw transcript')),
-  adjustTranscript: mock(() => Promise.resolve('adjusted transcript')),
+  complete: mock(() => Promise.resolve('adjusted transcript')),
 }
 mock.module('./transcription/LocalTranscriptionService', () => ({
   localTranscriptionService: mockLocalTranscriptionService,
   LocalTranscriptionError: class extends Error {},
+}))
+
+const mockTranscriptAdjuster = {
+  adjust: mock(() => Promise.resolve('adjusted transcript')),
+}
+mock.module('./transcription/TranscriptAdjuster', () => ({
+  transcriptAdjuster: mockTranscriptAdjuster,
 }))
 
 const mockOpenRouterService = {

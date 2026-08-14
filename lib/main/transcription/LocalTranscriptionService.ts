@@ -1,9 +1,5 @@
 import Groq from 'groq-sdk'
 import { toFile } from 'groq-sdk/uploads'
-import { ItoMode } from '@/app/generated/ito_pb'
-import { AdvancedSettings } from '../store'
-import { ContextData } from '../context/ContextGrabber'
-
 export type TranscriptionOptions = {
   asrModel?: string
   vocabulary?: string[]
@@ -15,10 +11,11 @@ export type TranscriptionOptions = {
   customPrompt?: string
 }
 
-export type AdjustOptions = {
-  model?: string
+export type ChatCompletionOptions = {
+  model: string
+  messages: { role: 'system' | 'user'; content: string }[]
   temperature?: number
-  prompt?: string
+  maxTokens?: number
 }
 
 type ApiTestResult = { ok: boolean; message?: string }
@@ -292,66 +289,23 @@ class LocalTranscriptionService {
     }
   }
 
-  async adjustTranscript(
-    transcript: string,
-    mode: ItoMode,
-    context: ContextData,
-    advancedSettings: AdvancedSettings,
-  ): Promise<string> {
-    if (!transcript) return ''
-
-    // In TRANSCRIBE mode we want raw (or lightly trimmed) output only.
-    if (mode === ItoMode.TRANSCRIBE) {
-      return transcript.trim()
-    }
-
+  /**
+   * Chat completion against Groq. Prompt building and provider routing live in
+   * TranscriptAdjuster; this only knows how to talk to Groq.
+   */
+  async complete(options: ChatCompletionOptions): Promise<string> {
     const client = this.ensureClient()
-    const model =
-      normalizeModel(advancedSettings?.llm?.llmModel) ||
-      normalizeModel(advancedSettings?.llm?.asrModel) ||
-      DEFAULT_LLM_MODEL
+    const model = normalizeModel(options.model) || DEFAULT_LLM_MODEL
 
-    const temperature = advancedSettings?.llm?.llmTemperature ?? 0.7
-    const editingPrompt =
-      advancedSettings?.llm?.editingPrompt ||
-      'Polish the transcript for clarity and grammar without changing intent.'
+    const result = await client.chat.completions.create({
+      model,
+      messages: options.messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.maxTokens,
+    })
 
-    const modePrompt =
-      mode === ItoMode.EDIT
-        ? `You are in EDIT mode. Use the provided context (window title, app name, and selected text) to adjust the transcript. Keep the user's intent and be concise.`
-        : 'You are in TRANSCRIBE mode. Lightly clean the transcript for casing and spacing while preserving words.'
-
-    const contextSummary = [
-      context.windowTitle && `Window: ${context.windowTitle}`,
-      context.appName && `App: ${context.appName}`,
-      context.contextText && `Selected: ${context.contextText}`,
-    ]
-      .filter(Boolean)
-      .join(' | ')
-
-    const userContent = `Transcript:\n${transcript}\n\nContext:\n${contextSummary || 'None'}`
-
-    try {
-      const result = await client.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: `${modePrompt}\n${editingPrompt}` },
-          { role: 'user', content: userContent },
-        ],
-        temperature,
-        max_tokens: transcript.length + 64 > 2048 ? 2048 : undefined,
-      })
-
-      const choice = (result as any)?.choices?.[0]?.message?.content
-      return choice?.trim?.() || transcript
-    } catch (error: any) {
-      const message = error?.message || 'Failed to adjust transcript'
-      console.error(
-        '[LocalTranscriptionService] adjustTranscript failed:',
-        message,
-      )
-      return transcript
-    }
+    const content = (result as any)?.choices?.[0]?.message?.content
+    return typeof content === 'string' ? content.trim() : ''
   }
 
   async testConnection(apiKey: string): Promise<ApiTestResult> {
