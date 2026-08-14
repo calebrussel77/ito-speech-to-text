@@ -50,7 +50,11 @@ const MODELS = [
     slug: 'mistralai/voxtral-small-24b-2507-stt',
     provider: 'or',
   },
-  { key: 'gpt-4o-transcribe', slug: 'openai/gpt-4o-transcribe', provider: 'or' },
+  {
+    key: 'gpt-4o-transcribe',
+    slug: 'openai/gpt-4o-transcribe',
+    provider: 'or',
+  },
 ]
 
 async function runGroq(slug, buf) {
@@ -97,21 +101,18 @@ function orBody(slug, b64) {
 
 async function runOR(slug, buf) {
   const body = JSON.stringify(orBody(slug, buf.toString('base64')))
-  const res = await fetch(
-    'https://openrouter.ai/api/v1/audio/transcriptions',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OR}`,
-        'Content-Type': 'application/json',
-        // Without this Node streams the body chunked, which OpenRouter's edge
-        // rejects at this size — it surfaces as an opaque "fetch failed".
-        'Content-Length': Buffer.byteLength(body).toString(),
-      },
-      body,
-      signal: AbortSignal.timeout(300_000),
+  const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OR}`,
+      'Content-Type': 'application/json',
+      // Without this Node streams the body chunked, which OpenRouter's edge
+      // rejects at this size — it surfaces as an opaque "fetch failed".
+      'Content-Length': Buffer.byteLength(body).toString(),
     },
-  )
+    body,
+    signal: AbortSignal.timeout(300_000),
+  })
   if (!res.ok)
     throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const json = await res.json()

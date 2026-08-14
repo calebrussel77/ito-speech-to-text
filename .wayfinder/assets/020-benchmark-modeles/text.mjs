@@ -97,7 +97,8 @@ async function call(model) {
     signal: AbortSignal.timeout(180_000),
   })
   const elapsed = (Date.now() - t0) / 1000
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`)
+  if (!res.ok)
+    throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`)
   const json = await res.json()
   const completion = json.usage?.completion_tokens ?? null
   return {
