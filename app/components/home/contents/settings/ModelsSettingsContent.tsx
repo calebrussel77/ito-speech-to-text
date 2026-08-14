@@ -189,6 +189,7 @@ export default function ModelsSettingsContent() {
         slots={voiceSlots}
         availableProviders={availableProviders}
         onRequestKey={setExpandedProvider}
+        showAccuracy
       />
 
       <ModelTable

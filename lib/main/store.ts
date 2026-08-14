@@ -434,6 +434,22 @@ const migrations: Migration[] = [
     },
   },
   {
+    id: '2026-08-14-whisper-turbo-default',
+    run: s => {
+      // Benchmarked on Caleb's own dictations: whisper-large-v3 degenerates
+      // into repeating its own prompt and inventing text — 8.9% word error on
+      // 79s, 82.9% on 149s, and already wrong at 40s. whisper-large-v3-turbo
+      // scores 1.6% on the same 79s clip while being faster and 3x cheaper.
+      // v3 was only ever a default, never a choice anyone made on evidence, so
+      // move installs off it.
+      const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
+      if (advanced.shortVoiceModelKey === 'whisper-large-v3') {
+        advanced.shortVoiceModelKey = 'whisper-large-v3-turbo'
+        s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
+      }
+    },
+  },
+  {
     id: '2026-07-26-mute-audio-when-dictating-default-on',
     run: s => {
       // Muting other audio while dictating is now on by default: it removes

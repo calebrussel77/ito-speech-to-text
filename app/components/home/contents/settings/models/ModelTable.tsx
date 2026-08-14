@@ -34,6 +34,12 @@ type ModelTableProps = {
   /** Providers whose API key is configured. Others render disabled. */
   availableProviders: Set<string>
   onRequestKey: (provider: string) => void
+  /**
+   * Show the accuracy gauge. Only voice models have one: word error rate is
+   * measurable against a reference transcript, whereas "how good is this
+   * rewrite" is a judgement, and a gauge would dress it up as a measurement.
+   */
+  showAccuracy?: boolean
 }
 
 /**
@@ -89,8 +95,12 @@ export default function ModelTable({
   slots,
   availableProviders,
   onRequestKey,
+  showAccuracy = false,
 }: ModelTableProps) {
   const showSlotLabels = slots.length > 1
+  // The price column gives up room when a third gauge has to fit.
+  const priceWidth = showAccuracy ? 88 : 100
+  const gaugeWidth = showAccuracy ? 54 : 62
   // Providers that gate at least one row and have no key yet — one action link
   // per provider at the end of the table, since a disabled row cannot be
   // clicked and would otherwise be a dead end.
@@ -118,8 +128,17 @@ export default function ModelTable({
       <div className="surface-1 overflow-hidden rounded-xl">
         <div className="flex items-center gap-3 border-b border-border/70 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--subtle-foreground)]">
           <span className="min-w-0 flex-1">Model</span>
-          <span className="w-[100px] shrink-0 text-right">Price</span>
-          <span className="w-[62px] shrink-0 text-right">Speed</span>
+          <span className="shrink-0 text-right" style={{ width: priceWidth }}>
+            Price
+          </span>
+          <span className="shrink-0 text-right" style={{ width: gaugeWidth }}>
+            Speed
+          </span>
+          {showAccuracy && (
+            <span className="shrink-0 text-right" style={{ width: gaugeWidth }}>
+              Acc.
+            </span>
+          )}
           <span className="flex shrink-0">
             {slots.map(slot => (
               <span
@@ -202,12 +221,26 @@ export default function ModelTable({
                   </span>
                 </span>
 
-                <span className="w-[100px] shrink-0 text-right text-[10px] tabular-nums text-[var(--muted-foreground)]">
+                <span
+                  className="shrink-0 text-right text-[10px] tabular-nums text-[var(--muted-foreground)]"
+                  style={{ width: priceWidth }}
+                >
                   {model.price ?? '—'}
                 </span>
-                <span className="flex w-[62px] shrink-0 justify-end text-[10px]">
+                <span
+                  className="flex shrink-0 justify-end text-[10px]"
+                  style={{ width: gaugeWidth }}
+                >
                   <Gauge value={model.speed} />
                 </span>
+                {showAccuracy && (
+                  <span
+                    className="flex shrink-0 justify-end text-[10px]"
+                    style={{ width: gaugeWidth }}
+                  >
+                    <Gauge value={model.accuracy} />
+                  </span>
+                )}
 
                 <span className="flex shrink-0">
                   {slots.map(slot => (

@@ -1,0 +1,232 @@
+[
+  {
+    "key": "gpt-transcribe",
+    "avgWer": 0.015402808573540282,
+    "avgRtf": 7.718525342690731,
+    "perClip": {
+      "code": {
+        "wer": 0.016260162601626018,
+        "latency": 12.326,
+        "seconds": 78.63,
+        "cost": 0.005925,
+        "words": 122,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.014545454545454545,
+        "latency": 16.473,
+        "seconds": 149.21,
+        "cost": 0.01125,
+        "words": 275,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "qwen3-asr-flash",
+    "avgWer": 0.028987435328898747,
+    "avgRtf": 5.298409726137472,
+    "perClip": {
+      "code": {
+        "wer": 0.032520325203252036,
+        "latency": 16.084,
+        "seconds": 78.63,
+        "cost": 0.00273,
+        "words": 123,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.025454545454545455,
+        "latency": 26.14,
+        "seconds": 149.21,
+        "cost": 0.005215,
+        "words": 274,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "gpt-4o-transcribe",
+    "avgWer": 0.04171470805617147,
+    "avgRtf": 7.932752005607538,
+    "perClip": {
+      "code": {
+        "wer": 0.032520325203252036,
+        "latency": 11.503,
+        "seconds": 78.63,
+        "cost": 0.003465,
+        "words": 122,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.05090909090909091,
+        "latency": 16.524,
+        "seconds": 149.21,
+        "cost": 0.00705,
+        "words": 269,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "voxtral-small-stt",
+    "avgWer": 0.04492239467849224,
+    "avgRtf": 6.440189326805754,
+    "perClip": {
+      "code": {
+        "wer": 0.024390243902439025,
+        "latency": 10.205,
+        "seconds": 78.63,
+        "cost": 0.0039317,
+        "words": 124,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.06545454545454546,
+        "latency": 28.831,
+        "seconds": 149.21,
+        "cost": 0.00746025,
+        "words": 275,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "whisper-large-v3-turbo",
+    "avgWer": 0.046311899482631196,
+    "avgRtf": 29.798957908908925,
+    "perClip": {
+      "code": {
+        "wer": 0.016260162601626018,
+        "latency": 2.28,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 124,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.07636363636363637,
+        "latency": 5.942,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 270,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "voxtral-mini-transcribe",
+    "avgWer": 0.051234294161123434,
+    "avgRtf": 10.646956980286774,
+    "perClip": {
+      "code": {
+        "wer": 0.04065040650406504,
+        "latency": 9.471,
+        "seconds": 78.63,
+        "cost": 0.0039,
+        "words": 126,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.06181818181818182,
+        "latency": 11.485,
+        "seconds": 149.21,
+        "cost": 0.0074,
+        "words": 277,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "whisper-large-v3-turbo-openrouter",
+    "avgWer": 0.10022172949002217,
+    "avgRtf": 5.943184691561033,
+    "perClip": {
+      "code": {
+        "wer": 0.07317073170731707,
+        "latency": 14.141,
+        "seconds": 78.63,
+        "cost": 0.00026185122,
+        "words": 126,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.12727272727272726,
+        "latency": 23.587,
+        "seconds": 149.21,
+        "cost": 0.00049685265,
+        "words": 286,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "nova-3",
+    "avgWer": 0.11102734663710273,
+    "avgRtf": 9.005121767339833,
+    "perClip": {
+      "code": {
+        "wer": 0.10569105691056911,
+        "latency": 9.717,
+        "seconds": 78.63,
+        "cost": 0.005635486116666667,
+        "words": 128,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.11636363636363636,
+        "latency": 15.044,
+        "seconds": 149.21,
+        "cost": 0.0106930465,
+        "words": 273,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "whisper-large-v3",
+    "avgWer": 0.4592609016999261,
+    "avgRtf": 24.434928830525855,
+    "perClip": {
+      "code": {
+        "wer": 0.08943089430894309,
+        "latency": 3.645,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 123,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.8290909090909091,
+        "latency": 5.466,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 110,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "chirp-3",
+    "avgWer": null,
+    "avgRtf": null,
+    "perClip": {
+      "code": {
+        "wer": null,
+        "latency": null,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 0,
+        "error": "HTTP 400: {\"error\":{\"message\":\"Provider returned 400\",\"code\":400}}"
+      },
+      "feature": {
+        "wer": null,
+        "latency": null,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 0,
+        "error": "HTTP 400: {\"error\":{\"message\":\"Provider returned 400\",\"code\":400}}"
+      }
+    }
+  }
+]

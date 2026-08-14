@@ -62,11 +62,22 @@ export interface CatalogModel {
    */
   price: string | null
   /**
-   * 1-5 gauge, only where throughput is measured and published. Groq and
-   * Cerebras document it; OpenRouter reports `p50_throughput: null` for every
-   * model, so those rows stay blank rather than guessed.
+   * 1-5 gauges, both measured end to end on 2026-08-14 — no vendor figure is
+   * used, because published numbers describe short English benchmarks and
+   * disagreed sharply with what these models do on real French dictation.
+   *
+   * Voice: run against the two bake-off recordings (79s and 149s of Caleb's
+   * own dictation, .wayfinder/assets/015-bakeoff/), as 16 kHz mono WAV — the
+   * exact payload the app sends. `speed` is the real-time factor (seconds of
+   * audio per second of wall clock, network included); `accuracy` is the word
+   * error rate against the transcript Caleb ranked first blind on both clips.
+   *
+   * Text: median tokens/second over 3 runs of the app's real Intelligent Mode
+   * prompt on a real transcript. Includes network round trip, so these are
+   * end-to-end figures rather than the peak throughput vendors advertise.
    */
   speed?: number
+  accuracy?: number
   /** Short tag shown next to the name. */
   note?: string
   /** Validated on real dictations during the long-form engine bake-off. */
@@ -74,17 +85,6 @@ export interface CatalogModel {
 }
 
 export const VOICE_MODELS: CatalogModel[] = [
-  {
-    key: 'whisper-large-v3',
-    kind: 'voice',
-    label: 'Whisper Large v3',
-    slug: 'whisper-large-v3',
-    provider: 'groq',
-    lab: 'openai',
-    price: '$0.111 / h',
-    speed: 4,
-    note: 'Most accurate — 10.3% WER',
-  },
   {
     key: 'whisper-large-v3-turbo',
     kind: 'voice',
@@ -94,7 +94,20 @@ export const VOICE_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.04 / h',
     speed: 5,
-    note: 'Cheapest — 12% WER',
+    accuracy: 4,
+    note: 'Default - fastest, and the only reliable Groq option',
+  },
+  {
+    key: 'whisper-large-v3',
+    kind: 'voice',
+    label: 'Whisper Large v3',
+    slug: 'whisper-large-v3',
+    provider: 'groq',
+    lab: 'openai',
+    price: '$0.111 / h',
+    speed: 4,
+    accuracy: 1,
+    note: 'Loops and invents past ~40s - kept for comparison only',
   },
   {
     key: 'gpt-transcribe',
@@ -104,35 +117,10 @@ export const VOICE_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'openai',
     price: '$0.27 / h',
+    speed: 2,
+    accuracy: 5,
+    note: 'Most accurate',
     proven: true,
-  },
-  {
-    key: 'voxtral-mini-transcribe',
-    kind: 'voice',
-    label: 'Voxtral Mini Transcribe',
-    slug: 'mistralai/voxtral-mini-transcribe',
-    provider: 'openrouter',
-    lab: 'mistral',
-    price: '$0.18 / h',
-    proven: true,
-  },
-  {
-    key: 'nova-3',
-    kind: 'voice',
-    label: 'Nova 3',
-    slug: 'deepgram/nova-3',
-    provider: 'openrouter',
-    lab: 'deepgram',
-    price: '$0.26 / h',
-  },
-  {
-    key: 'chirp-3',
-    kind: 'voice',
-    label: 'Chirp 3',
-    slug: 'google/chirp-3',
-    provider: 'openrouter',
-    lab: 'google',
-    price: '$0.96 / h',
   },
   {
     key: 'qwen3-asr-flash',
@@ -142,25 +130,9 @@ export const VOICE_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'qwen',
     price: '$0.13 / h',
-  },
-  {
-    key: 'whisper-large-v3-turbo-openrouter',
-    kind: 'voice',
-    label: 'Whisper Large v3 Turbo',
-    slug: 'openai/whisper-large-v3-turbo',
-    provider: 'openrouter',
-    lab: 'openai',
-    price: '$0.012 / h',
-    note: 'Same model as Groq’s, 3x cheaper',
-  },
-  {
-    key: 'voxtral-small-stt',
-    kind: 'voice',
-    label: 'Voxtral Small 24B STT',
-    slug: 'mistralai/voxtral-small-24b-2507-stt',
-    provider: 'openrouter',
-    lab: 'mistral',
-    price: '$0.18 / h',
+    speed: 2,
+    accuracy: 5,
+    note: 'Best value - near the top at half the price',
   },
   {
     key: 'gpt-4o-transcribe',
@@ -170,9 +142,64 @@ export const VOICE_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'openai',
     price: '$0.12 / h',
+    speed: 2,
+    accuracy: 4,
+  },
+  {
+    key: 'voxtral-small-stt',
+    kind: 'voice',
+    label: 'Voxtral Small 24B STT',
+    slug: 'mistralai/voxtral-small-24b-2507-stt',
+    provider: 'openrouter',
+    lab: 'mistral',
+    price: '$0.18 / h',
+    speed: 2,
+    accuracy: 4,
+  },
+  {
+    key: 'voxtral-mini-transcribe',
+    kind: 'voice',
+    label: 'Voxtral Mini Transcribe',
+    slug: 'mistralai/voxtral-mini-transcribe',
+    provider: 'openrouter',
+    lab: 'mistral',
+    price: '$0.18 / h',
+    speed: 3,
+    accuracy: 3,
+    note: 'Quickest of the long-form engines',
+    proven: true,
+  },
+  {
+    key: 'whisper-large-v3-turbo-openrouter',
+    kind: 'voice',
+    label: 'Whisper Large v3 Turbo',
+    slug: 'openai/whisper-large-v3-turbo',
+    provider: 'openrouter',
+    lab: 'openai',
+    price: '$0.012 / h',
+    speed: 2,
+    accuracy: 2,
+    note: 'Cheapest by far, but weaker than the same model on Groq',
+  },
+  {
+    key: 'nova-3',
+    kind: 'voice',
+    label: 'Nova 3',
+    slug: 'deepgram/nova-3',
+    provider: 'openrouter',
+    lab: 'deepgram',
+    price: '$0.26 / h',
+    speed: 2,
+    accuracy: 2,
   },
 ]
 
+// Measured tokens/second, median of 3 runs (2026-08-14):
+// gpt-oss-120b@Cerebras 1704, qwen3.7-flash 862, glm-4.7-flash 584,
+// qwen3.6-27b 392, gpt-5.6-luna 363, gpt-oss-120b@Groq 348, gpt-5.4-nano 344,
+// gpt-oss-20b@Groq 309, gemma-4-31b@Cerebras 165, claude-sonnet-5 145,
+// gemini-3.7-flash 118, mistral-nemo 99, gemini-3.5-flash-lite 66,
+// claude-haiku-4.5 60, gemini-2.5-flash-lite 20.
 export const TEXT_MODELS: CatalogModel[] = [
   {
     key: 'gpt-oss-20b-groq',
@@ -182,7 +209,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'groq',
     lab: 'openai',
     price: '$0.075 / $0.30 per M',
-    speed: 4,
+    speed: 3,
     note: 'Default',
   },
   {
@@ -203,6 +230,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'groq',
     lab: 'qwen',
     price: null,
+    speed: 4,
   },
   {
     key: 'gpt-oss-120b-cerebras',
@@ -214,7 +242,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'cerebras',
     price: '$0.35 / $0.75 per M',
     speed: 5,
-    note: 'Fastest',
+    note: 'Fastest - 5x the same model on Groq',
   },
   {
     key: 'gemma-4-31b-cerebras',
@@ -225,17 +253,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     pinnedProvider: 'cerebras',
     lab: 'cerebras',
     price: '$0.99 / $1.49 per M',
-    speed: 5,
-  },
-  {
-    key: 'mistral-nemo',
-    kind: 'text',
-    label: 'Mistral Nemo',
-    slug: 'mistralai/mistral-nemo',
-    provider: 'openrouter',
-    lab: 'mistral',
-    price: '$0.02 / $0.03 per M',
-    note: 'Cheapest',
+    speed: 3,
   },
   {
     key: 'qwen3-flash',
@@ -245,6 +263,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'qwen',
     price: '$0.03 / $0.13 per M',
+    speed: 5,
   },
   {
     key: 'glm-4-7-flash',
@@ -254,6 +273,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'zai',
     price: '$0.06 / $0.40 per M',
+    speed: 4,
   },
   {
     key: 'gpt-5-6-luna',
@@ -263,15 +283,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'openai',
     price: '$0.10 / $0.60 per M',
-  },
-  {
-    key: 'gemini-2-5-flash-lite',
-    kind: 'text',
-    label: 'Gemini 2.5 Flash Lite',
-    slug: 'google/gemini-2.5-flash-lite',
-    provider: 'openrouter',
-    lab: 'google',
-    price: '$0.10 / $0.40 per M',
+    speed: 4,
   },
   {
     key: 'gpt-5-4-nano',
@@ -281,33 +293,18 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'openai',
     price: '$0.20 / $1.25 per M',
+    speed: 3,
   },
   {
-    key: 'gemini-3-5-flash-lite',
+    key: 'mistral-nemo',
     kind: 'text',
-    label: 'Gemini 3.5 Flash Lite',
-    slug: 'google/gemini-3.5-flash-lite',
+    label: 'Mistral Nemo',
+    slug: 'mistralai/mistral-nemo',
     provider: 'openrouter',
-    lab: 'google',
-    price: '$0.30 / $2.50 per M',
-  },
-  {
-    key: 'gemini-3-7-flash',
-    kind: 'text',
-    label: 'Gemini 3.7 Flash',
-    slug: 'google/gemini-3.7-flash',
-    provider: 'openrouter',
-    lab: 'google',
-    price: '$0.38 / $1.88 per M',
-  },
-  {
-    key: 'claude-haiku-4-5',
-    kind: 'text',
-    label: 'Claude Haiku 4.5',
-    slug: 'anthropic/claude-haiku-4.5',
-    provider: 'openrouter',
-    lab: 'anthropic',
-    price: '$1 / $5 per M',
+    lab: 'mistral',
+    price: '$0.02 / $0.03 per M',
+    speed: 2,
+    note: 'Cheapest',
   },
   {
     key: 'claude-sonnet-5',
@@ -317,6 +314,48 @@ export const TEXT_MODELS: CatalogModel[] = [
     provider: 'openrouter',
     lab: 'anthropic',
     price: '$2 / $10 per M',
+    speed: 2,
+  },
+  {
+    key: 'gemini-3-7-flash',
+    kind: 'text',
+    label: 'Gemini 3.7 Flash',
+    slug: 'google/gemini-3.7-flash',
+    provider: 'openrouter',
+    lab: 'google',
+    price: '$0.38 / $1.88 per M',
+    speed: 2,
+  },
+  {
+    key: 'gemini-3-5-flash-lite',
+    kind: 'text',
+    label: 'Gemini 3.5 Flash Lite',
+    slug: 'google/gemini-3.5-flash-lite',
+    provider: 'openrouter',
+    lab: 'google',
+    price: '$0.30 / $2.50 per M',
+    speed: 2,
+  },
+  {
+    key: 'claude-haiku-4-5',
+    kind: 'text',
+    label: 'Claude Haiku 4.5',
+    slug: 'anthropic/claude-haiku-4.5',
+    provider: 'openrouter',
+    lab: 'anthropic',
+    price: '$1 / $5 per M',
+    speed: 2,
+  },
+  {
+    key: 'gemini-2-5-flash-lite',
+    kind: 'text',
+    label: 'Gemini 2.5 Flash Lite',
+    slug: 'google/gemini-2.5-flash-lite',
+    provider: 'openrouter',
+    lab: 'google',
+    price: '$0.10 / $0.40 per M',
+    speed: 1,
+    note: 'Slowest measured - 20 tok/s',
   },
 ]
 
@@ -324,7 +363,7 @@ export const CATALOG: CatalogModel[] = [...VOICE_MODELS, ...TEXT_MODELS]
 
 const BY_KEY = new Map(CATALOG.map(model => [model.key, model]))
 
-export const DEFAULT_SHORT_VOICE_KEY = 'whisper-large-v3'
+export const DEFAULT_SHORT_VOICE_KEY = 'whisper-large-v3-turbo'
 export const DEFAULT_LONG_VOICE_KEY = 'gpt-transcribe'
 export const DEFAULT_TEXT_KEY = 'gpt-oss-20b-groq'
 
