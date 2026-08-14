@@ -28,6 +28,7 @@ import { getKeyDisplay } from '@/app/utils/keyboard'
 import { createStereo48kWavFromMonoPCM } from '@/app/utils/audioUtils'
 import { KeyName } from '@/lib/types/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
+import EngineBadge from '@/app/components/home/EngineBadge'
 import { ProUpgradeDialog } from '../ProUpgradeDialog'
 import useBillingState from '@/app/hooks/useBillingState'
 
@@ -482,44 +483,6 @@ export default function HomeContent({
     }
   }
 
-  // Engine that produced the transcript, shown as a small badge. Older rows
-  // predate the attribution and simply show no badge.
-  // Le moteur est déjà nommé en toutes lettres : la teinte était redondante,
-  // et trois pastilles colorées sur fond near-black tiraient l'œil plus que
-  // le contenu de la dictée. Un seul traitement neutre pour les trois.
-  const ENGINE_BADGE_CLASS =
-    'bg-[var(--surface-3)] text-[var(--muted-foreground)] border-border'
-
-  const ENGINE_BADGES: { match: string; label: string; className: string }[] = [
-    {
-      match: 'gpt-transcribe',
-      label: 'GPT Transcribe',
-      className: ENGINE_BADGE_CLASS,
-    },
-    {
-      match: 'voxtral',
-      label: 'Mistral Voxtral',
-      className: ENGINE_BADGE_CLASS,
-    },
-    {
-      match: 'whisper',
-      label: 'Whisper · Groq',
-      className: ENGINE_BADGE_CLASS,
-    },
-  ]
-
-  const getEngineBadge = (interaction: Interaction) => {
-    const engine: string = interaction.asr_output?.engine || ''
-    if (!engine) return null
-    return (
-      ENGINE_BADGES.find(badge => engine.includes(badge.match)) ?? {
-        match: engine,
-        label: engine,
-        className: 'bg-muted text-muted-foreground border-border/60',
-      }
-    )
-  }
-
   const formatDuration = (durationMs?: number | null): string | null => {
     if (!durationMs || durationMs < 1000) return null
     const totalSeconds = Math.round(durationMs / 1000)
@@ -807,7 +770,6 @@ export default function HomeContent({
                 <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
-                    const engineBadge = getEngineBadge(interaction)
                     const durationLabel = formatDuration(
                       interaction.duration_ms,
                     )
@@ -826,13 +788,9 @@ export default function HomeContent({
                             <span className="text-muted-foreground text-xs font-medium tabular-nums">
                               {formatTime(interaction.created_at)}
                             </span>
-                            {engineBadge && (
-                              <span
-                                className={`inline-flex items-center rounded-full border px-2 py-px text-[11px] font-medium leading-4 ${engineBadge.className}`}
-                              >
-                                {engineBadge.label}
-                              </span>
-                            )}
+                            <EngineBadge
+                              engine={interaction.asr_output?.engine}
+                            />
                             {durationLabel && (
                               <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                                 {durationLabel}
