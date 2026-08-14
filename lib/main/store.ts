@@ -93,16 +93,11 @@ export interface AdvancedSettings {
   macosAccessibilityContextEnabled: boolean
   groqApiKey?: string
   openRouterApiKey?: string
-  // Catalogue keys (see lib/constants/modelCatalog.ts), never raw model
-  // slugs: the catalogue owns which provider serves a model and how it is
-  // routed, so those cannot drift out of sync with the stored choice.
-  shortVoiceModelKey?: string
-  longVoiceModelKey?: string
+  /**
+   * Modèle texte par défaut des modes créés ensuite. Le modèle réellement
+   * utilisé est celui du mode ; celui-ci ne sert qu'à préremplir.
+   */
   textModelKey?: string
-  // Route dictations at or above the threshold to the dedicated long-form
-  // engine. Off means Groq transcribes everything.
-  longDictationEnabled?: boolean
-  longDictationThresholdMs?: number
   // Why the last long dictation could not use OpenRouter. Written by the
   // transcription pipeline, never by the settings UI — see
   // main/transcription/openRouterHealth.ts.
@@ -186,22 +181,14 @@ export const defaultValues: AppStore = {
     llm: {
       asrProvider: DEFAULT_ADVANCED_SETTINGS.asrProvider,
       asrModel: DEFAULT_ADVANCED_SETTINGS.asrModel,
-      asrPrompt: DEFAULT_ADVANCED_SETTINGS.asrPrompt,
-      asrLanguage: DEFAULT_ADVANCED_SETTINGS.asrLanguage,
       llmProvider: DEFAULT_ADVANCED_SETTINGS.llmProvider,
       llmTemperature: DEFAULT_ADVANCED_SETTINGS.llmTemperature,
       llmModel: DEFAULT_ADVANCED_SETTINGS.llmModel,
-      transcriptionPrompt: DEFAULT_ADVANCED_SETTINGS.transcriptionPrompt,
-      editingPrompt: DEFAULT_ADVANCED_SETTINGS.editingPrompt,
       noSpeechThreshold: DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
     groqApiKey: '',
     openRouterApiKey: '',
-    shortVoiceModelKey: DEFAULT_SHORT_VOICE_KEY,
-    longVoiceModelKey: DEFAULT_LONG_VOICE_KEY,
     textModelKey: DEFAULT_TEXT_KEY,
-    longDictationEnabled: true,
-    longDictationThresholdMs: LONG_DICTATION_THRESHOLD_MS,
   },
   openMic: false,
   selectedAudioInput: null,
@@ -648,6 +635,11 @@ export async function initializeStore() {
     const { seedModes } = await import('./modes/modeSeeder')
     const userId = getCurrentUserId() || 'self-hosted'
     await seedModes(userId)
+
+    const { migrateSettingsIntoModes } = await import(
+      './modes/modeSettingsMigration'
+    )
+    await migrateSettingsIntoModes()
   }
 }
 

@@ -11,13 +11,9 @@ import {
 export interface LlmSettings {
   asrProvider: string
   asrModel: string
-  asrPrompt: string
-  asrLanguage: string
   llmProvider: string
   llmModel: string
   llmTemperature: number
-  transcriptionPrompt: string
-  editingPrompt: string
   noSpeechThreshold: number
 }
 
@@ -65,20 +61,12 @@ const getInitialState = () => {
       asrProvider:
         storedLlm.asrProvider ?? DEFAULT_ADVANCED_SETTINGS.asrProvider,
       asrModel: storedLlm.asrModel ?? DEFAULT_ADVANCED_SETTINGS.asrModel,
-      asrPrompt: storedLlm.asrPrompt ?? DEFAULT_ADVANCED_SETTINGS.asrPrompt,
-      asrLanguage:
-        storedLlm.asrLanguage ?? DEFAULT_ADVANCED_SETTINGS.asrLanguage,
       llmProvider:
         storedLlm.llmProvider ?? DEFAULT_ADVANCED_SETTINGS.llmProvider,
       llmModel:
         mapModel(storedLlm.llmModel) ?? DEFAULT_ADVANCED_SETTINGS.llmModel,
       llmTemperature:
         storedLlm.llmTemperature ?? DEFAULT_ADVANCED_SETTINGS.llmTemperature,
-      transcriptionPrompt:
-        storedLlm.transcriptionPrompt ??
-        DEFAULT_ADVANCED_SETTINGS.transcriptionPrompt,
-      editingPrompt:
-        storedLlm.editingPrompt ?? DEFAULT_ADVANCED_SETTINGS.editingPrompt,
       noSpeechThreshold:
         storedLlm.noSpeechThreshold ??
         DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
