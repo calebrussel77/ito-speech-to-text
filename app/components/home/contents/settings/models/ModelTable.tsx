@@ -30,7 +30,11 @@ type ModelTableProps = {
   title: string
   description?: string
   models: CatalogModel[]
-  slots: ModelSlot[]
+  /**
+   * Colonnes de sélection. Absentes, le tableau devient une référence en
+   * lecture seule : le choix du modèle appartient au mode, pas à cet écran.
+   */
+  slots?: ModelSlot[]
   /** Providers whose API key is configured. Others render disabled. */
   availableProviders: Set<string>
   onRequestKey: (provider: string) => void
@@ -92,7 +96,7 @@ export default function ModelTable({
   title,
   description,
   models,
-  slots,
+  slots = [],
   availableProviders,
   onRequestKey,
   showAccuracy = false,

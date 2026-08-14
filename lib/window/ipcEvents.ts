@@ -45,7 +45,6 @@ import {
   installCustomInteractionSound,
   playInteractionCompletionSoundTest,
 } from '../main/soundFeedback'
-import { ItoMode } from '@/app/generated/ito_pb'
 import {
   getSelectedText,
   getSelectedTextString,
@@ -183,7 +182,7 @@ export function registerIPC() {
   handleIPC('stop-key-listener', () => stopKeyListener())
   handleIPC('register-hotkeys', () => registerAllHotkeys())
   handleIPC('start-native-recording-service', () =>
-    itoSessionManager.startSession(ItoMode.TRANSCRIBE),
+    itoSessionManager.startSession('voice-to-text'),
   )
   handleIPC('stop-native-recording-service', () =>
     itoSessionManager.completeSession(),
@@ -965,7 +964,7 @@ export function registerIPC() {
   // When the hotkey is pressed, start recording and notify the pill window.
   ipcMain.on('start-native-recording', _event => {
     console.log(`IPC: Received 'start-native-recording'`)
-    itoSessionManager.startSession(ItoMode.TRANSCRIBE)
+    itoSessionManager.startSession('voice-to-text')
   })
 
   ipcMain.on('start-native-recording-test', _event => {

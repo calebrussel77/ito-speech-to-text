@@ -14,8 +14,9 @@ describe('modes schema migrations', () => {
   })
 
   test('the modes table carries every column the repository writes', () => {
-    const up = MIGRATIONS.find(m => m.id === '20260814190000_add_modes_table')!
-      .up
+    const up = MIGRATIONS.find(
+      m => m.id === '20260814190000_add_modes_table',
+    )!.up
     for (const column of [
       'id',
       'user_id',

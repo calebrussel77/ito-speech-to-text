@@ -1,4 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { EventEmitter } from 'events'
 import { fakeTimers } from '../__tests__/helpers/testUtils'
@@ -48,7 +47,7 @@ const mockMainStore = {
       {
         id: 'mock-shortcut-1',
         keys: ['command', 'space'],
-        mode: ItoMode.TRANSCRIBE,
+        modeId: 'voice-to-text',
       },
     ],
   })),
@@ -175,7 +174,7 @@ describe('Keyboard Module', () => {
         {
           id: 'mock-shortcut-1',
           keys: ['command', 'space'],
-          mode: ItoMode.TRANSCRIBE,
+          modeId: 'voice-to-text',
         },
       ],
     })
@@ -397,7 +396,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut-1',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -442,7 +441,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -497,7 +496,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -537,7 +536,7 @@ describe('Keyboard Module', () => {
           {
             id: 'disable-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       }))
@@ -638,7 +637,7 @@ describe('Keyboard Module', () => {
           {
             id: 'complex-shortcut',
             keys: ['control', 'shift', 'f'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -689,7 +688,7 @@ describe('Keyboard Module', () => {
           {
             id: 'partial-test',
             keys: ['command', 'shift', 'a'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -731,7 +730,7 @@ describe('Keyboard Module', () => {
           {
             id: 'superset-test',
             keys: ['fn'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -773,7 +772,7 @@ describe('Keyboard Module', () => {
           {
             id: 'exact-match-test',
             keys: ['fn'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -796,7 +795,7 @@ describe('Keyboard Module', () => {
 
       // Should activate shortcut with exact match
       expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(
-        ItoMode.TRANSCRIBE,
+        'voice-to-text',
       )
     })
 
@@ -807,7 +806,7 @@ describe('Keyboard Module', () => {
           {
             id: 'extra-keys-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -859,7 +858,7 @@ describe('Keyboard Module', () => {
           {
             id: 'repeat-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -958,7 +957,7 @@ describe('Keyboard Module', () => {
           {
             id: 'command-test',
             keys: ['command'], // Legacy key, should normalize to command-left
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1015,7 +1014,7 @@ describe('Keyboard Module', () => {
           {
             id: 'letter-test',
             keys: ['a'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1044,7 +1043,7 @@ describe('Keyboard Module', () => {
           {
             id: 'number-test',
             keys: ['1'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1073,7 +1072,7 @@ describe('Keyboard Module', () => {
           {
             id: 'unknown-test',
             keys: ['unknownkey'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1104,7 +1103,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-hotkey',
             keys: ['control', 'z'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1128,12 +1127,12 @@ describe('Keyboard Module', () => {
           {
             id: 'hotkey-1',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
           {
             id: 'hotkey-2',
             keys: ['control', 'shift', 'f'],
-            mode: ItoMode.EDIT,
+            modeId: 'intelligent',
           },
         ],
       })
@@ -1162,12 +1161,12 @@ describe('Keyboard Module', () => {
           {
             id: 'empty-hotkey',
             keys: [],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
           {
             id: 'valid-hotkey',
             keys: ['control', 'a'],
-            mode: ItoMode.EDIT,
+            modeId: 'intelligent',
           },
         ],
       })
@@ -1236,7 +1235,7 @@ describe('Keyboard Module', () => {
           {
             id: 'memory-test',
             keys: ['a', 'b'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1288,7 +1287,7 @@ describe('Keyboard Module', () => {
           {
             id: 'stuck-key-protection-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1334,7 +1333,7 @@ describe('Keyboard Module', () => {
           {
             id: 'partial-stuck-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })

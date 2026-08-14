@@ -14,14 +14,13 @@ import {
   DialogFooter,
 } from '../../ui/dialog'
 import { Button } from '../../ui/button'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplayInfo } from '@/lib/types/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
 
 export default function NotesContent() {
   const { notes, loadNotes, addNote, deleteNote, updateNote } = useNotesStore()
-  const { getItoModeShortcuts } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.TRANSCRIBE)[0].keys
+  const { getModeShortcuts } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]?.keys ?? []
   const [creatingNote, setCreatingNote] = useState(false)
   const [showAddNoteButton, setShowAddNoteButton] = useState(false)
   const [noteContent, setNoteContent] = useState('')

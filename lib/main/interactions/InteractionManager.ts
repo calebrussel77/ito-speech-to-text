@@ -39,7 +39,12 @@ export class InteractionManager {
     audioDurationMs?: number,
     // How the transcript was produced: the engine that answered, and — when
     // the routed engine did not — why it was not the one asked for.
-    asr?: { engine?: string; fallback?: AsrFallback },
+    asr?: {
+      engine?: string
+      fallback?: AsrFallback
+      modeId?: string
+      modeName?: string
+    },
   ) {
     if (!this.currentInteractionId) {
       log.warn(
@@ -75,6 +80,9 @@ export class InteractionManager {
         interactionDurationMs,
         engine: asr?.engine || null,
         fallback: asr?.fallback || null,
+        modeId: asr?.modeId || null,
+        // Figé : renommer un mode ne doit pas réécrire l'histoire.
+        modeName: asr?.modeName || null,
       }
 
       // Generate a meaningful title from the transcript

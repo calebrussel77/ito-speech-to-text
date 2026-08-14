@@ -243,7 +243,9 @@ export default function ModeEditor({
             </SettingsRow>
           </SettingsGroup>
 
-          {deleteError && <SettingsNote tone="error">{deleteError}</SettingsNote>}
+          {deleteError && (
+            <SettingsNote tone="error">{deleteError}</SettingsNote>
+          )}
         </>
       )}
     </div>

@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { createMockTimingCollector } from '../__tests__/setup'
 import { TimingEventName } from './timing/TimingCollector'
 
@@ -28,7 +27,7 @@ mock.module('./recordingStateNotifier', () => ({
 }))
 
 const mockItoStreamController = {
-  initialize: mock((_mode: ItoMode) => Promise.resolve(true)),
+  initialize: mock((_mode: any) => Promise.resolve(true)),
   setMode: mock(),
   getAudioDurationMs: mock(() => 500),
   getCurrentSampleRate: mock(() => 16000),
@@ -97,6 +96,40 @@ mock.module('./store', () => ({
   getAdvancedSettings: mockGetAdvancedSettings,
 }))
 
+const testMode = (overrides: Record<string, unknown> = {}) => ({
+  id: 'voice-to-text',
+  userId: 'self-hosted',
+  name: 'Voice to text',
+  preset: 'voice-to-text',
+  icon: 'Microphone',
+  instructions: '',
+  language: 'fr',
+  voiceModelKey: 'whisper-large-v3-turbo',
+  textModelKey: null,
+  useLlm: false,
+  contextApplication: false,
+  contextClipboard: false,
+  contextSelection: false,
+  audioSource: 'microphone',
+  playbackWhenRecording: 'mute',
+  autoPaste: true,
+  autocapitalize: true,
+  identifySpeakers: false,
+  asrPrompt: '',
+  sortOrder: 0,
+  createdAt: '2026-08-14T00:00:00.000Z',
+  updatedAt: '2026-08-14T00:00:00.000Z',
+  ...overrides,
+})
+
+mock.module('./modes/activeMode', () => ({
+  resolveActiveMode: async () => testMode(),
+  resolveMode: async (id: string) =>
+    id === 'intelligent'
+      ? testMode({ id: 'intelligent', name: 'Intelligent', useLlm: true })
+      : testMode(),
+}))
+
 const mockSoundFeedback = {
   playInteractionCompletionSound: mock(),
 }
@@ -139,13 +172,13 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
 
     expect(mockItoStreamController.initialize).toHaveBeenCalledWith(
-      ItoMode.TRANSCRIBE,
+      expect.objectContaining({ id: 'voice-to-text' }),
     )
     expect(mockItoStreamController.setMode).toHaveBeenCalledWith(
-      ItoMode.TRANSCRIBE,
+      expect.objectContaining({ id: 'voice-to-text' }),
     )
     expect(mockVoiceInputService.startAudioRecording).toHaveBeenCalled()
   })
@@ -158,7 +191,7 @@ describe('itoSessionManager (local mode)', () => {
 
     // Starting a session must NOT simulate keystrokes: the push-to-talk keys
     // are still physically held (held Alt + simulated Ctrl+C types "©").
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await new Promise(resolve => setTimeout(resolve, 40))
     expect(mockContextGrabber.getCursorContextForGrammar).not.toHaveBeenCalled()
 
@@ -181,7 +214,7 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await session.completeSession()
 
     expect(mockItoStreamController.processLocalTranscription).toHaveBeenCalled()
@@ -197,7 +230,7 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await session.completeSession()
 
     expect(
@@ -216,7 +249,7 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await session.completeSession()
 
     expect(
@@ -232,7 +265,7 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await session.completeSession()
 
     expect(
@@ -246,7 +279,7 @@ describe('itoSessionManager (local mode)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     await session.completeSession()
 
     expect(mockItoStreamController.cancelTranscription).toHaveBeenCalled()
@@ -264,8 +297,8 @@ describe('itoSessionManager (state machine)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
-    const second = await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
+    const second = await session.startSession('voice-to-text')
 
     expect(second).toBeNull()
     expect(mockItoStreamController.initialize).toHaveBeenCalledTimes(1)
@@ -295,8 +328,11 @@ describe('itoSessionManager (state machine)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    const startPromise = session.startSession(ItoMode.TRANSCRIBE)
+    const startPromise = session.startSession('voice-to-text')
     const completePromise = session.completeSession()
+    // Le démarrage résout d'abord le mode : `initialize` n'est appelé qu'au
+    // tour suivant, donc `resolveInit` n'existe pas encore à cet instant.
+    await new Promise(resolve => setTimeout(resolve, 10))
     expect(
       mockItoStreamController.processLocalTranscription,
     ).not.toHaveBeenCalled()
@@ -318,14 +354,14 @@ describe('itoSessionManager (state machine)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    const first = await session.startSession(ItoMode.TRANSCRIBE)
+    const first = await session.startSession('voice-to-text')
 
     expect(first).toBeNull()
     expect(session.getState()).toBe('idle')
     expect(mockVoiceInputService.startAudioRecording).not.toHaveBeenCalled()
     expect(mockRecordingStateNotifier.notifyRecordingStopped).toHaveBeenCalled()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     expect(session.getState()).toBe('recording')
   })
 
@@ -340,7 +376,7 @@ describe('itoSessionManager (state machine)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    await session.startSession(ItoMode.TRANSCRIBE)
+    await session.startSession('voice-to-text')
     const completePromise = session.completeSession()
     // Let completeSession advance past the audio checks into processing
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -363,7 +399,7 @@ describe('itoSessionManager (state machine)', () => {
     const { ItoSessionManager } = await import('./itoSessionManager')
     const session = new ItoSessionManager()
 
-    session.setMode(ItoMode.EDIT)
+    await session.setMode('intelligent')
 
     expect(mockItoStreamController.setMode).not.toHaveBeenCalled()
     expect(

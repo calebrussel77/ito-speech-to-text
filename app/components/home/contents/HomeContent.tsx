@@ -23,7 +23,6 @@ import {
   getTotalWordsLevel,
   getActivityMessage,
 } from './activityMessages'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import { createStereo48kWavFromMonoPCM } from '@/app/utils/audioUtils'
 import { KeyName } from '@/lib/types/keyboard'
@@ -79,8 +78,8 @@ interface HomeContentProps {
 export default function HomeContent({
   isStartingTrial = false,
 }: HomeContentProps) {
-  const { getItoModeShortcuts } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.TRANSCRIBE)[0].keys
+  const { getModeShortcuts } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]?.keys ?? []
   const { user } = useAuthStore()
   const firstName = user?.name?.split(' ')[0]
   const platform = usePlatform()
@@ -804,6 +803,11 @@ export default function HomeContent({
                             <EngineBadge
                               engine={interaction.asr_output?.engine}
                             />
+                            {interaction.asr_output?.modeName && (
+                              <span className="text-[11px] text-muted-foreground/70">
+                                {interaction.asr_output.modeName}
+                              </span>
+                            )}
                             {durationLabel && (
                               <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                                 {durationLabel}

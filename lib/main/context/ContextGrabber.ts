@@ -1,4 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { DictionaryTable } from '../sqlite/repo'
 import { getCurrentUserId, getAdvancedSettings } from '../store'
 import { getActiveWindow } from '../../media/active-application'
@@ -15,6 +14,7 @@ import log from 'electron-log'
 import { timingCollector, TimingEventName } from '../timing/TimingCollector'
 import { macOSAccessibilityContextProvider } from '../../media/macOSAccessibilityContextProvider'
 import type { DictionaryTerm } from '../transcription/DictionaryCorrector'
+import type { Mode } from '../sqlite/models'
 
 export interface ContextData {
   // Correct spellings only — used to prime the ASR prompt
@@ -25,6 +25,8 @@ export interface ContextData {
   windowTitle: string
   appName: string
   contextText: string
+  /** Contenu du presse-papier, quand le mode l'a demandé (lot 2). */
+  clipboardText: string
   advancedSettings: ReturnType<typeof getAdvancedSettings>
 }
 
@@ -36,8 +38,8 @@ export class ContextGrabber {
   /**
    * Gather all context data needed for a transcription stream
    */
-  public async gatherContext(mode: ItoMode): Promise<ContextData> {
-    console.log('[ContextGrabber] Gathering context for mode:', mode)
+  public async gatherContext(mode: Mode): Promise<ContextData> {
+    console.log('[ContextGrabber] Gathering context for mode:', mode.name)
 
     // Get vocabulary words from dictionary
     const { vocabularyWords, dictionaryEntries } = await this.getVocabulary()
@@ -48,8 +50,10 @@ export class ContextGrabber {
       async () => await this.getWindowContext(),
     )
 
-    // Get selected text if in EDIT mode
-    const contextText = await this.getContextText(mode)
+    // Le mode décide en amont : ici on obéit au drapeau, sans le réinterpréter.
+    const contextText = mode.contextSelection
+      ? await this.getSelectedText()
+      : ''
 
     // Get advanced settings
     const advancedSettings = getAdvancedSettings()
@@ -62,6 +66,7 @@ export class ContextGrabber {
       windowTitle,
       appName,
       contextText,
+      clipboardText: '',
       advancedSettings,
     }
   }
@@ -115,11 +120,7 @@ export class ContextGrabber {
     }
   }
 
-  private async getContextText(mode: ItoMode): Promise<string> {
-    if (mode !== ItoMode.EDIT) {
-      return ''
-    }
-
+  private async getSelectedText(): Promise<string> {
     const { macosAccessibilityContextEnabled } = getAdvancedSettings()
 
     // Try accessibility API first if enabled

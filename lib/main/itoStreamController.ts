@@ -1,4 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { Notification } from 'electron'
 import log from 'electron-log'
 import { AudioStreamManager } from './audio/AudioStreamManager'
@@ -8,15 +7,15 @@ import {
   LocalTranscriptionError,
   TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
+import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import {
-  UNRECOVERABLE_CODES,
-  LONG_DICTATION_THRESHOLD_MS,
-} from '../constants/transcription'
-import {
-  DEFAULT_LONG_VOICE_KEY,
   DEFAULT_SHORT_VOICE_KEY,
   resolveModel,
+  type CatalogModel,
 } from '../constants/modelCatalog'
+import { asrLanguageHint } from '../constants/modeLanguages'
+import type { Mode } from './sqlite/models'
+import { resolveActiveMode } from './modes/activeMode'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
 import {
   clearOpenRouterFailure,
@@ -84,6 +83,9 @@ export interface LocalTranscriptionResult {
   // 'openai/gpt-transcribe') — shown as a badge in the history.
   asrEngine: string
   asrFallback?: AsrFallback
+  /** Le mode qui a produit ce transcript, figé pour l'historique. */
+  modeId: string
+  modeName: string
 }
 
 /**
@@ -92,9 +94,9 @@ export interface LocalTranscriptionResult {
  */
 export class ItoStreamController {
   private audioStreamManager = new AudioStreamManager()
-  private currentMode: ItoMode = ItoMode.TRANSCRIBE
+  private currentMode: Mode | null = null
 
-  public async initialize(mode: ItoMode): Promise<boolean> {
+  public async initialize(mode: Mode): Promise<boolean> {
     if (this.audioStreamManager.isCurrentlyStreaming()) {
       log.warn('[ItoStreamController] Stream already in progress.')
       return false
@@ -102,17 +104,19 @@ export class ItoStreamController {
 
     this.audioStreamManager.initialize()
     this.currentMode = mode
-    console.log('[ItoStreamController] Starting new local interaction stream.')
+    console.log(
+      `[ItoStreamController] Starting new interaction stream in mode "${mode.name}"`,
+    )
     return true
   }
 
-  public getCurrentMode(): ItoMode {
+  public getCurrentMode(): Mode | null {
     return this.currentMode
   }
 
-  public setMode(mode: ItoMode) {
+  public setMode(mode: Mode) {
     this.currentMode = mode
-    console.log(`[ItoStreamController] Mode set to ${mode}`)
+    console.log(`[ItoStreamController] Mode set to "${mode.name}"`)
   }
 
   public endInteraction() {
@@ -187,12 +191,14 @@ export class ItoStreamController {
       )
     }
 
-    const context = await contextGrabber.gatherContext(this.currentMode)
+    const mode = this.currentMode
+    if (!mode) throw new Error('No mode set on the stream controller')
+
+    const context = await contextGrabber.gatherContext(mode)
     const advancedSettings = getAdvancedSettings()
-    const timingEvent =
-      this.currentMode === ItoMode.EDIT
-        ? TimingEventName.LOCAL_EDIT
-        : TimingEventName.LOCAL_TRANSCRIBE
+    const timingEvent = mode.useLlm
+      ? TimingEventName.LOCAL_EDIT
+      : TimingEventName.LOCAL_TRANSCRIBE
 
     try {
       localTranscriptionService.initialize(advancedSettings.groqApiKey || '')
@@ -205,32 +211,36 @@ export class ItoStreamController {
       )
     }
 
-    const shortModel = resolveModel(
-      advancedSettings.shortVoiceModelKey,
+    const voiceModel = resolveModel(
+      mode.voiceModelKey ?? undefined,
       DEFAULT_SHORT_VOICE_KEY,
     )
+    const languageHint = asrLanguageHint(mode.language)
+    // Le repli Groq garde un modèle Groq : le slug d'un modèle OpenRouter
+    // envoyé à Groq est un 404 garanti.
+    const groqModel =
+      voiceModel.provider === 'groq'
+        ? voiceModel
+        : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
 
     const groqOptions: TranscriptionOptions = {
-      asrModel: shortModel.slug,
+      asrModel: groqModel.slug,
       vocabulary: context.vocabularyWords,
       noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
       fileType: 'wav',
-      language: advancedSettings.llm.asrLanguage,
-      customPrompt: advancedSettings.llm.asrPrompt,
+      language: languageHint,
+      customPrompt: mode.asrPrompt,
     }
 
     let transcript: string
     // Groq is the default attribution; overwritten when OpenRouter answers.
-    let asrEngine = shortModel.slug
+    let asrEngine = groqModel.slug
     let asrFallback: AsrFallback | undefined
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
-        if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
+        if (this.shouldUseOpenRouter(mode, voiceModel, advancedSettings)) {
           const apiKey = advancedSettings.openRouterApiKey || ''
-          const openRouterModel = resolveModel(
-            advancedSettings.longVoiceModelKey,
-            DEFAULT_LONG_VOICE_KEY,
-          ).slug
+          const openRouterModel = voiceModel.slug
           const rejected = getRejectedKeyFailure(apiKey)
 
           if (rejected) {
@@ -256,7 +266,8 @@ export class ItoStreamController {
                     apiKey,
                     model: openRouterModel,
                     vocabulary: context.vocabularyWords,
-                    language: advancedSettings.llm.asrLanguage,
+                    language: languageHint,
+                    customPrompt: mode.asrPrompt,
                   }),
               )
               asrEngine = openRouterModel
@@ -317,7 +328,7 @@ export class ItoStreamController {
 
     const adjusted = await transcriptAdjuster.adjust(
       transcript,
-      this.currentMode,
+      mode,
       context,
       advancedSettings,
     )
@@ -329,6 +340,8 @@ export class ItoStreamController {
       durationMs,
       asrEngine,
       asrFallback,
+      modeId: mode.id,
+      modeName: mode.name,
     }
   }
 
@@ -355,22 +368,21 @@ export class ItoStreamController {
     return { from: model, code, message }
   }
 
-  // Recordings at or above the threshold go to the precise OpenRouter engine
-  // when the long-dictation toggle is on. Without an OpenRouter key everything
-  // stays on Groq.
+  /**
+   * OpenRouter sert le modèle vocal du mode quand c'est lui qui l'héberge.
+   * Sans clé, tout retombe sur Groq — un modèle injoignable ne doit jamais
+   * coûter une dictée.
+   */
   private shouldUseOpenRouter(
+    mode: Mode,
+    voiceModel: CatalogModel,
     advancedSettings: ReturnType<typeof getAdvancedSettings>,
-    durationMs: number,
   ): boolean {
-    if (advancedSettings.longDictationEnabled === false) return false
-
-    const threshold =
-      advancedSettings.longDictationThresholdMs ?? LONG_DICTATION_THRESHOLD_MS
-    if (durationMs < threshold) return false
+    if (voiceModel.provider !== 'openrouter') return false
 
     if (!advancedSettings.openRouterApiKey?.trim()) {
       console.warn(
-        '[ItoStreamController] Long dictation but no OpenRouter API key configured, using Groq',
+        `[ItoStreamController] Mode "${mode.name}" wants ${voiceModel.slug} but no OpenRouter key is configured, using Groq`,
       )
       return false
     }
@@ -442,6 +454,19 @@ export class ItoStreamController {
         return 0
       }
 
+      // Une dictée en attente n'a plus son mode : le WAV a survécu, pas le
+      // contexte. Le mode actif est la meilleure approximation disponible, et
+      // il ne sert ici qu'à la langue et à l'amorce de style.
+      const mode = await resolveActiveMode()
+      const groqModel = resolveModel(
+        mode.voiceModelKey ?? undefined,
+        DEFAULT_SHORT_VOICE_KEY,
+      )
+      const asrModel =
+        groqModel.provider === 'groq'
+          ? groqModel.slug
+          : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY).slug
+
       for (const filePath of pending) {
         // A live recording takes priority over recovery work.
         if (this.audioStreamManager.isCurrentlyStreaming()) break
@@ -451,11 +476,11 @@ export class ItoStreamController {
           const transcript = await localTranscriptionService.transcribeAudio(
             wavAudio,
             {
-              asrModel: advancedSettings.llm.asrModel,
+              asrModel,
               noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
               fileType: 'wav',
-              language: advancedSettings.llm.asrLanguage,
-              customPrompt: advancedSettings.llm.asrPrompt,
+              language: asrLanguageHint(mode.language),
+              customPrompt: mode.asrPrompt,
             },
           )
           if (transcript) {
@@ -464,7 +489,7 @@ export class ItoStreamController {
               16000,
               filePath,
               undefined,
-              advancedSettings.llm.asrModel,
+              asrModel,
             )
             recovered++
           }

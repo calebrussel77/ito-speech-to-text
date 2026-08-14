@@ -17,7 +17,6 @@ import type {
   RecordingStatePayload,
   ProcessingStatePayload,
 } from '@/lib/types/ipc'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { playInteractionSoundPayload } from '@/app/utils/interactionSoundPlayer'
 
 /**
@@ -47,7 +46,6 @@ const THEME = {
     recording: 'rgba(251, 250, 249, 0.34)',
     // Mode Intelligent : même langage, poussé d'un cran — c'est la seule
     // différence entre les deux modes depuis le retrait du vermillon.
-    recordingIntelligent: 'rgba(251, 250, 249, 0.6)',
   },
   glow: {
     idle: '0 2px 8px rgba(0, 0, 0, 0.5)',
@@ -96,12 +94,10 @@ const BAR_UPDATE_INTERVAL = 64
 
 /**
  * Les barres sont blanches, quel que soit le mode : le blanc est la seule
- * couleur primaire de l'app. La distinction entre dictée simple et Mode
- * Intelligent passe par la bordure de la pill (cf. THEME.border), pas par une
- * teinte.
+ * couleur primaire de l'app. Le mode se lit à son nom, affiché à côté des
+ * barres, pas à une teinte ni à une nuance de bordure.
  */
-const getAudioBarColor = (_mode: ItoMode | undefined): string =>
-  THEME.accent.foreground
+const AUDIO_BAR_COLOR = THEME.accent.foreground
 
 const Pill = () => {
   // Get initial values from store using separate selectors to avoid infinite re-renders
@@ -120,7 +116,7 @@ const Pill = () => {
   const [isManualRecording, setIsManualRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  const [recordingMode, setRecordingMode] = useState<ItoMode | undefined>()
+  const [recordingModeName, setRecordingModeName] = useState<string>('')
   const isManualRecordingRef = useRef(false)
   const [showItoBarAlways, setShowItoBarAlways] = useState(
     initialShowItoBarAlways,
@@ -142,7 +138,7 @@ const Pill = () => {
       (state: RecordingStatePayload) => {
         // Update recording state - this is for global hotkey triggered recording
         setIsRecording(state.isRecording)
-        setRecordingMode(state.mode ?? recordingMode)
+        setRecordingModeName(state.modeName ?? recordingModeName)
 
         // Only track general recording analytics if it's not a manual recording
         if (!isManualRecordingRef.current) {
@@ -151,7 +147,7 @@ const Pill = () => {
             : ANALYTICS_EVENTS.RECORDING_COMPLETED
           analytics.track(analyticsEvent, {
             is_recording: state.isRecording,
-            mode: state.mode,
+            mode: state.modeId,
           })
         }
 
@@ -239,7 +235,7 @@ const Pill = () => {
       unsubUserAuth()
       unsubInteractionSound()
     }
-  }, [volumeHistory, lastVolumeUpdate, recordingMode])
+  }, [volumeHistory, lastVolumeUpdate, recordingModeName])
 
   // Compact dimensions — small and subtle, Wispr Flow style
   const idleWidth = 28
@@ -268,13 +264,10 @@ const Pill = () => {
   let boxShadow = THEME.glow.idle
   let animationName = 'none'
 
-  // Le Mode Intelligent se distingue par une bordure plus lumineuse, pas par
-  // une teinte : c'est le seul écart entre les deux modes depuis le retrait du
-  // vermillon.
-  const recordingBorder =
-    recordingMode === ItoMode.EDIT
-      ? THEME.border.recordingIntelligent
-      : THEME.border.recording
+  // Un libellé lisible dit ce qu'une nuance de bordure ne pouvait que
+  // suggérer : la bordure d'enregistrement est donc uniforme.
+  const recordingBorder = THEME.border.recording
+  const modeLabel = recordingModeName || null
 
   if (isManualRecording) {
     currentWidth = manualRecordingWidth
@@ -474,10 +467,7 @@ const Pill = () => {
             </TooltipContent>
           </Tooltip>
 
-          <AudioBars
-            volumeHistory={volumeHistory}
-            barColor={getAudioBarColor(recordingMode)}
-          />
+          <AudioBars volumeHistory={volumeHistory} barColor={AUDIO_BAR_COLOR} />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -527,15 +517,19 @@ const Pill = () => {
 
     if (anyRecording) {
       return (
-        <AudioBars
-          volumeHistory={volumeHistory}
-          barColor={getAudioBarColor(recordingMode)}
-        />
+        <>
+          <AudioBars volumeHistory={volumeHistory} barColor={AUDIO_BAR_COLOR} />
+          {modeLabel && (
+            <span className="ml-2 truncate text-[10px] tracking-tight text-[rgba(251,250,249,0.6)]">
+              {modeLabel}
+            </span>
+          )}
+        </>
       )
     }
 
     if (isProcessing) {
-      return <ProcessingBars color={getAudioBarColor(recordingMode)} />
+      return <ProcessingBars color={AUDIO_BAR_COLOR} />
     }
 
     if (isHovered) {

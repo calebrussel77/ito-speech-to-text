@@ -57,8 +57,8 @@ export default function PresetSelect({
       {pending && (
         <div className="space-y-1.5 rounded-lg border border-border p-2.5">
           <SettingsNote tone="error">
-            Applying “{findPreset(pending)?.label}” replaces the instructions you
-            wrote. This cannot be undone.
+            Applying “{findPreset(pending)?.label}” replaces the instructions
+            you wrote. This cannot be undone.
           </SettingsNote>
           <div className="flex gap-2">
             <Button
@@ -70,7 +70,11 @@ export default function PresetSelect({
             >
               Replace
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setPending(null)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPending(null)}
+            >
               Keep mine
             </Button>
           </div>

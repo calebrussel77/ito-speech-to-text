@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import KeyboardKey from '@/app/components/ui/keyboard-key'
 import { ShortcutError } from '@/app/utils/keyboard'
 import { keyNameMap } from '@/lib/types/keyboard'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { Check, Pencil } from '@mynaui/icons-react'
 import { cx } from 'class-variance-authority'
@@ -12,12 +11,13 @@ import { useShortcutEditingStore } from '@/app/store/useShortcutEditingStore'
 export interface KeyboardShortcutConfig {
   id: string
   keys: KeyName[]
-  mode: ItoMode
+  /** Id d'une ligne de la table `modes`. */
+  modeId: string
 }
 
 type Props = {
   shortcuts: KeyboardShortcutConfig[] // persisted rows
-  mode: ItoMode
+  modeId: string
   className?: string
   keySize?: number
   maxShortcutsPerMode?: number
@@ -27,7 +27,7 @@ const MAX_KEYS_PER_SHORTCUT = 5
 
 export default function MultiShortcutEditor({
   shortcuts,
-  mode,
+  modeId,
   className = '',
   maxShortcutsPerMode = 5,
 }: Props) {
@@ -38,12 +38,13 @@ export default function MultiShortcutEditor({
   } = useSettingsStore()
 
   // global editing lock
-  const editorKey = useMemo(() => `multi-shortcut-editor:${mode}`, [mode])
+  const editorKey = useMemo(() => `multi-shortcut-editor:${modeId}`, [modeId])
   const { start, stop, activeEditor } = useShortcutEditingStore()
 
   const rows = useMemo(
-    () => (mode == null ? shortcuts : shortcuts.filter(s => s.mode === mode)),
-    [shortcuts, mode],
+    () =>
+      modeId == null ? shortcuts : shortcuts.filter(s => s.modeId === modeId),
+    [shortcuts, modeId],
   )
   const isAtLimit = rows.length >= maxShortcutsPerMode
   const isMinimum = rows.length <= 1
@@ -90,7 +91,7 @@ export default function MultiShortcutEditor({
   }
 
   const addNew = () => {
-    const result = createKeyboardShortcut(mode)
+    const result = createKeyboardShortcut(modeId)
     if (!result.success && result.error) {
       setError(getErrorMessage(result.error, result.errorMessage))
       return

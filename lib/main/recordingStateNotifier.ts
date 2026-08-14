@@ -1,4 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getPillWindow, mainWindow } from './app'
 import {
   IPC_EVENTS,
@@ -11,13 +10,19 @@ import {
  * Helper class to notify UI windows about recording state changes.
  */
 export class RecordingStateNotifier {
-  public notifyRecordingStarted(mode: ItoMode) {
+  public notifyRecordingStarted(mode: {
+    id: string
+    name: string
+    icon: string
+  }) {
     console.log('[RecordingStateNotifier] Notifying recording started:', {
-      mode,
+      mode: mode.name,
     })
     this.sendToWindows(IPC_EVENTS.RECORDING_STATE_UPDATE, {
       isRecording: true,
-      mode,
+      modeId: mode.id,
+      modeName: mode.name,
+      modeIcon: mode.icon,
     })
   }
 

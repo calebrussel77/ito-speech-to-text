@@ -1,4 +1,4 @@
-import { ItoMode } from '@/app/generated/ito_pb'
+import { clipboard, Notification } from 'electron'
 import { voiceInputService } from './voiceInputService'
 import { recordingStateNotifier } from './recordingStateNotifier'
 import {
@@ -16,6 +16,18 @@ import { LocalTranscriptionError } from './transcription/LocalTranscriptionServi
 import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import { STORE_KEYS } from '../constants/store-keys'
 import { playInteractionCompletionSound } from './soundFeedback'
+import { resolveMode, resolveActiveMode } from './modes/activeMode'
+import type { Mode } from './sqlite/models'
+
+function showNotification(title: string, body: string) {
+  try {
+    if (Notification?.isSupported?.()) {
+      new Notification({ title, body }).show()
+    }
+  } catch (error) {
+    console.warn('[itoSessionManager] Failed to show notification:', error)
+  }
+}
 
 export type SessionState = 'idle' | 'starting' | 'recording' | 'processing'
 
@@ -29,12 +41,14 @@ export class ItoSessionManager {
   // interleaved start/complete/cancel calls safe without callers awaiting.
   private state: SessionState = 'idle'
   private startPromise: Promise<string | null> | null = null
+  private currentMode: Mode | null = null
 
   public getState(): SessionState {
     return this.state
   }
 
-  public async startSession(mode: ItoMode): Promise<string | null> {
+  /** `modeId` absent = le mode actif. */
+  public async startSession(modeId?: string): Promise<string | null> {
     if (this.state !== 'idle') {
       console.log(
         `[itoSessionManager] Ignoring startSession while ${this.state}`,
@@ -43,7 +57,7 @@ export class ItoSessionManager {
     }
 
     this.state = 'starting'
-    this.startPromise = this.doStartSession(mode)
+    this.startPromise = this.doStartSession(modeId)
     try {
       return await this.startPromise
     } finally {
@@ -51,8 +65,10 @@ export class ItoSessionManager {
     }
   }
 
-  private async doStartSession(mode: ItoMode): Promise<string | null> {
-    console.log('[itoSessionManager] Starting session with mode:', mode)
+  private async doStartSession(modeId?: string): Promise<string | null> {
+    const mode = modeId ? await resolveMode(modeId) : await resolveActiveMode()
+    console.log(`[itoSessionManager] Starting session in mode "${mode.name}"`)
+    this.currentMode = mode
 
     let interactionId = interactionManager.getCurrentInteractionId()
     if (interactionId) {
@@ -102,11 +118,13 @@ export class ItoSessionManager {
     }
   }
 
-  public setMode(mode: ItoMode) {
+  public async setMode(modeId: string) {
     if (this.state !== 'starting' && this.state !== 'recording') {
       console.log(`[itoSessionManager] Ignoring setMode while ${this.state}`)
       return
     }
+    const mode = await resolveMode(modeId)
+    this.currentMode = mode
     itoStreamController.setMode(mode)
     recordingStateNotifier.notifyRecordingStarted(mode)
   }
@@ -196,15 +214,28 @@ export class ItoSessionManager {
     }
 
     if (transcript) {
+      const mode = this.currentMode
       let textToInsert = transcript
       const { grammarServiceEnabled } = getAdvancedSettings()
       if (grammarServiceEnabled) {
-        textToInsert = this.grammarRulesService.setCaseFirstWord(textToInsert)
+        if (mode?.autocapitalize !== false) {
+          textToInsert = this.grammarRulesService.setCaseFirstWord(textToInsert)
+        }
         textToInsert =
           this.grammarRulesService.addLeadingSpaceIfNeeded(textToInsert)
       }
 
-      this.textInserter.insertText(textToInsert)
+      // Auto-paste off : le presse-papier plutôt que le curseur, avec une
+      // notification — aucune fenêtre supplémentaire (décision D13).
+      if (mode?.autoPaste !== false) {
+        this.textInserter.insertText(textToInsert)
+      } else {
+        clipboard.writeText(textToInsert)
+        showNotification(
+          'Ito — copié',
+          'Le résultat est dans le presse-papier.',
+        )
+      }
 
       await interactionManager.createInteraction(
         transcript,
@@ -213,7 +244,12 @@ export class ItoSessionManager {
         undefined,
         undefined,
         durationMs,
-        { engine: result.asrEngine, fallback: result.asrFallback },
+        {
+          engine: result.asrEngine,
+          fallback: result.asrFallback,
+          modeId: result.modeId,
+          modeName: result.modeName,
+        },
       )
       this.playInteractionCompletionSoundIfEnabled()
       console.log(

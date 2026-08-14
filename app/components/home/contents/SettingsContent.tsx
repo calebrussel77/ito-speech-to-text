@@ -14,12 +14,7 @@ import KeyboardSettingsContent from './settings/KeyboardSettingsContent'
 import AdvancedSettingsContent from './settings/AdvancedSettingsContent'
 import PricingBillingSettingsContent from './settings/PricingBillingSettingsContent'
 
-type SettingsPage =
-  | 'general'
-  | 'keyboard'
-  | 'audio'
-  | 'account'
-  | 'advanced'
+type SettingsPage = 'general' | 'keyboard' | 'audio' | 'account' | 'advanced'
 
 const TABS: PillTabItem<SettingsPage>[] = [
   { id: 'general', label: 'General', icon: CogFour },

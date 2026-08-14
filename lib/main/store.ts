@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
-import { LONG_DICTATION_THRESHOLD_MS } from '../constants/transcription'
 import {
   DEFAULT_LONG_VOICE_KEY,
   DEFAULT_SHORT_VOICE_KEY,
@@ -9,7 +8,6 @@ import {
   findModelBySlug,
 } from '../constants/modelCatalog'
 import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
-import { ItoMode } from '@/app/generated/ito_pb.js'
 import { MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
@@ -343,7 +341,7 @@ const migrations: Migration[] = [
           {
             id: crypto.randomUUID(),
             keys: legacy,
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ])
       }
@@ -399,14 +397,9 @@ const migrations: Migration[] = [
       // in the catalogue keeps the user's choice.
       const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
 
-      if (advanced.longDictationEnabled === undefined) {
-        // 'openrouter' forced the precise engine on every dictation. Mapping
-        // it to the toggle's on state keeps OpenRouter for long dictations and
-        // hands short ones back to Groq — faster and far cheaper, never worse.
-        advanced.longDictationEnabled =
-          advanced.transcriptionEngineMode !== 'groq'
-      }
-      advanced.longDictationThresholdMs ??= LONG_DICTATION_THRESHOLD_MS
+      // Le seuil court/long a disparu (décision D16) : cette migration ne
+      // conserve que la traduction des slugs en clés de catalogue, que la
+      // migration des modes consomme juste après.
 
       advanced.shortVoiceModelKey ??=
         findModelBySlug('voice', advanced.llm?.asrModel, 'groq')?.key ??

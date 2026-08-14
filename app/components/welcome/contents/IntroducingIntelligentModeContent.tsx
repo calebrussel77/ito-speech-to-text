@@ -3,7 +3,6 @@ import { useOnboardingStore } from '@/app/store/useOnboardingStore'
 import { CheckCircle } from '@mynaui/icons-react'
 import { ArrowRight } from 'lucide-react'
 import KeyboardShortcutEditor from '../../ui/keyboard-shortcut-editor'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { Tip } from '../../ui/tip'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 
@@ -11,8 +10,8 @@ export default function IntroducingIntelligentMode() {
   const { incrementOnboardingStep, decrementOnboardingStep } =
     useOnboardingStore()
 
-  const { getItoModeShortcuts, updateKeyboardShortcut } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.EDIT)[0]
+  const { getModeShortcuts, updateKeyboardShortcut } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('intelligent')[0]
 
   return (
     <div className="flex flex-row h-full w-full bg-background">

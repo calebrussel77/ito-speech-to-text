@@ -46,7 +46,11 @@ export default function ModeRow({
 
       <Icon className="size-4 shrink-0 text-[var(--subtle-foreground)]" />
 
-      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 text-left"
+      >
         <span className="block truncate text-xs font-medium text-foreground">
           {mode.name}
         </span>

@@ -1,12 +1,7 @@
 import { create } from 'zustand'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
 import { DEFAULT_ADVANCED_SETTINGS } from '../../lib/constants/generated-defaults'
-import { LONG_DICTATION_THRESHOLD_MS } from '../../lib/constants/transcription'
-import {
-  DEFAULT_LONG_VOICE_KEY,
-  DEFAULT_SHORT_VOICE_KEY,
-  DEFAULT_TEXT_KEY,
-} from '../../lib/constants/modelCatalog'
+import { DEFAULT_TEXT_KEY } from '../../lib/constants/modelCatalog'
 
 export interface LlmSettings {
   asrProvider: string
@@ -23,22 +18,14 @@ interface AdvancedSettingsState {
   macosAccessibilityContextEnabled: boolean
   groqApiKey: string
   openRouterApiKey: string
-  // Keys into the curated catalogue, never raw model slugs.
-  shortVoiceModelKey: string
-  longVoiceModelKey: string
+  /** Défaut des modes créés ensuite. Le modèle utilisé est celui du mode. */
   textModelKey: string
-  longDictationEnabled: boolean
-  longDictationThresholdMs: number
   setLlmSettings: (settings: Partial<LlmSettings>) => void
   setGrammarServiceEnabled: (enabled: boolean) => void
   setMacosAccessibilityContextEnabled: (enabled: boolean) => void
   setGroqApiKey: (apiKey: string) => void
   setOpenRouterApiKey: (apiKey: string) => void
-  setShortVoiceModelKey: (key: string) => void
-  setLongVoiceModelKey: (key: string) => void
   setTextModelKey: (key: string) => void
-  setLongDictationEnabled: (enabled: boolean) => void
-  setLongDictationThresholdMs: (thresholdMs: number) => void
 }
 
 // Initialize from electron store
@@ -77,15 +64,7 @@ const getInitialState = () => {
       storedAdvancedSettings.macosAccessibilityContextEnabled ?? false,
     groqApiKey: storedAdvancedSettings.groqApiKey || '',
     openRouterApiKey: storedAdvancedSettings.openRouterApiKey || '',
-    shortVoiceModelKey:
-      storedAdvancedSettings.shortVoiceModelKey ?? DEFAULT_SHORT_VOICE_KEY,
-    longVoiceModelKey:
-      storedAdvancedSettings.longVoiceModelKey ?? DEFAULT_LONG_VOICE_KEY,
     textModelKey: storedAdvancedSettings.textModelKey ?? DEFAULT_TEXT_KEY,
-    longDictationEnabled: storedAdvancedSettings.longDictationEnabled ?? true,
-    longDictationThresholdMs:
-      storedAdvancedSettings.longDictationThresholdMs ??
-      LONG_DICTATION_THRESHOLD_MS,
   }
 }
 
@@ -146,37 +125,9 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>(set => {
         return partialState
       })
     },
-    setShortVoiceModelKey: (key: string) => {
-      set(() => {
-        const partialState = { shortVoiceModelKey: key }
-        syncToStore(partialState)
-        return partialState
-      })
-    },
-    setLongVoiceModelKey: (key: string) => {
-      set(() => {
-        const partialState = { longVoiceModelKey: key }
-        syncToStore(partialState)
-        return partialState
-      })
-    },
     setTextModelKey: (key: string) => {
       set(() => {
         const partialState = { textModelKey: key }
-        syncToStore(partialState)
-        return partialState
-      })
-    },
-    setLongDictationEnabled: (enabled: boolean) => {
-      set(() => {
-        const partialState = { longDictationEnabled: enabled }
-        syncToStore(partialState)
-        return partialState
-      })
-    },
-    setLongDictationThresholdMs: (thresholdMs: number) => {
-      set(() => {
-        const partialState = { longDictationThresholdMs: thresholdMs }
         syncToStore(partialState)
         return partialState
       })

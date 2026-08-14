@@ -1,5 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
-
 // IPC Event Constants
 export const IPC_EVENTS = {
   RECORDING_STATE_UPDATE: 'recording-state-update',
@@ -16,12 +14,14 @@ export const IPC_EVENTS = {
 // IPC Payload Types
 export interface RecordingStatePayload {
   isRecording: boolean
-  mode?: ItoMode
+  modeId?: string
+  modeName?: string
+  modeIcon?: string
 }
 
 export interface ProcessingStatePayload {
   isProcessing: boolean
-  mode?: ItoMode
+  modeId?: string
 }
 
 export interface VolumeUpdatePayload {

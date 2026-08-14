@@ -1,5 +1,4 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
-import { ItoMode } from '@/app/generated/ito_pb'
 
 const mockAudioStreamManager = {
   isCurrentlyStreaming: mock(() => false),
@@ -133,6 +132,38 @@ const baseAdvancedSettings = () => ({
 
 const mockGetAdvancedSettings = mock(() => baseAdvancedSettings() as any)
 
+const testMode = (overrides: Record<string, unknown> = {}) =>
+  ({
+    id: 'intelligent',
+    userId: 'self-hosted',
+    name: 'Intelligent',
+    preset: 'intelligent',
+    icon: 'Sparkles',
+    instructions: '## Role\nFormat.',
+    language: 'fr',
+    voiceModelKey: 'whisper-large-v3-turbo',
+    textModelKey: 'gpt-5-6-luna',
+    useLlm: true,
+    contextApplication: false,
+    contextClipboard: false,
+    contextSelection: false,
+    audioSource: 'microphone',
+    playbackWhenRecording: 'mute',
+    autoPaste: true,
+    autocapitalize: true,
+    identifySpeakers: false,
+    asrPrompt: '',
+    sortOrder: 0,
+    createdAt: '2026-08-14T00:00:00.000Z',
+    updatedAt: '2026-08-14T00:00:00.000Z',
+    ...overrides,
+  }) as any
+
+mock.module('./modes/activeMode', () => ({
+  resolveActiveMode: async () => testMode(),
+  resolveMode: async () => testMode(),
+}))
+
 const mockCreateNewAuthState = mock(() => ({
   state: '',
   codeVerifier: '',
@@ -194,7 +225,7 @@ describe('ItoStreamController (local)', () => {
     const { ItoStreamController } = await import('./itoStreamController')
     const controller = new ItoStreamController()
 
-    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.initialize(testMode())
     const result = await controller.processLocalTranscription()
 
     expect(mockAudioStreamManager.initialize).toHaveBeenCalled()
@@ -209,7 +240,7 @@ describe('ItoStreamController (local)', () => {
     const { ItoStreamController } = await import('./itoStreamController')
     const controller = new ItoStreamController()
 
-    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.initialize(testMode())
     await controller.processLocalTranscription()
 
     expect(mockPendingDictationStore.save).toHaveBeenCalled()
@@ -234,7 +265,7 @@ describe('ItoStreamController (local)', () => {
     const { ItoStreamController } = await import('./itoStreamController')
     const controller = new ItoStreamController()
 
-    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.initialize(testMode())
     const result = await controller.processLocalTranscription()
 
     expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalledTimes(
@@ -257,7 +288,7 @@ describe('ItoStreamController (local)', () => {
     const { ItoStreamController } = await import('./itoStreamController')
     const controller = new ItoStreamController()
 
-    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.initialize(testMode())
     await expect(controller.processLocalTranscription()).rejects.toMatchObject({
       code: 'INVALID_API_KEY',
     })
@@ -283,7 +314,7 @@ describe('ItoStreamController (local)', () => {
     const { ItoStreamController } = await import('./itoStreamController')
     const controller = new ItoStreamController()
 
-    await controller.initialize(ItoMode.TRANSCRIBE)
+    await controller.initialize(testMode())
     await expect(controller.processLocalTranscription()).rejects.toMatchObject({
       code: 'NO_SPEECH',
     })
@@ -311,30 +342,31 @@ describe('ItoStreamController (local)', () => {
     expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
   })
 
-  describe('engine routing (OpenRouter for long dictations)', () => {
+  describe('engine routing (the mode names the provider)', () => {
     const longAudio = () =>
       mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
         wavAudio: Buffer.from('wav'),
         sampleRate: 16000,
         durationMs: 120_000,
       })
+
+    const openRouterMode = (overrides: Record<string, unknown> = {}) =>
+      testMode({ voiceModelKey: 'gpt-transcribe', ...overrides })
+
     const withOpenRouter = (overrides: Record<string, unknown> = {}) =>
       mockGetAdvancedSettings.mockReturnValue({
         ...baseAdvancedSettings(),
-        longDictationEnabled: true,
-        longDictationThresholdMs: 60_000,
-        longVoiceModelKey: 'gpt-transcribe',
         openRouterApiKey: 'sk-or-test',
         ...overrides,
       } as any)
 
-    test('routes long recordings to OpenRouter', async () => {
+    test('routes an OpenRouter voice model to OpenRouter', async () => {
       longAudio()
       withOpenRouter()
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
@@ -351,16 +383,32 @@ describe('ItoStreamController (local)', () => {
       expect(result.transcript).toBe('adjusted transcript')
     })
 
-    test('keeps short recordings on Groq', async () => {
+    test('a Groq voice model never reaches OpenRouter', async () => {
+      longAudio()
       withOpenRouter()
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(testMode())
       await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
       expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+    })
+
+    test('the voice model of the mode decides the provider, whatever the duration', async () => {
+      withOpenRouter()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      await controller.initialize(openRouterMode())
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
     })
 
     test('falls back to Groq when the OpenRouter call fails', async () => {
@@ -372,47 +420,13 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
       expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
       expect(result.transcript).toBe('adjusted transcript')
       expect(mockPendingDictationStore.delete).toHaveBeenCalled()
-    })
-
-    test('a lowered threshold routes shorter recordings too', async () => {
-      // The default 5s fixture recording sits under the 60s default but above
-      // the shortest threshold users can pick.
-      mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
-        wavAudio: Buffer.from('wav'),
-        sampleRate: 16000,
-        durationMs: 40_000,
-      })
-      withOpenRouter({ longDictationThresholdMs: 30_000 })
-
-      const { ItoStreamController } = await import('./itoStreamController')
-      const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
-      await controller.processLocalTranscription()
-
-      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
-      expect(
-        mockLocalTranscriptionService.transcribeAudio,
-      ).not.toHaveBeenCalled()
-    })
-
-    test('the toggle off never calls OpenRouter, even for long recordings', async () => {
-      longAudio()
-      withOpenRouter({ longDictationEnabled: false })
-
-      const { ItoStreamController } = await import('./itoStreamController')
-      const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
-      await controller.processLocalTranscription()
-
-      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
-      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
     })
 
     test('records why the fallback happened, on the result and in the settings', async () => {
@@ -426,7 +440,7 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
       expect(result.asrFallback).toEqual({
@@ -450,7 +464,7 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
       expect(mockOpenRouterHealth.clearOpenRouterFailure).toHaveBeenCalled()
@@ -472,7 +486,7 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(2)
@@ -493,7 +507,7 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
@@ -512,7 +526,7 @@ describe('ItoStreamController (local)', () => {
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
@@ -522,13 +536,13 @@ describe('ItoStreamController (local)', () => {
       expect(result.asrFallback?.code).toBe('INVALID_API_KEY')
     })
 
-    test('without an OpenRouter key, long recordings stay on Groq', async () => {
+    test('an OpenRouter model without a key falls back to Groq rather than failing', async () => {
       longAudio()
       withOpenRouter({ openRouterApiKey: '' })
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
-      await controller.initialize(ItoMode.TRANSCRIBE)
+      await controller.initialize(openRouterMode())
       await controller.processLocalTranscription()
 
       expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
