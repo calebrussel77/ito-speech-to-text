@@ -10,7 +10,7 @@ import {
 } from '../constants/modelCatalog'
 import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
 import { ItoMode } from '@/app/generated/ito_pb.js'
-import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
+import { MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
 import type { OpenRouterFailure } from './transcription/openRouterHealth'
@@ -25,7 +25,8 @@ const ENCRYPTED_API_KEY_FIELDS = ['groqApiKey', 'openRouterApiKey'] as const
 export interface KeyboardShortcutConfig {
   id: string
   keys: KeyName[]
-  mode: ItoMode
+  /** Id d'une ligne de la table `modes`. */
+  modeId: string
 }
 
 export type InteractionSoundTheme = 'pop' | 'marimba' | 'custom'
@@ -156,17 +157,17 @@ export const defaultValues: AppStore = {
     keyboardShortcuts: [
       {
         id: crypto.randomUUID(),
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.TRANSCRIBE].map(
+        keys: MODE_SHORTCUT_DEFAULTS['voice-to-text'].map(
           normalizeLegacyKey,
         ) as KeyName[],
-        mode: ItoMode.TRANSCRIBE,
+        modeId: 'voice-to-text',
       },
       {
         id: crypto.randomUUID(),
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.EDIT].map(
+        keys: MODE_SHORTCUT_DEFAULTS.intelligent.map(
           normalizeLegacyKey,
         ) as KeyName[],
-        mode: ItoMode.EDIT,
+        modeId: 'intelligent',
       },
     ],
     firstName: '',
@@ -640,6 +641,11 @@ export async function initializeStore() {
       './modes/modeSettingsMigration'
     )
     await migrateSettingsIntoModes()
+
+    const { migrateShortcutsToModeIds } = await import(
+      './modes/shortcutMigration'
+    )
+    migrateShortcutsToModeIds()
   }
 }
 

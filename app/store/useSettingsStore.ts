@@ -9,9 +9,7 @@ import type {
   InteractionSoundTheme,
   KeyboardShortcutConfig,
 } from '@/lib/main/store'
-import { ItoMode } from '../generated/ito_pb'
-
-import { ITO_MODE_SHORTCUT_DEFAULTS } from '@/lib/constants/keyboard-defaults'
+import { MODE_SHORTCUT_DEFAULTS } from '@/lib/constants/keyboard-defaults'
 import {
   normalizeChord,
   ShortcutResult,
@@ -45,9 +43,9 @@ interface SettingsState {
   setPasteCombo: (combo: SettingsState['pasteCombo']) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
-  createKeyboardShortcut: (mode: ItoMode) => ShortcutResult
+  createKeyboardShortcut: (modeId: string) => ShortcutResult
   removeKeyboardShortcut: (shortcutId: string) => void
-  getItoModeShortcuts: (mode: ItoMode) => KeyboardShortcutConfig[]
+  getModeShortcuts: (modeId: string) => KeyboardShortcutConfig[]
   updateKeyboardShortcut: (
     shortcutId: string,
     keys: KeyName[],
@@ -75,13 +73,13 @@ const getInitialState = () => {
     theme: storedSettings?.theme ?? 'dark',
     keyboardShortcuts: storedSettings?.keyboardShortcuts ?? [
       {
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.EDIT],
-        mode: ItoMode.EDIT,
+        keys: MODE_SHORTCUT_DEFAULTS.intelligent,
+        modeId: 'intelligent',
         id: crypto.randomUUID(),
       },
       {
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.TRANSCRIBE],
-        mode: ItoMode.TRANSCRIBE,
+        keys: MODE_SHORTCUT_DEFAULTS['voice-to-text'],
+        modeId: 'voice-to-text',
         id: crypto.randomUUID(),
       },
     ],
@@ -207,12 +205,12 @@ export const useSettingsStore = create<SettingsState>(set => {
       syncToStore(partialState)
     },
     setTheme: createSetter('theme', 'ui'),
-    createKeyboardShortcut: (mode: ItoMode): ShortcutResult => {
+    createKeyboardShortcut: (modeId: string): ShortcutResult => {
       const currentShortcuts = useSettingsStore.getState().keyboardShortcuts
 
       const newShortcut = {
         keys: [],
-        mode,
+        modeId,
         id: crypto.randomUUID(),
       }
 
@@ -257,9 +255,9 @@ export const useSettingsStore = create<SettingsState>(set => {
       set(partialState)
       syncToStore(partialState)
     },
-    getItoModeShortcuts: (mode: ItoMode) => {
+    getModeShortcuts: (modeId: string) => {
       const { keyboardShortcuts } = useSettingsStore.getState()
-      return keyboardShortcuts.filter(ks => ks.mode === mode)
+      return keyboardShortcuts.filter(ks => ks.modeId === modeId)
     },
     updateKeyboardShortcut: async (
       shortcutId: string,
@@ -297,7 +295,7 @@ export const useSettingsStore = create<SettingsState>(set => {
       const duplicateError = validateShortcutForDuplicate(
         currentShortcuts,
         newShortcut,
-        shortcut.mode,
+        shortcut.modeId,
       )
       if (duplicateError) {
         return duplicateError

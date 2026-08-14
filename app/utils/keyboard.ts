@@ -1,6 +1,5 @@
 import { KeyEvent } from '@/lib/preload'
 import { KeyboardShortcutConfig } from '@/lib/main/store'
-import { ItoMode } from '../generated/ito_pb'
 import {
   keyNameMap,
   normalizeLegacyKey,
@@ -225,11 +224,11 @@ export function isReservedCombination(
   return { isReserved: false }
 }
 
-// Returns the mode of the duplicate shortcut if found, otherwise undefined
+// Returns the mode id of the duplicate shortcut if found, otherwise undefined
 export function isDuplicateShortcut(
   currentShortcuts: KeyboardShortcutConfig[],
   shortcutToCheck: KeyboardShortcutConfig,
-): ItoMode | undefined {
+): string | undefined {
   // Normalize keys for comparison
   const normalizedCheckKeys = sortKeysCanonical(
     shortcutToCheck.keys.map(normalizeLegacyKey),
@@ -250,7 +249,7 @@ export function isDuplicateShortcut(
   })
 
   if (duplicate) {
-    return duplicate.mode
+    return duplicate.modeId
   }
 
   return undefined
@@ -260,12 +259,12 @@ export function isDuplicateShortcut(
 export function validateShortcutForDuplicate(
   currentShortcuts: KeyboardShortcutConfig[],
   shortcutToCheck: KeyboardShortcutConfig,
-  expectedMode: ItoMode,
+  expectedModeId: string,
 ): ShortcutResult | null {
   const duplicateMode = isDuplicateShortcut(currentShortcuts, shortcutToCheck)
 
   if (duplicateMode !== undefined) {
-    const sameMode = duplicateMode === expectedMode
+    const sameMode = duplicateMode === expectedModeId
     return {
       success: false,
       error: sameMode ? 'duplicate-key-same-mode' : 'duplicate-key-diff-mode',
