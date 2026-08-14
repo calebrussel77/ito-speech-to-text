@@ -16,6 +16,8 @@ import { ChevronLeft } from '@mynaui/icons-react'
 import PresetSelect from './PresetSelect'
 import LanguageSelect from './LanguageSelect'
 import ModelSelect from './ModelSelect'
+import ContextToggles from './ContextToggles'
+import ExamplesEditor from './ExamplesEditor'
 import { modeIcon } from './modeIcons'
 import type { ModeLanguage } from '@/lib/constants/modeLanguages'
 
@@ -110,23 +112,34 @@ export default function ModeEditor({
       </SettingsRow>
 
       {mode.useLlm && (
-        <SettingsCard
-          title="Custom instructions"
-          description="What this mode turns a dictation into. Keep the Role / Instructions / Critical structure — it is what stops the model from answering instead of formatting."
-          action={
-            <span className="text-[10px] tabular-nums text-[var(--subtle-foreground)]">
-              {mode.instructions.length}/{INSTRUCTIONS_LIMIT}
-            </span>
-          }
-        >
-          <Textarea
-            value={mode.instructions}
-            maxLength={INSTRUCTIONS_LIMIT}
-            rows={10}
-            placeholder="## Role&#10;You are a text formatting AI…"
-            onChange={event => set({ instructions: event.target.value })}
-          />
-        </SettingsCard>
+        <>
+          <SettingsCard
+            title="Custom instructions"
+            description="What this mode turns a dictation into. Keep the Role / Instructions / Critical structure — it is what stops the model from answering instead of formatting."
+            action={
+              <span className="text-[10px] tabular-nums text-[var(--subtle-foreground)]">
+                {mode.instructions.length}/{INSTRUCTIONS_LIMIT}
+              </span>
+            }
+          >
+            <Textarea
+              value={mode.instructions}
+              maxLength={INSTRUCTIONS_LIMIT}
+              rows={10}
+              placeholder="## Role&#10;You are a text formatting AI…"
+              onChange={event => set({ instructions: event.target.value })}
+            />
+          </SettingsCard>
+
+          <div className="mb-3">
+            <div className="mb-1.5 text-xs font-medium text-foreground">
+              Context
+            </div>
+            <ContextToggles mode={mode} onChange={set} />
+          </div>
+
+          <ExamplesEditor modeId={mode.id} />
+        </>
       )}
 
       <SettingsGroup title="Engine">
