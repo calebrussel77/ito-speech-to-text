@@ -212,6 +212,13 @@
     --destructive-foreground: oklch(98.51% 0.002 70);
     --destructive-soft: oklch(58% 0.19 15 / 0.12);
 
+    /* — Prêt ——————————————————————————————————
+     * Deuxième et dernière teinte. Réservée à un seul usage : le point d'état
+     * qui dit qu'Ito peut dicter. Même règle que le destructif — jamais
+     * d'aplat, jamais sur du texte, jamais décorative. Une pastille de 6px.
+     * -------------------------------------------------------------------- */
+    --positive: oklch(72% 0.16 150);
+
     /* — Data viz ———————————————————————————————
      * Une échelle de gris, pas une palette : les séries se distinguent par la
      * clarté. Elles étaient dérivées de la marque, qui n'existe plus.

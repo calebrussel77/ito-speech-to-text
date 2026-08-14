@@ -10,6 +10,7 @@ import { ItoIcon } from '../icons/ItoIcon'
 import { useMainStore } from '@/app/store/useMainStore'
 import { useAudioStore } from '@/app/store/useAudioStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
+import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { usePlatform } from '@/app/hooks/usePlatform'
 import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplay } from '@/app/utils/keyboard'
@@ -50,6 +51,7 @@ export default function HomeShell({
   const isRecording = useAudioStore(s => s.isRecording)
   const { getItoModeShortcuts } = useSettingsStore()
   const platform = usePlatform()
+  const groqApiKey = useAdvancedSettingsStore(s => s.groqApiKey)
 
   const keys: string[] = (
     getItoModeShortcuts(ItoMode.TRANSCRIBE)?.[0]?.keys ?? []
@@ -59,6 +61,18 @@ export default function HomeShell({
       format: 'label',
     }),
   )
+
+  const canDictate = !!groqApiKey?.trim()
+  const statusLabel = isRecording
+    ? 'Listening'
+    : canDictate
+      ? 'Ready'
+      : 'Setup needed'
+  const dotClass = isRecording
+    ? 'animate-pulse-soft bg-foreground'
+    : canDictate
+      ? 'bg-[var(--positive)]'
+      : 'bg-[var(--border-strong)]'
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans select-none">
@@ -115,8 +129,12 @@ export default function HomeShell({
 
         <div className="flex-1" />
 
-        {/* État de dictée. Monochrome comme le reste : le point passe du gris
-            de bordure au blanc plein et se met à pulser. */}
+        {/* État de dictée. Le point passe du gris de bordure au blanc plein et
+            se met à pulser pendant l'enregistrement. Au repos il est vert dès
+            qu'Ito peut réellement dicter — la clé Groq est le seul verrou :
+            sans elle `LocalTranscriptionService.initialize()` lève, alors que
+            le micro et le raccourci ont des défauts qui fonctionnent. Sans
+            clé, le libellé ne peut pas dire « Ready » sans mentir. */}
         <div className="px-2 pb-2">
           {navExpanded ? (
             <div
@@ -127,14 +145,8 @@ export default function HomeShell({
               }`}
             >
               <span className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    isRecording
-                      ? 'animate-pulse-soft bg-foreground'
-                      : 'bg-[var(--border-strong)]'
-                  }`}
-                />
-                {isRecording ? 'Listening' : 'Ready'}
+                <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+                {statusLabel}
               </span>
               <span className="flex items-center gap-0.5">
                 {keys.map(k => (
@@ -148,17 +160,8 @@ export default function HomeShell({
               </span>
             </div>
           ) : (
-            <div
-              className="flex justify-center py-1.5"
-              title={isRecording ? 'Listening' : 'Ready'}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  isRecording
-                    ? 'animate-pulse-soft bg-foreground'
-                    : 'bg-[var(--border-strong)]'
-                }`}
-              />
+            <div className="flex justify-center py-1.5" title={statusLabel}>
+              <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
             </div>
           )}
         </div>
