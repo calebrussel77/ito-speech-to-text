@@ -6,10 +6,11 @@ import { UserCircle, PanelLeft, CogFour, Logout } from '@mynaui/icons-react'
 import { useMainStore } from '@/app/store/useMainStore'
 import { useAuthStore } from '@/app/store/useAuthStore'
 import { useAuth } from '@/app/components/auth/useAuth'
+import UserAvatar from '@/app/components/UserAvatar'
 
 export const Titlebar = () => {
   const { onboardingCompleted } = useOnboardingStore()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
   const showOnboarding = !onboardingCompleted || !isAuthenticated
   const { toggleNavExpanded, setCurrentPage, setSettingsPage, navExpanded } =
     useMainStore()
@@ -161,7 +162,15 @@ export const Titlebar = () => {
               tabIndex={0}
               onClick={toggleUserDropdown}
             >
-              <UserCircle style={{ width: 15, height: 15 }} />
+              {user?.name ? (
+                <UserAvatar
+                  name={user.name}
+                  size={16}
+                  className="overflow-hidden rounded-full"
+                />
+              ) : (
+                <UserCircle style={{ width: 15, height: 15 }} />
+              )}
             </div>
 
             {/* User Dropdown Menu */}

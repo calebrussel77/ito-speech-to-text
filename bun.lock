@@ -9,6 +9,7 @@
         "@bufbuild/protobuf": "^2.6.0",
         "@connectrpc/connect": "^2.0.2",
         "@connectrpc/connect-node": "^2.0.2",
+        "@dicebear/core": "^10.5.0",
         "@electron-toolkit/preload": "^3.0.2",
         "@electron-toolkit/utils": "^4.0.0",
         "@emotion/react": "^11.14.0",
@@ -169,6 +170,8 @@
     "@connectrpc/connect-node": ["@connectrpc/connect-node@2.0.4", "", { "peerDependencies": { "@bufbuild/protobuf": "^2.2.0", "@connectrpc/connect": "2.0.4" } }, "sha512-+2rmWcCqYxh7TKv6zyJqGloUP5dZSkjrZ3AA1CljGBqiwH6pOjLoNX1ofKh9PBRkJnvfxvL3pBEEWaD1hJso4Q=="],
 
     "@develar/schema-utils": ["@develar/schema-utils@2.6.5", "", { "dependencies": { "ajv": "^6.12.0", "ajv-keywords": "^3.4.1" } }, "sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig=="],
+
+    "@dicebear/core": ["@dicebear/core@10.5.0", "", {}, "sha512-FaBohsNT+/8z2C2jowlzNVbx4B+x6wVLK4HeQT35bJTV4LeV6xXl4zyPvxCm4HvG6PoN+100hNBbnj7Bumo18Q=="],
 
     "@electron-toolkit/eslint-config-prettier": ["@electron-toolkit/eslint-config-prettier@3.0.0", "", { "dependencies": { "eslint-config-prettier": "^10.0.1", "eslint-plugin-prettier": "^5.2.3" }, "peerDependencies": { "eslint": ">= 9.0.0", "prettier": ">= 3.0.0" } }, "sha512-YapmIOVkbYdHLuTa+ad1SAVtcqYL9A/SJsc7cxQokmhcwAwonGevNom37jBf9slXegcZ/Slh01I/JARG1yhNFw=="],
 
