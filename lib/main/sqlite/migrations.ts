@@ -61,4 +61,56 @@ export const MIGRATIONS: Migration[] = [
     `,
     down: 'DROP TABLE user_metadata;',
   },
+  {
+    id: '20260814190000_add_modes_table',
+    up: `
+      CREATE TABLE modes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        preset TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        language TEXT NOT NULL DEFAULT 'fr',
+        voice_model_key TEXT,
+        text_model_key TEXT,
+        use_llm INTEGER NOT NULL DEFAULT 1,
+        context_application INTEGER NOT NULL DEFAULT 0,
+        context_clipboard INTEGER NOT NULL DEFAULT 0,
+        context_selection INTEGER NOT NULL DEFAULT 0,
+        audio_source TEXT NOT NULL DEFAULT 'microphone',
+        playback_when_recording TEXT NOT NULL DEFAULT 'mute',
+        auto_paste INTEGER NOT NULL DEFAULT 1,
+        autocapitalize INTEGER NOT NULL DEFAULT 1,
+        identify_speakers INTEGER NOT NULL DEFAULT 0,
+        asr_prompt TEXT NOT NULL DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+
+      CREATE INDEX idx_modes_user ON modes(user_id) WHERE deleted_at IS NULL;
+    `,
+    down: 'DROP TABLE modes;',
+  },
+  {
+    id: '20260814190100_add_mode_examples_table',
+    up: `
+      CREATE TABLE mode_examples (
+        id TEXT PRIMARY KEY,
+        mode_id TEXT NOT NULL,
+        spoken_input TEXT NOT NULL,
+        ai_output TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        FOREIGN KEY (mode_id) REFERENCES modes (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_mode_examples_mode ON mode_examples(mode_id) WHERE deleted_at IS NULL;
+    `,
+    down: 'DROP TABLE mode_examples;',
+  },
 ]
