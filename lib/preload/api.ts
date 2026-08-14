@@ -238,6 +238,26 @@ const api = {
     ipcRenderer.invoke('test-openrouter-api-key', apiKey),
   getOpenRouterFailure: () => ipcRenderer.invoke('get-openrouter-failure'),
 
+  modes: {
+    getAll: () => ipcRenderer.invoke('modes:get-all'),
+    create: (preset: string, name: string) =>
+      ipcRenderer.invoke('modes:create', preset, name),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('modes:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('modes:delete', id),
+    duplicate: (id: string) => ipcRenderer.invoke('modes:duplicate', id),
+    setActive: (id: string) => ipcRenderer.invoke('modes:set-active', id),
+    getActive: () => ipcRenderer.invoke('modes:get-active'),
+    examples: {
+      get: (modeId: string) => ipcRenderer.invoke('modes:examples:get', modeId),
+      add: (modeId: string, spokenInput: string, aiOutput: string) =>
+        ipcRenderer.invoke('modes:examples:add', modeId, spokenInput, aiOutput),
+      update: (id: string, spokenInput: string, aiOutput: string) =>
+        ipcRenderer.invoke('modes:examples:update', id, spokenInput, aiOutput),
+      delete: (id: string) => ipcRenderer.invoke('modes:examples:delete', id),
+    },
+  },
+
   // Check if the local server is healthy and accessible
   checkServerHealth: () => {
     return ipcRenderer.invoke('check-server-health')

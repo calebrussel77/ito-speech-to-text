@@ -52,6 +52,7 @@ import {
   hasSelectedText,
 } from '../media/selected-text-reader'
 import { IPC_EVENTS } from '../types/ipc'
+import { registerModeIpc } from './modesIpc'
 
 const handleIPC = (channel: string, handler: (...args: any[]) => any) => {
   ipcMain.handle(channel, handler)
@@ -60,6 +61,8 @@ const handleIPC = (channel: string, handler: (...args: any[]) => any) => {
 // This single function registers all IPC handlers for the application.
 // It should only be called once.
 export function registerIPC() {
+  registerModeIpc()
+
   // Store
   ipcMain.on('electron-store-get', (event, val) => {
     event.returnValue = store.get(val)

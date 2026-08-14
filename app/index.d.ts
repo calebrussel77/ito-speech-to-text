@@ -71,6 +71,29 @@ export interface IpcApi {
   testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
   /** Null unless the record describes the key currently stored. */
   getOpenRouterFailure: () => Promise<OpenRouterFailureRecord | null>
+  modes: {
+    getAll: () => Promise<ModeDto[]>
+    create: (preset: string, name: string) => Promise<ModeDto>
+    update: (id: string, patch: Partial<ModeDto>) => Promise<void>
+    delete: (id: string) => Promise<{ ok: boolean; error?: string }>
+    duplicate: (id: string) => Promise<ModeDto | null>
+    setActive: (id: string) => Promise<void>
+    getActive: () => Promise<string | undefined>
+    examples: {
+      get: (modeId: string) => Promise<ModeExampleDto[]>
+      add: (
+        modeId: string,
+        spokenInput: string,
+        aiOutput: string,
+      ) => Promise<ModeExampleDto>
+      update: (
+        id: string,
+        spokenInput: string,
+        aiOutput: string,
+      ) => Promise<void>
+      delete: (id: string) => Promise<void>
+    }
+  }
 }
 
 export interface ApiTestResult {
@@ -84,3 +107,8 @@ export interface OpenRouterFailureRecord {
   model: string
   at: string
 }
+
+export type {
+  Mode as ModeDto,
+  ModeExample as ModeExampleDto,
+} from '../lib/main/sqlite/models'
