@@ -1,22 +1,45 @@
+import type { ReactNode } from 'react'
 import { findModelBySlug } from '@/lib/constants/modelCatalog'
 import {
   MODEL_LAB_ICONS,
   PROVIDER_ICONS,
 } from '@/app/components/icons/modelLabIcons'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/app/components/ui/tooltip'
 
 const PROVIDER_LABELS: Record<string, string> = {
   groq: 'Groq',
   openrouter: 'OpenRouter',
+  cerebras: 'Cerebras',
+}
+
+function LogoWithTooltip({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger className="size-3.5 shrink-0 overflow-hidden rounded-[2px]">
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 /**
  * Which engine produced a transcript: the mark of the model's lab and of the
  * provider that served it, bare — no pill, no border.
  *
- * Two logos read faster than "Whisper · Groq" in a list scanned for its
- * content, and they stay honest as the catalogue grows: the text version had
- * three hard-coded labels and printed a raw slug for anything else. The full
- * names ride along in the tooltip.
+ * Each logo carries its own tooltip rather than one for the pair, because they
+ * answer different questions ("which model?" and "who ran it?") and a single
+ * label would force the reader to work out which half applies to which mark.
  */
 export default function EngineBadge({ engine }: { engine?: string | null }) {
   if (!engine) return null
@@ -36,21 +59,17 @@ export default function EngineBadge({ engine }: { engine?: string | null }) {
   }
 
   const LabIcon = MODEL_LAB_ICONS[model.lab]
-  const ProviderIcon = PROVIDER_ICONS[model.pinnedProvider ?? model.provider]
-  const providerLabel =
-    PROVIDER_LABELS[model.pinnedProvider ?? model.provider] ?? model.provider
+  const servedBy = model.pinnedProvider ?? model.provider
+  const ProviderIcon = PROVIDER_ICONS[servedBy]
 
   return (
-    <span
-      className="inline-flex items-center gap-1.5"
-      title={`${model.label} · ${providerLabel}`}
-    >
-      <span className="size-3.5 shrink-0 overflow-hidden rounded-[2px]">
+    <span className="inline-flex items-center gap-1.5">
+      <LogoWithTooltip label={model.label}>
         <LabIcon />
-      </span>
-      <span className="size-3.5 shrink-0 overflow-hidden rounded-[2px]">
+      </LogoWithTooltip>
+      <LogoWithTooltip label={PROVIDER_LABELS[servedBy] ?? servedBy}>
         <ProviderIcon />
-      </span>
+      </LogoWithTooltip>
     </span>
   )
 }
