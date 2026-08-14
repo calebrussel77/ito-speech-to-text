@@ -365,6 +365,26 @@ const migrations: Migration[] = [
     },
   },
   {
+    id: '2026-08-14-groq-llama-shutdown',
+    run: s => {
+      // Groq shuts down llama-3.1-8b-instant and llama-3.3-70b-versatile on
+      // 2026-08-16. Both were reachable defaults, so an install that never
+      // touched the setting would start failing every EDIT dictation. Point
+      // them at the replacements Groq itself recommends.
+      const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
+      const replacements: Record<string, string> = {
+        'llama3-8b-8192': 'openai/gpt-oss-20b',
+        'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+        'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+      }
+      const next = replacements[advanced.llm?.llmModel]
+      if (next) {
+        advanced.llm = { ...advanced.llm, llmModel: next }
+        s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
+      }
+    },
+  },
+  {
     id: '2026-07-26-mute-audio-when-dictating-default-on',
     run: s => {
       // Muting other audio while dictating is now on by default: it removes

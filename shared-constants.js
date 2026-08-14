@@ -14,7 +14,9 @@ const DEFAULT_ADVANCED_SETTINGS = {
 
   // LLM (Large Language Model) settings
   llmProvider: 'groq',
-  llmModel: 'llama-3.1-8b-instant',
+  // Groq shut down llama-3.1-8b-instant on 2026-08-16; gpt-oss-20b is the
+  // replacement Groq recommends, and it is faster (~1000 t/s).
+  llmModel: 'openai/gpt-oss-20b',
   llmTemperature: 0.1,
 
   // Prompt settings

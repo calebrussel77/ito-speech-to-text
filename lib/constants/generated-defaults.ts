@@ -14,7 +14,7 @@ export const DEFAULT_ADVANCED_SETTINGS = {
 
   // LLM (Large Language Model) settings
   llmProvider: 'groq',
-  llmModel: 'llama-3.1-8b-instant',
+  llmModel: 'openai/gpt-oss-20b',
   llmTemperature: 0.1,
 
   // Prompt settings

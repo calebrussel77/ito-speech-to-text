@@ -38,8 +38,9 @@ interface AdvancedSettingsState {
 
 // Initialize from electron store
 const DECOMMISSIONED_MODELS: Record<string, string> = {
-  'llama3-8b-8192': 'llama-3.1-8b-instant',
-  'openai/gpt-oss-120b': 'llama-3.1-8b-instant',
+  'llama3-8b-8192': 'openai/gpt-oss-20b',
+  'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
 }
 
 const mapModel = (model?: string) =>

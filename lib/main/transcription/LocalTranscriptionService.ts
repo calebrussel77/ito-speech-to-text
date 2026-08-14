@@ -24,10 +24,12 @@ export type AdjustOptions = {
 type ApiTestResult = { ok: boolean; message?: string }
 
 const DEFAULT_NO_SPEECH_THRESHOLD = 0.6
-const DEFAULT_LLM_MODEL = 'llama-3.1-8b-instant'
+const DEFAULT_LLM_MODEL = 'openai/gpt-oss-20b'
 const DECOMMISSIONED_MODELS: Record<string, string> = {
   'llama3-8b-8192': DEFAULT_LLM_MODEL,
   'llama3-8b-instruct': DEFAULT_LLM_MODEL,
+  'llama-3.1-8b-instant': DEFAULT_LLM_MODEL,
+  'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
 }
 
 const normalizeModel = (model?: string) =>
