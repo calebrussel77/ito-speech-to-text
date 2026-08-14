@@ -18,6 +18,14 @@ export type ModelSlot = {
   accepts: (model: CatalogModel) => boolean
 }
 
+/**
+ * Width of one assignment cell, in px. Header and body must use the exact same
+ * value with no gutter between cells: computing a container width and letting a
+ * gap divide it made the "SHORT" label — wider than its cell — drift away from
+ * the marks underneath.
+ */
+const SLOT_WIDTH = 44
+
 type ModelTableProps = {
   title: string
   description?: string
@@ -53,34 +61,24 @@ function Gauge({ value }: { value?: number }) {
   )
 }
 
-function SlotButton({
-  active,
-  disabled,
-  label,
-  onClick,
-}: {
-  active: boolean
-  disabled: boolean
-  label: string
-  onClick: () => void
-}) {
+/**
+ * State indicator, not the click target — the whole row is (see below). An
+ * unselected slot still has to *look* selectable: at border-strong on this
+ * background it was invisible, so the table read as a list of facts with no
+ * way to change anything.
+ */
+function SlotMark({ active }: { active: boolean }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
+    <span
       className={cn(
         'flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors duration-150',
         active
           ? 'border-foreground bg-foreground text-[var(--background)]'
-          : 'border-border-strong text-transparent hover:border-foreground/60',
-        disabled && 'cursor-not-allowed opacity-30 hover:border-border-strong',
+          : 'border-foreground/30 bg-foreground/5 text-transparent group-hover:border-foreground/70 group-hover:bg-foreground/10',
       )}
     >
       <Check className="size-2.5" strokeWidth={3} />
-    </button>
+    </span>
   )
 }
 
@@ -122,12 +120,13 @@ export default function ModelTable({
           <span className="min-w-0 flex-1">Model</span>
           <span className="w-[100px] shrink-0 text-right">Price</span>
           <span className="w-[62px] shrink-0 text-right">Speed</span>
-          <span
-            className="flex shrink-0 gap-2"
-            style={{ width: slots.length * 40 }}
-          >
+          <span className="flex shrink-0">
             {slots.map(slot => (
-              <span key={slot.id} className="w-8 text-center">
+              <span
+                key={slot.id}
+                className="shrink-0 text-center"
+                style={{ width: SLOT_WIDTH }}
+              >
                 {showSlotLabels ? slot.label : ''}
               </span>
             ))}
@@ -138,13 +137,39 @@ export default function ModelTable({
           {models.map(model => {
             const LabIcon = MODEL_LAB_ICONS[model.lab]
             const unavailable = !availableProviders.has(model.provider)
+            // A Groq model can only fill "Short" and an OpenRouter one only
+            // "Long", so no row is ever assignable to more than one slot —
+            // which lets the whole row be the click target instead of a 16px
+            // circle, and removes any ambiguity about what a click means.
+            const targetSlot = slots.find(slot => slot.accepts(model))
+            const selectable = !!targetSlot && !unavailable
 
             return (
               <div
                 key={model.key}
+                role={selectable ? 'button' : undefined}
+                tabIndex={selectable ? 0 : undefined}
+                aria-pressed={
+                  selectable ? targetSlot.selectedKey === model.key : undefined
+                }
+                onClick={
+                  selectable ? () => targetSlot.onSelect(model.key) : undefined
+                }
+                onKeyDown={
+                  selectable
+                    ? e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          targetSlot.onSelect(model.key)
+                        }
+                      }
+                    : undefined
+                }
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2',
+                  'group flex items-center gap-3 px-3 py-2 transition-colors duration-150',
                   unavailable && 'opacity-40',
+                  selectable &&
+                    'cursor-pointer hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] focus-visible:outline-none',
                 )}
               >
                 <span className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -184,25 +209,18 @@ export default function ModelTable({
                   <Gauge value={model.speed} />
                 </span>
 
-                <span
-                  className="flex shrink-0 gap-2"
-                  style={{ width: slots.length * 40 }}
-                >
-                  {slots.map(slot => {
-                    const accepted = slot.accepts(model)
-                    return (
-                      <span key={slot.id} className="flex w-8 justify-center">
-                        {accepted ? (
-                          <SlotButton
-                            active={slot.selectedKey === model.key}
-                            disabled={unavailable}
-                            label={`${slot.label || 'Use'} — ${model.label}`}
-                            onClick={() => slot.onSelect(model.key)}
-                          />
-                        ) : null}
-                      </span>
-                    )
-                  })}
+                <span className="flex shrink-0">
+                  {slots.map(slot => (
+                    <span
+                      key={slot.id}
+                      className="flex shrink-0 justify-center"
+                      style={{ width: SLOT_WIDTH }}
+                    >
+                      {slot.accepts(model) && (
+                        <SlotMark active={slot.selectedKey === model.key} />
+                      )}
+                    </span>
+                  ))}
                 </span>
               </div>
             )

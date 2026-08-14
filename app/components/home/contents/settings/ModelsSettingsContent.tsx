@@ -182,8 +182,8 @@ export default function ModelsSettingsContent() {
         title="Voice models"
         description={
           longDictationEnabled
-            ? 'Short dictations run on Groq, long ones on OpenRouter.'
-            : 'Groq transcribes every dictation.'
+            ? 'Click a row to use it. Short dictations run on Groq, long ones on OpenRouter.'
+            : 'Click a row to use it. Groq transcribes every dictation.'
         }
         models={voiceModels}
         slots={voiceSlots}
@@ -193,7 +193,7 @@ export default function ModelsSettingsContent() {
 
       <ModelTable
         title="Text models"
-        description="Used by Intelligent Mode to rewrite a dictation into the document you asked for."
+        description="Click a row to use it. Intelligent Mode rewrites a dictation into the document you asked for."
         models={TEXT_MODELS}
         slots={textSlots}
         availableProviders={availableProviders}
