@@ -78,10 +78,9 @@ export interface CatalogModel {
    */
   speed?: number
   accuracy?: number
-  /** Short tag shown next to the name. */
+  /** Short tag shown under the name. Keep it under ~32 characters: the column
+   *  is narrow and anything longer is truncated rather than read. */
   note?: string
-  /** Validated on real dictations during the long-form engine bake-off. */
-  proven?: boolean
 }
 
 export const VOICE_MODELS: CatalogModel[] = [
@@ -95,7 +94,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.04 / h',
     speed: 5,
     accuracy: 4,
-    note: 'Default - fastest, and the only reliable Groq option',
+    note: 'Default — fastest and safest',
   },
   {
     key: 'whisper-large-v3',
@@ -107,7 +106,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.111 / h',
     speed: 4,
     accuracy: 1,
-    note: 'Loops and invents past ~40s - kept for comparison only',
+    note: 'Unreliable past ~40s',
   },
   {
     key: 'gpt-transcribe',
@@ -120,7 +119,6 @@ export const VOICE_MODELS: CatalogModel[] = [
     speed: 2,
     accuracy: 5,
     note: 'Most accurate',
-    proven: true,
   },
   {
     key: 'qwen3-asr-flash',
@@ -132,7 +130,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.13 / h',
     speed: 2,
     accuracy: 5,
-    note: 'Best value - near the top at half the price',
+    note: 'Best value',
   },
   {
     key: 'gpt-4o-transcribe',
@@ -166,8 +164,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.18 / h',
     speed: 3,
     accuracy: 3,
-    note: 'Quickest of the long-form engines',
-    proven: true,
+    note: 'Quickest long-form engine',
   },
   {
     key: 'whisper-large-v3-turbo-openrouter',
@@ -179,7 +176,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.012 / h',
     speed: 2,
     accuracy: 2,
-    note: 'Cheapest by far, but weaker than the same model on Groq',
+    note: 'Cheapest, weaker than Groq’s',
   },
   {
     key: 'nova-3',
@@ -233,7 +230,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     speed: 4,
     // Groq lists this one under Preview, which its own policy defines as
     // evaluation-only and removable at short notice.
-    note: 'Preview at Groq — may disappear without warning',
+    note: 'Preview at Groq',
   },
   {
     key: 'gpt-oss-120b-cerebras',
@@ -245,7 +242,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'cerebras',
     price: '$0.35 / $0.75 per M',
     speed: 5,
-    note: 'Fastest - 5x the same model on Groq',
+    note: 'Fastest — 5× Groq',
   },
   {
     key: 'gemma-4-31b-cerebras',
@@ -358,7 +355,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'google',
     price: '$0.10 / $0.40 per M',
     speed: 1,
-    note: 'Slowest measured - 20 tok/s',
+    note: 'Slowest — 20 tok/s',
   },
 ]
 

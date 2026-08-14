@@ -205,11 +205,6 @@ export default function ModelTable({
                           {model.pinnedProvider}
                         </span>
                       )}
-                      {model.proven && (
-                        <span className="shrink-0 rounded-full border border-border-strong px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--muted-foreground)]">
-                          Tested
-                        </span>
-                      )}
                     </span>
                     {(model.note || unavailable) && (
                       <span className="block truncate text-[10px] leading-snug text-[var(--subtle-foreground)]">
