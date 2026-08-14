@@ -154,6 +154,5 @@ describe('KeyState', () => {
       keyState.update({ key: 'KeyA', type: 'keyup' } as KeyEvent)
       expect(keyState.getPressedKeys()).toEqual([])
     })
-
   })
 })

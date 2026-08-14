@@ -33,7 +33,10 @@ function highlightText(text: string, searchQuery: string): React.ReactElement {
       {parts.map((part, index) => {
         if (regex.test(part)) {
           return (
-            <span key={index} className="bg-[hsl(var(--chart-3))]/30 font-medium">
+            <span
+              key={index}
+              className="bg-[hsl(var(--chart-3))]/30 font-medium"
+            >
               {part}
             </span>
           )

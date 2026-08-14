@@ -34,7 +34,11 @@ export type InteractionSoundPlayPayload = {
 }
 
 type PlaybackResult =
-  | { success: true; target: 'main' | 'pill'; payload: InteractionSoundPlayPayload }
+  | {
+      success: true
+      target: 'main' | 'pill'
+      payload: InteractionSoundPlayPayload
+    }
   | { success: false; message: string }
 
 const getThemeFromSettings = (): InteractionSoundTheme => {
@@ -185,8 +189,13 @@ export const installCustomInteractionSound = async (sourcePath: string) => {
   }
 
   const extension = path.extname(sourcePath).toLowerCase()
-  if (!CUSTOM_SOUND_EXTENSIONS.includes(extension as SupportedCustomExtension)) {
-    return { success: false, message: 'Only .wav and .mp3 files are supported.' }
+  if (
+    !CUSTOM_SOUND_EXTENSIONS.includes(extension as SupportedCustomExtension)
+  ) {
+    return {
+      success: false,
+      message: 'Only .wav and .mp3 files are supported.',
+    }
   }
 
   if (!fs.existsSync(sourcePath)) {

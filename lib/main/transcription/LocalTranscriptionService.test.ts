@@ -78,8 +78,16 @@ describe('filterSpeechSegments', () => {
   test('drops hallucinated segments but keeps real speech', () => {
     const result = filterSpeechSegments(
       [
-        { text: 'Bonjour tout le monde.', no_speech_prob: 0.02, avg_logprob: -0.15 },
-        { text: " Sous-titres réalisés par Amara.org", no_speech_prob: 0.8, avg_logprob: -0.9 },
+        {
+          text: 'Bonjour tout le monde.',
+          no_speech_prob: 0.02,
+          avg_logprob: -0.15,
+        },
+        {
+          text: ' Sous-titres réalisés par Amara.org',
+          no_speech_prob: 0.8,
+          avg_logprob: -0.9,
+        },
       ],
       0.6,
     )

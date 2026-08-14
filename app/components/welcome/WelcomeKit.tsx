@@ -49,7 +49,7 @@ export default function WelcomeKit() {
   // Authentication bypassed - skip directly to onboarding
   // Remove CreateAccountContent from the onboarding flow since we're always authenticated
   const onboardingStepOrderFiltered = onboardingStepOrder.filter(
-    component => component !== CreateAccountContent
+    component => component !== CreateAccountContent,
   )
 
   const CurrentComponent = onboardingStepOrderFiltered[onboardingStep]

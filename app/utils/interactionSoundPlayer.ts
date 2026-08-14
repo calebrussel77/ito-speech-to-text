@@ -45,6 +45,9 @@ export const playInteractionSoundPayload = async (
 
     await audio.play()
   } catch (error) {
-    console.error('[interactionSoundPlayer] Failed to play interaction sound:', error)
+    console.error(
+      '[interactionSoundPlayer] Failed to play interaction sound:',
+      error,
+    )
   }
 }

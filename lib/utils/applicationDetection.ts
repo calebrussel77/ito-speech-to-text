@@ -119,13 +119,14 @@ export async function canGetContextWithAccessibilityApis(): Promise<boolean> {
 }
 
 export function isTerminalApplication(appName: string): boolean {
-  const normalized = appName.toLowerCase().replace(/\.exe$/, '').trim()
+  const normalized = appName
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+    .trim()
   if (TERMINAL_APPS.has(normalized)) {
     return true
   }
-  return TERMINAL_NAME_FRAGMENTS.some(fragment =>
-    normalized.includes(fragment),
-  )
+  return TERMINAL_NAME_FRAGMENTS.some(fragment => normalized.includes(fragment))
 }
 
 /**

@@ -20,9 +20,9 @@ function sineWavePcm(durationMs: number, amplitude: number): Buffer {
 
 describe('isLikelySilence', () => {
   test('flags digital silence', () => {
-    expect(processor.isLikelySilence(pcmFromSamples(new Array(1600).fill(0)))).toBe(
-      true,
-    )
+    expect(
+      processor.isLikelySilence(pcmFromSamples(new Array(1600).fill(0))),
+    ).toBe(true)
   })
 
   test('flags near-silent room noise', () => {

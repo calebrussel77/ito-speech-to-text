@@ -243,8 +243,8 @@ export class SyncService {
           created_at: remoteInteraction.createdAt,
           updated_at: remoteInteraction.updatedAt,
           deleted_at: remoteInteraction.deletedAt || null,
-        raw_audio_id: remoteInteraction.rawAudioId ?? null,
-        sample_rate: null,
+          raw_audio_id: remoteInteraction.rawAudioId ?? null,
+          sample_rate: null,
         }
         await InteractionsTable.upsert(localInteraction)
       }

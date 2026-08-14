@@ -40,5 +40,5 @@ if (process.contextIsolated) {
       },
     },
   }
-window.api = api as any
+  window.api = api as any
 }

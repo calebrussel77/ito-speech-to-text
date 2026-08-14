@@ -106,8 +106,7 @@ export function filterSpeechSegments(
   }
 
   const kept = segments.filter(
-    s =>
-      !(isNoSpeech(s) && (s.avg_logprob ?? 0) < HALLUCINATION_AVG_LOGPROB),
+    s => !(isNoSpeech(s) && (s.avg_logprob ?? 0) < HALLUCINATION_AVG_LOGPROB),
   )
 
   return {
@@ -244,10 +243,7 @@ class LocalTranscriptionService {
 
     const asrModel = options.asrModel
     if (!asrModel) {
-      throw new LocalTranscriptionError(
-        'ASR model is required',
-        'MODEL_ERROR',
-      )
+      throw new LocalTranscriptionError('ASR model is required', 'MODEL_ERROR')
     }
     const effectiveModel = normalizeModel(asrModel) || asrModel
 
@@ -348,7 +344,10 @@ class LocalTranscriptionService {
       return choice?.trim?.() || transcript
     } catch (error: any) {
       const message = error?.message || 'Failed to adjust transcript'
-      console.error('[LocalTranscriptionService] adjustTranscript failed:', message)
+      console.error(
+        '[LocalTranscriptionService] adjustTranscript failed:',
+        message,
+      )
       return transcript
     }
   }
