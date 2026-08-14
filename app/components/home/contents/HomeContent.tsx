@@ -90,6 +90,7 @@ export default function HomeContent({
   const [isRetryingPending, setIsRetryingPending] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
+  const [showingRaw, setShowingRaw] = useState<Set<string>>(new Set())
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
     streakDays: 0,
@@ -519,6 +520,17 @@ export default function HomeContent({
     })
   }
 
+  const toggleRaw = (id: string) =>
+    setShowingRaw(previous => {
+      const next = new Set(previous)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+
   const handleDeleteInteraction = async (interactionId: string) => {
     try {
       await window.api.interactions.delete(interactionId)
@@ -782,6 +794,11 @@ export default function HomeContent({
                 <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
+                    const shownText =
+                      showingRaw.has(interaction.id) &&
+                      interaction.asr_output?.rawTranscript
+                        ? interaction.asr_output.rawTranscript
+                        : displayInfo.text
                     const durationLabel = formatDuration(
                       interaction.duration_ms,
                     )
@@ -807,6 +824,17 @@ export default function HomeContent({
                               <span className="text-[11px] text-muted-foreground/70">
                                 {interaction.asr_output.modeName}
                               </span>
+                            )}
+                            {interaction.asr_output?.rawTranscript && (
+                              <button
+                                type="button"
+                                onClick={() => toggleRaw(interaction.id)}
+                                className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+                              >
+                                {showingRaw.has(interaction.id)
+                                  ? 'Show result'
+                                  : 'Show original'}
+                              </button>
                             )}
                             {durationLabel && (
                               <span className="text-[11px] text-muted-foreground/70 tabular-nums">
@@ -836,7 +864,7 @@ export default function HomeContent({
                               isExpanded ? '' : 'line-clamp-3'
                             }`}
                           >
-                            {displayInfo.text}
+                            {shownText}
                           </div>
 
                           {showToggle && (
