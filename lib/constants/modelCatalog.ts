@@ -49,10 +49,16 @@ export interface CatalogModel {
   pinnedProvider?: PinnedProvider
   lab: ModelLab
   /**
-   * Human-readable price, already carrying its unit. `null` where no
-   * trustworthy figure exists: OpenRouter's `pricing` field mixes $/second,
-   * $/minute and $/token between providers for the audio models, so publishing
-   * it would be inventing a comparison.
+   * Human-readable price, already carrying its unit — $/h for voice so the
+   * column compares, $/M in/out for text.
+   *
+   * Voice figures are measured, not read off OpenRouter's `pricing` field:
+   * that field mixes $/second, $/minute and $/token between providers, so the
+   * numbers there are not comparable. These come from the `usage.cost` each
+   * request returns, sampled at 2s and 10s per model; the two agreed exactly,
+   * which also rules out a per-request minimum (Groq bills one, OpenRouter
+   * does not). `null` means the provider publishes nothing and we have not
+   * measured it.
    */
   price: string | null
   /**
@@ -97,7 +103,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'openai/gpt-transcribe',
     provider: 'openrouter',
     lab: 'openai',
-    price: '$0.0045 / min',
+    price: '$0.27 / h',
     proven: true,
   },
   {
@@ -107,7 +113,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'mistralai/voxtral-mini-transcribe',
     provider: 'openrouter',
     lab: 'mistral',
-    price: '$0.003 / min',
+    price: '$0.18 / h',
     proven: true,
   },
   {
@@ -117,7 +123,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'deepgram/nova-3',
     provider: 'openrouter',
     lab: 'deepgram',
-    price: '$0.0043 / min',
+    price: '$0.26 / h',
   },
   {
     key: 'chirp-3',
@@ -126,7 +132,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'google/chirp-3',
     provider: 'openrouter',
     lab: 'google',
-    price: null,
+    price: '$0.96 / h',
   },
   {
     key: 'qwen3-asr-flash',
@@ -135,7 +141,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'qwen/qwen3-asr-flash-2026-02-10',
     provider: 'openrouter',
     lab: 'qwen',
-    price: null,
+    price: '$0.13 / h',
   },
   {
     key: 'whisper-large-v3-turbo-openrouter',
@@ -144,7 +150,8 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'openai/whisper-large-v3-turbo',
     provider: 'openrouter',
     lab: 'openai',
-    price: null,
+    price: '$0.012 / h',
+    note: 'Same model as Groq’s, 3x cheaper',
   },
   {
     key: 'voxtral-small-stt',
@@ -153,7 +160,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'mistralai/voxtral-small-24b-2507-stt',
     provider: 'openrouter',
     lab: 'mistral',
-    price: null,
+    price: '$0.18 / h',
   },
   {
     key: 'gpt-4o-transcribe',
@@ -162,7 +169,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     slug: 'openai/gpt-4o-transcribe',
     provider: 'openrouter',
     lab: 'openai',
-    price: '$0.006 / min',
+    price: '$0.12 / h',
   },
 ]
 
