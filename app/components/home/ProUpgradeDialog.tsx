@@ -64,37 +64,35 @@ export function ProUpgradeDialog({
         >
           {/* PRO Badge */}
           <div className="relative inline-block mb-6">
-            <div className="bg-white rounded-full px-12 py-4 shadow-lg">
-              <span className="text-5xl font-black bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
-                PRO
-              </span>
+            <div className="bg-[var(--surface-3)] border border-border rounded-full px-12 py-4">
+              <span className="text-3xl font-bold text-foreground">PRO</span>
             </div>
           </div>
         </div>
 
         {/* Content */}
-        <div className="px-8 py-6 bg-white">
-          <h2 className="text-3xl font mb-2 ">
+        <div className="px-8 py-6 bg-[var(--surface)]">
+          <h2 className="text-xl font-semibold mb-2">
             Congrats! You have been{' '}
-            <span className="bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
+            <span className="text-foreground">
               upgraded to Ito Pro for free!
             </span>
           </h2>
 
-          <p className="text-l text-gray-600  mb-6">
+          <p className="text-l text-muted-foreground mb-6">
             Enjoy all Pro features for{' '}
             <span className="font-semibold">14 days</span>.
           </p>
 
           {/* Error Message */}
           {checkoutError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-6">
+            <div className="mb-4 rounded-lg border border-[var(--destructive)]/40 bg-[var(--destructive-soft)] p-3 text-xs text-destructive">
               {checkoutError}
             </div>
           )}
 
           {/* Features List */}
-          <div className="space-y-3 mb-6 border border-gray-200 rounded-lg p-4">
+          <div className="space-y-3 mb-6 border border-border rounded-xl p-4">
             <FeatureItem text="Unlimited words per week" />
             <FeatureItem text="Ultra fast dictation as fast as 0.3 second" />
             <FeatureItem text="Priority customer support" />
@@ -107,7 +105,7 @@ export function ProUpgradeDialog({
               onClick={() => onOpenChange(false)}
               variant="default"
               size="lg"
-              className="bg-gray-900 hover:bg-gray-800 text-white rounded-xl"
+              className="bg-primary text-primary-foreground hover:opacity-90 rounded-xl"
             >
               Try for free
             </Button>
@@ -115,11 +113,11 @@ export function ProUpgradeDialog({
               onClick={handleCheckout}
               variant="outline"
               size="lg"
-              className="rounded-xl border-gray-200"
+              className="rounded-xl border-border"
               disabled={checkoutLoading || billingState.isLoading}
             >
               {checkoutLoading ? 'Loading...' : 'Upgrade Now'}{' '}
-              <span className="text-gray-500">(20% off)</span>
+              <span className="text-muted-foreground">(20% off)</span>
             </Button>
           </DialogFooter>
         </div>
@@ -134,7 +132,7 @@ function FeatureItem({ text }: { text: string }) {
       <div className="flex-shrink-0">
         <Check className="w-5 h-5" strokeWidth={3} />
       </div>
-      <span className="text-gray-900">{text}</span>
+      <span className="text-foreground">{text}</span>
     </div>
   )
 }

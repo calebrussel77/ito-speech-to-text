@@ -313,10 +313,10 @@ export default function NotesContent() {
   }
 
   return (
-    <div ref={containerRef} className="w-full max-w-6xl mx-auto px-24 relative">
+    <div ref={containerRef} className="w-full relative">
       {/* Header */}
       {showSearch ? (
-        <div className="flex items-center gap-4 mb-8 px-4 py-2 bg-card border border-border rounded-lg">
+        <div className="flex items-center gap-3 mb-5 px-3 py-1.5 bg-[var(--surface-2)] border border-border rounded-lg">
           <Search className="w-5 h-5 text-muted-foreground flex-shrink-0" />
           <input
             ref={searchInputRef}
@@ -335,8 +335,8 @@ export default function NotesContent() {
           </button>
         </div>
       ) : (
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-xl font-medium text-foreground w-full text-center">
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-2xl font-heading font-semibold tracking-tight text-foreground">
             What's on your mind today?
           </h1>
         </div>
@@ -345,7 +345,7 @@ export default function NotesContent() {
       {/* Text Input Area - Only show when not searching */}
       {!showSearch && (
         <div
-          className="shadow-lg rounded-2xl mb-8 border border-border bg-card w-3/5 mx-auto transition-all duration-200 ease-in-out relative"
+          className="rounded-xl mb-5 border border-border bg-[var(--surface-2)] w-4/5 mx-auto transition-all duration-200 ease-in-out relative"
           style={{ height: `${containerHeight}px` }}
         >
           {!creatingNote && (

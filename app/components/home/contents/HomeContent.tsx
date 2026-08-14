@@ -50,21 +50,21 @@ const StatCard = ({
   icon: React.ReactNode
 }) => {
   return (
-    <div className="flex flex-col p-4 w-1/3 border border-border bg-card/50 backdrop-blur-sm rounded-xl gap-4 shadow-sm transition-all duration-300 hover:bg-card/80 hover:shadow-lg hover:border-border/80 hover:-translate-y-0.5 relative overflow-hidden group">
-      {/* Subtle gradient overlay on hover */}
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-      <div className="flex flex-row items-center relative z-10">
-        <div className="flex flex-col gap-1">
-          <div className="text-sm font-medium text-muted-foreground">
-            {title}
-          </div>
-          <div className="font-heading font-bold text-lg text-foreground">
+    // `flex-1 min-w-0` et non `w-1/3` : sans `min-w-0` un enfant flex refuse
+    // de passer sous la largeur de son contenu, et la carte déborde au lieu
+    // de tronquer. `justify-between` colle la description en bas pour que les
+    // trois cartes s'alignent quelle que soit la longueur du libellé.
+    <div className="surface-1 flex min-w-0 flex-1 flex-col justify-between gap-2 rounded-xl p-3 transition-colors duration-200 hover:bg-[var(--surface-2)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-xs text-muted-foreground">{title}</div>
+          <div className="mt-0.5 font-heading text-sm font-semibold text-foreground">
             {value}
           </div>
         </div>
-        <div className="flex flex-col items-end flex-1">{icon}</div>
+        {icon}
       </div>
-      <div className="w-full text-xs text-muted-foreground relative z-10">
+      <div className="text-[11px] leading-snug text-[var(--subtle-foreground)]">
         {description}
       </div>
     </div>
@@ -484,24 +484,27 @@ export default function HomeContent({
 
   // Engine that produced the transcript, shown as a small badge. Older rows
   // predate the attribution and simply show no badge.
+  // Le moteur est déjà nommé en toutes lettres : la teinte était redondante,
+  // et trois pastilles colorées sur fond near-black tiraient l'œil plus que
+  // le contenu de la dictée. Un seul traitement neutre pour les trois.
+  const ENGINE_BADGE_CLASS =
+    'bg-[var(--surface-3)] text-[var(--muted-foreground)] border-border'
+
   const ENGINE_BADGES: { match: string; label: string; className: string }[] = [
     {
       match: 'gpt-transcribe',
       label: 'GPT Transcribe',
-      className:
-        'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25',
+      className: ENGINE_BADGE_CLASS,
     },
     {
       match: 'voxtral',
       label: 'Mistral Voxtral',
-      className:
-        'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25',
+      className: ENGINE_BADGE_CLASS,
     },
     {
       match: 'whisper',
       label: 'Whisper · Groq',
-      className:
-        'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25',
+      className: ENGINE_BADGE_CLASS,
     },
   ]
 
@@ -644,16 +647,16 @@ export default function HomeContent({
   return (
     <div className="w-full h-full flex flex-col font-sans">
       {/* Fixed Header Content */}
-      <div className="flex-shrink-0 px-24">
-        <div className="flex items-center justify-between mb-8">
+      <div className="flex-shrink-0">
+        <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-3xl font-heading font-semibold tracking-tight text-foreground">
+            <h1 className="text-2xl font-heading font-semibold tracking-tight text-foreground">
               Welcome back{firstName ? `, ${firstName}!` : '!'}
             </h1>
           </div>
         </div>
-        <div className="flex gap-4 w-full mb-6">
-          <div className="flex w-full items-center text-sm text-gray-700 gap-2">
+        <div className="w-full mb-6">
+          <div className="flex w-full items-stretch gap-2.5">
             <StatCard
               title="Weekly Streak"
               value={formatStreakText(stats.streakDays)}
@@ -662,9 +665,9 @@ export default function HomeContent({
                 getStreakLevel(stats.streakDays),
               )}
               icon={
-                <div className="p-2.5 bg-blue-500/10 dark:bg-blue-500/15 rounded-xl">
+                <div className="p-2 bg-[var(--surface-3)] rounded-lg shrink-0">
                   <ChartNoAxesColumn
-                    className="w-5 h-5 text-blue-500 dark:text-blue-400"
+                    className="w-4 h-4 text-[var(--muted-foreground)]"
                     strokeWidth={2.5}
                   />
                 </div>
@@ -678,8 +681,8 @@ export default function HomeContent({
                 getSpeedLevel(stats.averageWPM),
               )}
               icon={
-                <div className="p-2.5 bg-emerald-500/10 dark:bg-emerald-500/15 rounded-xl">
-                  <SpeedIcon className="text-emerald-500 dark:text-emerald-400" />
+                <div className="p-2 bg-[var(--surface-3)] rounded-lg shrink-0">
+                  <SpeedIcon className="text-[var(--muted-foreground)]" />
                 </div>
               }
             />
@@ -691,8 +694,8 @@ export default function HomeContent({
                 getTotalWordsLevel(stats.totalWords),
               )}
               icon={
-                <div className="p-2.5 bg-amber-500/10 dark:bg-amber-500/15 rounded-xl">
-                  <TotalWordsIcon className="text-amber-500 dark:text-amber-400" />
+                <div className="p-2 bg-[var(--surface-3)] rounded-lg shrink-0">
+                  <TotalWordsIcon className="text-[var(--muted-foreground)]" />
                 </div>
               }
             />
@@ -700,9 +703,7 @@ export default function HomeContent({
         </div>
 
         {/* Dictation Info Box */}
-        <div className="glass-card rounded-xl p-6 flex items-center justify-between mb-10 transition-all duration-300 hover:shadow-lg relative overflow-hidden group">
-          {/* Subtle gradient glow on hover */}
-          <div className="absolute inset-0 bg-gradient-to-r from-violet-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        <div className="surface-1 rounded-xl p-4 flex items-center justify-between gap-4 mb-6 transition-colors duration-200 hover:bg-[var(--surface-2)] relative overflow-hidden">
           <div className="relative z-10">
             <div className="text-base font-medium mb-1 font-heading text-foreground">
               Voice dictation in any app
@@ -711,7 +712,7 @@ export default function HomeContent({
               <span key="hold-down">Hold down the trigger key </span>
               {keyboardShortcut.map((key, index) => (
                 <React.Fragment key={index}>
-                  <span className="bg-muted/80 dark:bg-muted px-1.5 py-0.5 rounded text-xs font-mono shadow-sm border border-border/50 dark:border-border text-foreground">
+                  <span className="bg-[var(--surface-3)] px-1.5 py-0.5 rounded text-xs font-mono border border-border text-foreground">
                     {getKeyDisplay(key as KeyName, platform, {
                       showDirectionalText: false,
                       format: 'label',
@@ -724,7 +725,7 @@ export default function HomeContent({
             </div>
           </div>
           <button
-            className="relative z-10 bg-foreground dark:bg-white/95 text-background dark:text-[hsl(225_15%_10%)] px-6 py-2.5 rounded-full font-semibold text-sm hover:opacity-90 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] cursor-pointer"
+            className="relative z-10 shrink-0 whitespace-nowrap bg-primary text-primary-foreground px-4 py-1.5 rounded-full font-medium text-xs hover:opacity-90 transition-opacity duration-150 cursor-pointer"
             onClick={() =>
               window.api?.invoke('web-open-url', EXTERNAL_LINKS.WEBSITE)
             }
@@ -734,9 +735,12 @@ export default function HomeContent({
         </div>
 
         {/* Pending dictations banner — failed transcriptions waiting for network */}
+        {/* Pas d'ambre : le système n'a qu'un accent, réservé à la dictée.
+            L'attention passe par le contraste (texte pleine intensité,
+            bordure renforcée) plutôt que par la teinte. */}
         {pendingCount > 0 && (
-          <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-            <div className="flex items-center gap-2.5 text-sm text-amber-600 dark:text-amber-400">
+          <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-3">
+            <div className="flex items-center gap-2.5 text-sm text-foreground">
               <InfoCircle className="w-4 h-4 shrink-0" />
               <span>
                 {pendingCount} dictation{pendingCount > 1 ? 's' : ''} could not
@@ -745,7 +749,7 @@ export default function HomeContent({
               </span>
             </div>
             <button
-              className="shrink-0 rounded-md border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-xs font-medium text-foreground hover:bg-[var(--surface-3)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleRetryPending}
               disabled={isRetryingPending}
             >
@@ -780,7 +784,7 @@ export default function HomeContent({
       </div>
 
       {/* Scrollable Recent Activity Section */}
-      <div className="flex-1 px-24">
+      <div className="flex-1">
         {loading ? (
           <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             Loading recent activity...
@@ -837,7 +841,7 @@ export default function HomeContent({
                             {displayInfo.tooltip && (
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <InfoCircle className="w-4 h-4 text-gray-400" />
+                                  <InfoCircle className="w-4 h-4 text-[var(--subtle-foreground)]" />
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   {displayInfo.tooltip}
@@ -849,7 +853,7 @@ export default function HomeContent({
                           <div
                             className={`${
                               displayInfo.tone === 'pending'
-                                ? 'text-amber-600 dark:text-amber-400'
+                                ? 'text-[var(--subtle-foreground)] italic'
                                 : displayInfo.isError
                                   ? 'text-destructive'
                                   : 'text-foreground'
@@ -897,7 +901,7 @@ export default function HomeContent({
                                 <button
                                   className={`p-1.5 hover:bg-secondary rounded transition-colors cursor-pointer ${
                                     copiedItems.has(interaction.id)
-                                      ? 'text-emerald-500'
+                                      ? 'text-foreground'
                                       : 'text-muted-foreground hover:text-foreground'
                                   }`}
                                   onClick={() =>

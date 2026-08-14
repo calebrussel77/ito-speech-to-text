@@ -1,11 +1,3 @@
-import {
-  Home,
-  BookOpen,
-  FileText,
-  CogFour,
-  InfoCircle,
-} from '@mynaui/icons-react'
-import { ItoIcon } from '../icons/ItoIcon'
 import { useMainStore } from '@/app/store/useMainStore'
 import { useUserMetadataStore } from '@/app/store/useUserMetadataStore'
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
@@ -13,7 +5,7 @@ import { useAuth } from '@/app/components/auth/useAuth'
 import useBillingState from '@/app/hooks/useBillingState'
 import { PaidStatus } from '@/lib/main/sqlite/models'
 import { useEffect, useState, useRef } from 'react'
-import { NavItem } from '../ui/nav-item'
+import HomeShell from './HomeShell'
 import HomeContent from './contents/HomeContent'
 import DictionaryContent from './contents/DictionaryContent'
 import NotesContent from './contents/NotesContent'
@@ -21,12 +13,11 @@ import SettingsContent from './contents/SettingsContent'
 import AboutContent from './contents/AboutContent'
 
 export default function HomeKit() {
-  const { navExpanded, currentPage, setCurrentPage } = useMainStore()
+  const { currentPage, setCurrentPage } = useMainStore()
   const { metadata } = useUserMetadataStore()
   const { onboardingCompleted } = useOnboardingStore()
   const { isAuthenticated, user } = useAuth()
   const billingState = useBillingState()
-  const [showText, setShowText] = useState(navExpanded)
   const hasStartedTrialRef = useRef(false)
   const previousUserIdRef = useRef<string | undefined>(undefined)
   const [isStartingTrial, setIsStartingTrial] = useState(false)
@@ -141,22 +132,6 @@ export default function HomeKit() {
     }
   }, [])
 
-  // Handle text and positioning animation timing
-  useEffect(() => {
-    if (navExpanded) {
-      // When expanding: slide right first, then show text
-      const timer = setTimeout(() => {
-        setShowText(true) // Show text after slide starts
-      }, 75)
-      return () => clearTimeout(timer)
-    } else {
-      // When collapsing: hide text immediately, then center icons after slide completes
-      setShowText(false)
-      // Return no-op function
-      return () => {}
-    }
-  }, [navExpanded])
-
   // Render the appropriate content based on current page
   const renderContent = () => {
     switch (currentPage) {
@@ -176,76 +151,12 @@ export default function HomeKit() {
   }
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans select-none">
-      {/* Sidebar - Fixed, non-scrollable */}
-      <div
-        className={`${navExpanded ? 'w-48' : 'w-20'} flex-shrink-0 flex flex-col justify-between py-4 px-4 transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] bg-background z-10`}
-      >
-        <div>
-          {/* Logo and Plan */}
-          <div className="flex items-center mb-10 px-3 cursor-default">
-            <ItoIcon
-              className="w-6 text-foreground flex-shrink-0"
-              style={{ height: '32px' }}
-            />
-            <span
-              className={`text-2xl font-heading font-bold transition-all duration-300 ${showText ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
-            >
-              ito
-            </span>
-            <span
-              className={`text-[10px] tracking-wider font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white transition-all duration-300 ${showText ? 'opacity-100 scale-100' : 'opacity-0 scale-90'} ${showText ? 'ml-2' : 'w-0 overflow-hidden'}`}
-            >
-              PRO
-            </span>
-          </div>
-          {/* Nav */}
-          <div className="flex flex-col gap-1 text-sm">
-            <NavItem
-              icon={<Home className="w-5 h-5" />}
-              label="Home"
-              isActive={currentPage === 'home'}
-              showText={showText}
-              onClick={() => setCurrentPage('home')}
-            />
-            <NavItem
-              icon={<BookOpen className="w-5 h-5" />}
-              label="Dictionary"
-              isActive={currentPage === 'dictionary'}
-              showText={showText}
-              onClick={() => setCurrentPage('dictionary')}
-            />
-            <NavItem
-              icon={<FileText className="w-5 h-5" />}
-              label="Notes"
-              isActive={currentPage === 'notes'}
-              showText={showText}
-              onClick={() => setCurrentPage('notes')}
-            />
-            <NavItem
-              icon={<CogFour className="w-5 h-5" />}
-              label="Settings"
-              isActive={currentPage === 'settings'}
-              showText={showText}
-              onClick={() => setCurrentPage('settings')}
-            />
-            <NavItem
-              icon={<InfoCircle className="w-5 h-5" />}
-              label="About"
-              isActive={currentPage === 'about'}
-              showText={showText}
-              onClick={() => setCurrentPage('about')}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content - Scrollable area only */}
-      <div className="flex-1 flex flex-col items-stretch bg-card/40 backdrop-blur-sm my-2 mr-2 rounded-2xl border border-border/50 shadow-sm overflow-hidden relative">
-        <div className="w-full h-full overflow-y-auto overflow-x-hidden pt-12 px-6 pb-6">
-          {renderContent()}
-        </div>
-      </div>
-    </div>
+    <HomeShell
+      currentPage={currentPage}
+      setCurrentPage={setCurrentPage}
+      isPro={isPro}
+    >
+      {renderContent()}
+    </HomeShell>
   )
 }

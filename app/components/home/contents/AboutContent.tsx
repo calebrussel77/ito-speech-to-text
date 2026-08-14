@@ -26,8 +26,10 @@ function AboutCard({
       <div className="w-8 h-8 bg-card rounded-lg flex items-center justify-center mb-3">
         {icon}
       </div>
-      <h2 className="text-lg font-semibold text-foreground mb-1">{title}</h2>
-      <p className="text-muted-foreground mb-6 leading-relaxed">{description}</p>
+      <h2 className="text-base font-semibold text-foreground mb-1">{title}</h2>
+      <p className="text-muted-foreground mb-6 leading-relaxed">
+        {description}
+      </p>
       <Button
         onClick={onClick}
         variant="outline"
@@ -64,16 +66,20 @@ export default function AboutContent() {
   }
 
   return (
-    <div className="w-full px-24">
-      <div className="mb-8">
-        <h1 className="text-2xl font-medium text-foreground">About</h1>
+    <div className="w-full">
+      <div className="mb-5">
+        <h1 className="text-2xl font-heading font-semibold tracking-tight text-foreground">
+          About
+        </h1>
       </div>
 
       <div className="flex flex-col gap-4">
         {/* First Row: 3 items */}
         <div className="flex flex-row gap-4">
           <AboutCard
-            icon={<DiscordIcon width={24} height={24} className="text-foreground" />}
+            icon={
+              <DiscordIcon width={24} height={24} className="text-foreground" />
+            }
             title="Discord"
             description="Join the community, share feedback, and grow with Ito."
             buttonText="Join Discord"
@@ -100,7 +106,9 @@ export default function AboutContent() {
         {/* Second Row: 2 items */}
         <div className="flex flex-row gap-4">
           <AboutCard
-            icon={<GitHubIcon width={24} height={24} className="text-foreground" />}
+            icon={
+              <GitHubIcon width={24} height={24} className="text-foreground" />
+            }
             title="GitHub"
             description="Check out the code, contribute, or star the repo."
             buttonText="View on GitHub"
@@ -121,9 +129,11 @@ export default function AboutContent() {
                 className="w-6 h-6 text-foreground"
                 style={{ height: '24px' }}
               />
-              <span className="text-lg font-bold text-foreground ml-2">ito</span>
+              <span className="text-base font-semibold text-foreground ml-2">
+                ito
+              </span>
             </div>
-            <h2 className="text-lg font-semibold text-foreground mb-4">
+            <h2 className="text-base font-semibold text-foreground mb-3">
               Version {import.meta.env.VITE_ITO_VERSION}
             </h2>
             <p className="text-muted-foreground mb-6 leading-relaxed">

@@ -273,37 +273,36 @@ export default function DictionaryContent() {
   const noEntries = entries.length === 0
 
   return (
-    <div ref={containerRef} className="w-full px-24 relative">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-medium text-foreground">Dictionary</h1>
-        <Button
-          onClick={handleAddNew}
-          className="px-6 py-3 rounded-full font-semibold cursor-pointer flex items-center"
-        >
-          <Plus className="w-4 h-4" />
+    <div ref={containerRef} className="w-full relative">
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-2xl font-heading font-semibold tracking-tight text-foreground">
+          Dictionary
+        </h1>
+        <Button onClick={handleAddNew} className="cursor-pointer">
+          <Plus className="w-3.5 h-3.5" />
           Add new
         </Button>
       </div>
 
-      <div className="w-full h-[1px] bg-border my-10"></div>
+      <div className="mb-4 h-px w-full bg-border"></div>
       {noEntries && (
         <div className="text-muted-foreground">
-          <p className="text-sm">No entries yet</p>
-          <p className="text-xs mt-1">
+          <p className="text-xs text-foreground">No entries yet</p>
+          <p className="mt-0.5 text-[11px] text-[var(--subtle-foreground)]">
             Dictionary entries make the transcription more accurate
           </p>
         </div>
       )}
       {!noEntries && (
-        <div className="bg-card rounded-lg border border-border divide-y divide-border">
+        <div className="surface-1 overflow-hidden rounded-xl divide-y divide-border">
           {entries.map((entry, index) => (
             <div
               key={entry.id}
-              className="flex items-center justify-between px-4 py-4 gap-10 hover:bg-muted transition-colors duration-200 group"
+              className="group flex items-center justify-between gap-4 px-3 py-2 transition-colors duration-150 hover:bg-[var(--surface-2)]"
               onMouseEnter={() => setHoveredRow(index)}
               onMouseLeave={() => setHoveredRow(null)}
             >
-              <div className="text-foreground flex-1">
+              <div className="min-w-0 flex-1 truncate text-xs text-foreground">
                 {getDisplayText(entry)}
               </div>
 
@@ -317,10 +316,10 @@ export default function DictionaryContent() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => handleEdit(entry.id)}
-                      className="p-1.5 hover:bg-muted rounded transition-colors cursor-pointer"
+                      className="cursor-pointer rounded-md p-1 transition-colors hover:bg-[var(--surface-3)]"
                       aria-label="Edit entry"
                     >
-                      <Pencil className="w-4 h-4 text-muted-foreground" />
+                      <Pencil className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={5}>
@@ -332,10 +331,10 @@ export default function DictionaryContent() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => handleDelete(entry.id)}
-                      className="p-1.5 hover:bg-destructive/10 rounded transition-colors cursor-pointer"
+                      className="cursor-pointer rounded-md p-1 transition-colors hover:bg-[var(--destructive-soft)]"
                       aria-label="Delete entry"
                     >
-                      <Trash className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                      <Trash className="w-3.5 h-3.5 text-[var(--muted-foreground)] hover:text-destructive" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={5}>
@@ -388,7 +387,7 @@ export default function DictionaryContent() {
             </DialogTitle>
           </DialogHeader>
           <div className="px-6">
-            <h2 className="text-lg font-semibold text-foreground mb-4">
+            <h2 className="text-base font-semibold text-foreground mb-3">
               {editingEntry?.type === 'replacement'
                 ? 'Edit replacement'
                 : 'Edit entry'}
@@ -465,7 +464,7 @@ export default function DictionaryContent() {
             <DialogTitle className="sr-only">Add to vocabulary</DialogTitle>
           </DialogHeader>
           <div className="px-6">
-            <h2 className="text-lg font-semibold text-foreground mb-4">
+            <h2 className="text-base font-semibold text-foreground mb-3">
               Add to vocabulary
             </h2>
 

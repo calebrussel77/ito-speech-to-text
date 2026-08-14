@@ -171,7 +171,10 @@ function SettingInput({ config, value, onChange }: SettingInputProps) {
 
   return (
     <div className="mb-6">
-      <Label htmlFor={config.name} className="block text-sm font-medium mb-1">
+      <Label
+        htmlFor={config.name}
+        className="block text-xs font-medium text-foreground mb-1"
+      >
         {config.label}{' '}
         {config?.maxLength &&
           value?.length > 0 &&
@@ -219,7 +222,9 @@ function SettingInput({ config, value, onChange }: SettingInputProps) {
           disabled={config.readOnly}
         />
       )}
-      <p className="text-xs text-muted-foreground mt-1">{config.description}</p>
+      <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
+        {config.description}
+      </p>
     </div>
   )
 }
@@ -312,7 +317,7 @@ export default function AdvancedSettingsContent() {
   return (
     <div className="px-1.5">
       {/* LLM Settings Section */}
-      <div className="space-y-6">
+      <div className="space-y-4">
         <ApiKeySettings />
 
         <Card>
@@ -327,13 +332,15 @@ export default function AdvancedSettingsContent() {
             </div>
           </CardHeader>
 
-          <CardContent className="space-y-6 pb-12">
+          <CardContent className="space-y-4 pb-8">
             <div>
-              <h3 className="text-md font-medium text-foreground mb-3 ml-1">
+              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
                 Transcription Engine
               </h3>
               <div className="mb-6">
-                <Label className="block text-sm font-medium mb-1">Engine</Label>
+                <Label className="block text-xs font-medium text-foreground mb-1">
+                  Engine
+                </Label>
                 <Select
                   value={transcriptionEngineMode}
                   onValueChange={value =>
@@ -351,7 +358,7 @@ export default function AdvancedSettingsContent() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
                   Auto sends recordings of 60 seconds or more to the precise
                   OpenRouter engine and keeps shorter ones on Groq (instant,
                   free). If the OpenRouter call fails, the dictation falls back
@@ -359,7 +366,7 @@ export default function AdvancedSettingsContent() {
                 </p>
               </div>
               <div className="mb-6">
-                <Label className="block text-sm font-medium mb-1">
+                <Label className="block text-xs font-medium text-foreground mb-1">
                   Long-dictation model (OpenRouter)
                 </Label>
                 <Select
@@ -378,7 +385,7 @@ export default function AdvancedSettingsContent() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
                   gpt-transcribe is the accuracy pick; voxtral-mini-transcribe
                   is faster and cheaper. Requires an OpenRouter API key (see API
                   Configuration above).
@@ -387,10 +394,10 @@ export default function AdvancedSettingsContent() {
             </div>
 
             <div>
-              <h3 className="text-md font-medium text-foreground mb-3 ml-1">
+              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
                 LLM Settings
               </h3>
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {llmSettingsConfig.map(config => (
                   <SettingInput
                     key={config.name}
@@ -403,7 +410,7 @@ export default function AdvancedSettingsContent() {
             </div>
 
             <div>
-              <h3 className="text-md font-medium text-foreground mb-3 ml-1">
+              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
                 Grammar
               </h3>
               <label className="flex items-start gap-3 ml-1 cursor-pointer">
@@ -417,10 +424,10 @@ export default function AdvancedSettingsContent() {
                   className="mt-1"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-foreground">
+                  <span className="block text-xs font-medium text-foreground">
                     Enable Grammar Service
                   </span>
-                  <span className="block text-xs text-muted-foreground mt-1">
+                  <span className="mt-0.5 block text-[11px] leading-snug text-[var(--subtle-foreground)]">
                     Apply Ito's local grammar adjustments before inserting text.
                   </span>
                 </span>
@@ -429,7 +436,7 @@ export default function AdvancedSettingsContent() {
 
             {windowContext?.window?.platform === 'darwin' && (
               <div>
-                <h3 className="text-md font-medium text-foreground mb-3 ml-1">
+                <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
                   Context
                 </h3>
                 <label className="flex items-start gap-3 ml-1 cursor-pointer">
@@ -443,10 +450,10 @@ export default function AdvancedSettingsContent() {
                     className="mt-1"
                   />
                   <span>
-                    <span className="block text-sm font-medium text-foreground">
+                    <span className="block text-xs font-medium text-foreground">
                       Use Accessibility Context
                     </span>
-                    <span className="block text-xs text-muted-foreground mt-1">
+                    <span className="mt-0.5 block text-[11px] leading-snug text-[var(--subtle-foreground)]">
                       Use Accessibility APIs to capture text context around the
                       cursor for improved accuracy.
                     </span>

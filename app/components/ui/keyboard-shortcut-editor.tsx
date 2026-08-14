@@ -217,23 +217,23 @@ export default function KeyboardShortcutEditor({
   }
 
   return (
-    <div className={`bg-white rounded-lg ${className}`}>
+    <div className={`rounded-lg ${className}`}>
       {isEditing ? (
         <>
           {!hideTitle && (
-            <div className="text-lg font-medium mb-6 text-center">
+            <div className="text-sm font-medium mb-3 text-center text-foreground">
               {editModeTitle}
             </div>
           )}
           <div
-            className="flex justify-center items-center mb-4 w-full bg-neutral-100 py-3 rounded-lg gap-2"
+            className="flex justify-center items-center mb-3 w-full bg-[var(--surface-2)] border border-border py-2.5 rounded-lg gap-1.5"
             style={{ minHeight }}
           >
             {newShortcut.map((keyboardKey, index) => (
               <KeyboardKey
                 key={index}
                 keyboardKey={keyboardKey}
-                className="bg-white border-2 border-neutral-300"
+                className="border border-[var(--border-strong)] bg-[var(--surface-3)] text-foreground"
                 style={{
                   width: `${keySize}px`,
                   height: `${keySize}px`,
@@ -241,13 +241,13 @@ export default function KeyboardShortcutEditor({
               />
             ))}
             {newShortcut.length === 0 && (
-              <div className="text-gray-400 text-sm">
+              <div className="text-[var(--subtle-foreground)] text-xs">
                 Press keys to add them (max {MAX_KEYS_PER_SHORTCUT} keys)
               </div>
             )}
           </div>
           {(validationError || temporaryError) && (
-            <div className="text-red-500 text-sm text-center mb-2">
+            <div className="text-destructive text-xs text-center mb-2">
               {temporaryError || validationError}
             </div>
           )}
@@ -273,19 +273,23 @@ export default function KeyboardShortcutEditor({
       ) : (
         <>
           {viewModeTitle && !hideTitle && (
-            <div className="text-lg font-medium mb-6 text-center">
+            <div className="text-sm font-medium mb-3 text-center text-foreground">
               {viewModeTitle}
             </div>
           )}
           <div
-            className="flex justify-center items-center mb-4 w-full bg-neutral-100 py-3 rounded-lg gap-2"
+            className="flex justify-center items-center mb-3 w-full bg-[var(--surface-2)] border border-border py-2.5 rounded-lg gap-1.5"
             style={{ minHeight }}
           >
             {shortcutKeys.map((keyboardKey, index) => (
               <KeyboardKey
                 key={index}
                 keyboardKey={keyboardKey}
-                className={`${isDisplayKeyPressed(String(keyboardKey), pressedKeys) ? 'bg-purple-50 border-2 border-purple-200' : 'bg-white border-2 border-neutral-300'}`}
+                className={
+                  isDisplayKeyPressed(String(keyboardKey), pressedKeys)
+                    ? 'border border-[var(--foreground)] bg-[var(--surface-3)] text-foreground'
+                    : 'border border-border bg-[var(--surface-3)] text-[var(--muted-foreground)]'
+                }
                 style={{
                   width: `${keySize}px`,
                   height: `${keySize}px`,

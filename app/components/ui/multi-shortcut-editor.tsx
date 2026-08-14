@@ -200,13 +200,13 @@ export default function MultiShortcutEditor({
   }, [editingId, stop, editorKey])
 
   const base =
-    'inline-flex items-center justify-center rounded-xl border border-border ' +
-    'px-3 py-1.5 text-foreground hover:bg-muted h-9 min-w-[48px] border-0'
+    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ' +
+    'text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-3)] hover:text-foreground'
 
   const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
 
   return (
-    <div className={cx('w-82', className)}>
+    <div className={cx('w-[220px]', className)}>
       {rows.map(row => {
         const isEditing = editingId === row.id
         const displayKeys = isEditing ? draftKeys : row.keys
@@ -214,7 +214,7 @@ export default function MultiShortcutEditor({
         return (
           <div
             key={row.id}
-            className="mb-1 rounded-lg border border-border bg-card p-1"
+            className="mb-1.5 rounded-lg border border-border bg-[var(--surface-2)] py-1 pl-1.5 pr-1"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center justify-between gap-1">
@@ -225,14 +225,14 @@ export default function MultiShortcutEditor({
                     ))}
                     {isEditing &&
                       displayKeys.length < MAX_KEYS_PER_SHORTCUT && (
-                        <span className="text-xs text-muted-foreground ml-2">
+                        <span className="ml-1.5 text-[10px] text-[var(--subtle-foreground)]">
                           ({MAX_KEYS_PER_SHORTCUT - displayKeys.length} more
                           allowed)
                         </span>
                       )}
                   </>
                 ) : (
-                  <span className="text-muted-foreground">
+                  <span className="text-[11px] text-[var(--subtle-foreground)]">
                     {isEditing
                       ? `Press keys to add (max ${MAX_KEYS_PER_SHORTCUT})`
                       : `No keys set`}
@@ -247,7 +247,7 @@ export default function MultiShortcutEditor({
                     onClick={() => saveEdit(row)}
                     className={base}
                   >
-                    <Check className="h-4 w-4" />
+                    <Check className="h-3.5 w-3.5" />
                   </button>
                 ) : (
                   <button
@@ -258,13 +258,13 @@ export default function MultiShortcutEditor({
                     }
                     disabled={isLockedByOther}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
             </div>
             {editingId === row.id && (error || temporaryError) && (
-              <div className="mt-1 text-xs text-destructive">
+              <div className="mt-1 px-1 text-[10px] text-destructive">
                 {temporaryError || error}
               </div>
             )}
@@ -282,7 +282,7 @@ export default function MultiShortcutEditor({
             }
           }}
           hidden={isMinimum}
-          className="ml-auto text-destructive hover:underline text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ml-auto text-[11px] text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           disabled={isLockedByOther}
         >
           Delete
@@ -290,7 +290,7 @@ export default function MultiShortcutEditor({
       </div>
 
       {/* Add new */}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-1.5 flex justify-end">
         <button
           type="button"
           onClick={() => {
@@ -298,7 +298,7 @@ export default function MultiShortcutEditor({
             addNew()
           }}
           hidden={isAtLimit}
-          className="rounded-md border border-border py-1 px-2 text-md text-foreground disabled:opacity-50 hover:bg-muted disabled:cursor-not-allowed"
+          className="rounded-full border border-border bg-[var(--surface-2)] px-3 py-1 text-[11px] text-foreground transition-colors hover:bg-[var(--surface-3)] disabled:cursor-not-allowed disabled:opacity-50"
           disabled={isLockedByOther}
         >
           Add another

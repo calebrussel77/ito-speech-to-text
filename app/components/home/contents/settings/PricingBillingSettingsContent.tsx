@@ -141,12 +141,12 @@ export default function PricingBillingSettingsContent() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* TODO: Integrate later  */}
       {/* Billing Period Toggle */}
       {/* <div className="flex items-center justify-center gap-3">
         <span
-          className={`text-sm font-medium ${billingPeriod === 'monthly' ? 'text-gray-900' : 'text-gray-500'}`}
+          className={`text-sm font-medium ${billingPeriod === 'monthly' ? 'text-foreground' : 'text-muted-foreground'}`}
         >
           Monthly
         </span>
@@ -157,11 +157,11 @@ export default function PricingBillingSettingsContent() {
           }
         />
         <span
-          className={`text-sm font-medium ${billingPeriod === 'annual' ? 'text-gray-900' : 'text-gray-500'}`}
+          className={`text-sm font-medium ${billingPeriod === 'annual' ? 'text-foreground' : 'text-muted-foreground'}`}
         >
           Annual
         </span>
-        <span className="text-sm text-green-600 font-medium">Saved 20%</span>
+        <span className="text-sm text-foreground font-medium">Saved 20%</span>
       </div> */}
 
       {/* Error Message */}
@@ -304,7 +304,7 @@ function PricingCard({
       {/* Price */}
       <div className="mb-6">
         <span
-          className={`text-4xl font-bold ${
+          className={`text-2xl font-semibold ${
             isHighlighted
               ? 'bg-gradient-to-r from-[hsl(var(--chart-1))] to-[hsl(var(--chart-4))] bg-clip-text text-transparent'
               : 'text-foreground'

@@ -1,4 +1,12 @@
+import {
+  CogFour,
+  Keyboard,
+  Microphone,
+  UserCircle,
+  Code,
+} from '@mynaui/icons-react'
 import { useMainStore } from '@/app/store/useMainStore'
+import { PillTabs, type PillTabItem } from '../../ui/pill-tabs'
 import GeneralSettingsContent from './settings/GeneralSettingsContent'
 import AudioSettingsContent from './settings/AudioSettingsContent'
 import AccountSettingsContent from './settings/AccountSettingsContent'
@@ -6,16 +14,18 @@ import KeyboardSettingsContent from './settings/KeyboardSettingsContent'
 import AdvancedSettingsContent from './settings/AdvancedSettingsContent'
 import PricingBillingSettingsContent from './settings/PricingBillingSettingsContent'
 
+type SettingsPage = 'general' | 'keyboard' | 'audio' | 'account' | 'advanced'
+
+const TABS: PillTabItem<SettingsPage>[] = [
+  { id: 'general', label: 'General', icon: CogFour },
+  { id: 'keyboard', label: 'Keyboard', icon: Keyboard },
+  { id: 'audio', label: 'Audio & Mic', icon: Microphone },
+  { id: 'account', label: 'Account', icon: UserCircle },
+  { id: 'advanced', label: 'Advanced', icon: Code },
+]
+
 export default function SettingsContent() {
   const { settingsPage, setSettingsPage } = useMainStore()
-
-  const settingsMenuItems = [
-    { id: 'general', label: 'General', active: settingsPage === 'general' },
-    { id: 'keyboard', label: 'Keyboard', active: settingsPage === 'keyboard' },
-    { id: 'audio', label: 'Audio & Mic', active: settingsPage === 'audio' },
-    { id: 'account', label: 'Account', active: settingsPage === 'account' },
-    { id: 'advanced', label: 'Advanced', active: settingsPage === 'advanced' },
-  ]
 
   const renderSettingsContent = () => {
     switch (settingsPage) {
@@ -37,27 +47,19 @@ export default function SettingsContent() {
   }
 
   return (
-    <div className="w-full px-32">
-      <div className="space-y-6">
-        {/* Horizontal Tab/Pill Selector */}
-        <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit mx-auto">
-          {settingsMenuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => setSettingsPage(item.id as any)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                item.active
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+    <div className="w-full">
+      <div className="flex justify-center">
+        <PillTabs
+          items={TABS}
+          value={settingsPage as SettingsPage}
+          onChange={setSettingsPage}
+        />
+      </div>
 
-        {/* Content Area */}
-        <div className="w-full pt-8">{renderSettingsContent()}</div>
+      {/* Colonne bornée : sans plafond, le libellé colle à gauche et le
+          contrôle part à droite du panneau, et l'œil ne les relie plus. */}
+      <div className="mx-auto w-full max-w-[560px] pt-6">
+        {renderSettingsContent()}
       </div>
     </div>
   )

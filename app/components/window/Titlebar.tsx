@@ -89,6 +89,9 @@ export const Titlebar = () => {
       className={`window-titlebar ${wcontext?.platform ? `platform-${wcontext.platform}` : ''}`}
       style={style}
     >
+      {/* Repli de la sidebar — collé au bord gauche. Il pilote un panneau
+          qu'il ne peut pas habiter : placé dans la sidebar, il disparaîtrait
+          avec elle. */}
       {!showOnboarding && (
         <div
           style={{
@@ -98,26 +101,23 @@ export const Titlebar = () => {
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            gap: '2px',
+            paddingLeft: '8px',
             zIndex: 10,
           }}
         >
           <div
-            className={`h-full transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)] ${navExpanded ? 'w-48' : 'w-20'}`}
-          ></div>
-          <div
-            className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors w-9 h-7 flex items-center justify-center rounded-md cursor-pointer ml-1"
+            className="titlebar-action-btn hover:bg-[var(--surface-2)] text-[var(--muted-foreground)] hover:text-foreground transition-colors w-7 h-6 flex items-center justify-center rounded-md cursor-pointer"
             aria-label="Open Panel"
+            aria-pressed={navExpanded}
             tabIndex={0}
             onClick={toggleNavExpanded}
           >
-            <PanelLeft style={{ width: 18, height: 18 }} />
+            <PanelLeft style={{ width: 15, height: 15 }} />
           </div>
         </div>
       )}
 
       {showOnboarding && <OnboardingTitlebar />}
-      {wcontext?.platform === 'win32' && <TitlebarControls />}
 
       {!showOnboarding && (
         <div
@@ -128,8 +128,8 @@ export const Titlebar = () => {
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            paddingRight: '12px',
+            gap: '6px',
+            paddingRight: '4px',
             zIndex: 10,
           }}
         >
@@ -156,35 +156,38 @@ export const Titlebar = () => {
           )}
           <div className="relative">
             <div
-              className="titlebar-action-btn hover:bg-secondary/80 text-foreground/70 hover:text-foreground transition-colors w-9 h-7 flex items-center justify-center rounded-md cursor-pointer"
+              className="titlebar-action-btn hover:bg-[var(--surface-2)] text-[var(--muted-foreground)] hover:text-foreground transition-colors w-7 h-6 flex items-center justify-center rounded-md cursor-pointer"
               aria-label="Account"
               tabIndex={0}
               onClick={toggleUserDropdown}
             >
-              <UserCircle style={{ width: 18, height: 18 }} />
+              <UserCircle style={{ width: 15, height: 15 }} />
             </div>
 
             {/* User Dropdown Menu */}
             {showUserDropdown && (
-              <div className="absolute top-full right-4 mt-2 w-48 glass-card rounded-lg overflow-hidden animate-fade-in z-50">
+              <div className="absolute top-full right-0 mt-1.5 w-40 glass-card rounded-lg overflow-hidden animate-fade-in z-50">
                 <button
                   onClick={handleSettingsClick}
-                  className="w-full px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-secondary/50 hover:text-foreground flex items-center gap-3 transition-colors cursor-pointer"
+                  className="w-full px-3 py-2 text-left text-xs text-[var(--muted-foreground)] hover:bg-[var(--surface-3)] hover:text-foreground flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <CogFour className="w-4 h-4" />
+                  <CogFour className="w-3.5 h-3.5" />
                   Settings
                 </button>
-                <div className="h-px bg-border/50 mx-2"></div>
+                <div className="h-px bg-border mx-2"></div>
                 <button
                   onClick={handleSignOutClick}
-                  className="w-full px-4 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 flex items-center gap-3 transition-colors cursor-pointer"
+                  className="w-full px-3 py-2 text-left text-xs text-destructive hover:bg-[var(--destructive-soft)] flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <Logout className="w-4 h-4" />
+                  <Logout className="w-3.5 h-3.5" />
                   Sign Out
                 </button>
               </div>
             )}
           </div>
+
+          {/* Contrôles de fenêtre, à droite — convention Windows. */}
+          {wcontext?.platform === 'win32' && <TitlebarControls />}
         </div>
       )}
     </div>
@@ -198,15 +201,19 @@ const TitlebarControls = () => {
   const minimizePath = 'M 0,5 10,5 10,6 0,6 Z'
   const wcontext = useWindowContext().window
 
+  // Ordre Windows : réduire, agrandir, fermer — de gauche à droite.
+  // `maximize` ne s'affiche que si la fenêtre est réellement agrandissable ;
+  // elle est aujourd'hui à taille fixe, donc le bouton reste masqué plutôt
+  // que d'être présent et inerte.
   return (
     <div className="window-titlebar-controls">
-      <TitlebarControlButton label="close" svgPath={closePath} />
-      {wcontext?.maximizable && (
-        <TitlebarControlButton label="maximize" svgPath={maximizePath} />
-      )}
       {wcontext?.minimizable && (
         <TitlebarControlButton label="minimize" svgPath={minimizePath} />
       )}
+      {wcontext?.maximizable && (
+        <TitlebarControlButton label="maximize" svgPath={maximizePath} />
+      )}
+      <TitlebarControlButton label="close" svgPath={closePath} />
     </div>
   )
 }

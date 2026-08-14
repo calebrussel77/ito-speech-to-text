@@ -13,41 +13,62 @@ const FnKey = () => (
     xmlns="http://www.w3.org/2000/svg"
   >
     <g transform="translate(15, 46)">
-      <circle cx="9" cy="9" r="8" fill="none" stroke="#666" strokeWidth="1.5" />
-      <line x1="9" y1="1" x2="9" y2="17" stroke="#666" strokeWidth="1.2" />
-      <line x1="1" y1="9" x2="17" y2="9" stroke="#666" strokeWidth="1.2" />
+      <circle
+        cx="9"
+        cy="9"
+        r="8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="9"
+        y1="1"
+        x2="9"
+        y2="17"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <line
+        x1="1"
+        y1="9"
+        x2="17"
+        y2="9"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
       <path
         d="M9 1 C4.5 4.5 4.5 13.5 9 17"
         fill="none"
-        stroke="#666"
+        stroke="currentColor"
         strokeWidth="1"
       />
       <path
         d="M9 1 C13.5 4.5 13.5 13.5 9 17"
         fill="none"
-        stroke="#666"
+        stroke="currentColor"
         strokeWidth="1"
       />
       <path
         d="M2.5 5.5 C5.5 4.5 12.5 4.5 15.5 5.5"
         fill="none"
-        stroke="#666"
+        stroke="currentColor"
         strokeWidth="1"
       />
       <path
         d="M2.5 12.5 C5.5 13.5 12.5 13.5 15.5 12.5"
         fill="none"
-        stroke="#666"
+        stroke="currentColor"
         strokeWidth="1"
       />
     </g>
     <text
       x="56"
       y="28"
-      fontFamily="SF Pro Display, -apple-system, BlinkMacSystemFont, sans-serif"
+      fontFamily="Geist, system-ui, sans-serif"
       fontSize="16"
       fontWeight="400"
-      fill="#333"
+      fill="currentColor"
       textAnchor="middle"
     >
       fn
@@ -76,10 +97,10 @@ const ModifierKey = ({
     <text
       x="40"
       y="22"
-      fontFamily="SF Pro Display, -apple-system, BlinkMacSystemFont, sans-serif"
+      fontFamily="Geist, system-ui, sans-serif"
       fontSize="18"
       fontWeight="400"
-      fill="#666"
+      fill="currentColor"
       textAnchor="middle"
     >
       {symbol}
@@ -89,10 +110,10 @@ const ModifierKey = ({
     <text
       x="40"
       y="45"
-      fontFamily="SF Pro Display, -apple-system, BlinkMacSystemFont, sans-serif"
+      fontFamily="Geist, system-ui, sans-serif"
       fontSize="12"
       fontWeight="400"
-      fill="#666"
+      fill="currentColor"
       textAnchor="middle"
     >
       {keyboardKey}
@@ -103,10 +124,11 @@ const ModifierKey = ({
       <text
         x="40"
         y="62"
-        fontFamily="SF Pro Display, -apple-system, BlinkMacSystemFont, sans-serif"
+        fontFamily="Geist, system-ui, sans-serif"
         fontSize="10"
         fontWeight="400"
-        fill="#888"
+        fill="currentColor"
+        opacity="0.6"
         textAnchor="middle"
       >
         {getDirectionalIndicator(side, showDirectionalText)}
@@ -131,10 +153,10 @@ const DefaultKey = ({ keyboardKey }: { keyboardKey: string }) => {
       <text
         x="40"
         y="44"
-        fontFamily="SF Pro Display, -apple-system, BlinkMacSystemFont, sans-serif"
+        fontFamily="Geist, system-ui, sans-serif"
         fontSize={fontSize}
         fontWeight="400"
-        fill="#666"
+        fill="currentColor"
         textAnchor="middle"
       >
         {label}
@@ -202,8 +224,8 @@ export default function KeyboardKey({
     return (
       <span
         className={clsx(
-          'inline-flex select-none items-center justify-center rounded-xl border border-neutral-300',
-          'bg-neutral-100 px-2.5 py-1 text-sm leading-5 text-neutral-900 shadow-sm',
+          'inline-flex select-none items-center justify-center rounded-md border border-border',
+          'bg-[var(--surface-3)] px-1.5 py-0.5 font-mono text-[11px] leading-4 text-foreground',
           className,
         )}
         {...props}
@@ -214,7 +236,13 @@ export default function KeyboardKey({
   }
 
   return (
-    <div className={cx('rounded-lg shadow-lg', className)} {...props}>
+    <div
+      className={cx(
+        'rounded-lg border border-border bg-[var(--surface-3)] text-[var(--muted-foreground)]',
+        className,
+      )}
+      {...props}
+    >
       <KeyToRender
         keyboardKey={keyboardKey}
         showDirectionalText={showDirectionalText}

@@ -1,18 +1,19 @@
 @import './globals.css';
 @import './window.css';
 
+/* La pile de polices vient des tokens de globals.css (@theme). Une seule
+ * source de vérité — avant, tailwind.config.js et ce fichier déclaraient
+ * chacun leur propre stack, et ils divergeaient. */
 body {
-  font-family:
-    'Inter',
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  font-size: 14px;
+  font-family: var(--font-sans);
+  /* 13px de base au lieu de 14 : toute l'échelle de globals.css est calée
+   * dessus, et c'est ce qui permet la fenêtre en 900×620. */
+  font-size: 13px;
+  font-feature-settings: 'cv11'; /* a/g à simple étage — plus lisible en UI */
   margin: 0;
   overflow: hidden;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 html,
@@ -20,15 +21,23 @@ body,
 #app {
   height: 100%;
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
-/* Premium Font Classes */
+/* Geist est un grotesk : il a besoin d'un resserrement optique dans les
+ * grandes tailles, sinon les titres paraissent lâches. */
 .font-heading {
-  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-heading);
   letter-spacing: -0.02em;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
+  font-feature-settings: normal;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
 }

@@ -123,8 +123,8 @@ export function MicrophoneSelector({
                 key={mic.deviceId}
                 className={`p-6 rounded-md cursor-pointer transition-colors max-w-full overflow-hidden ${
                   tempSelectedMicrophone === mic.deviceId
-                    ? 'bg-purple-50 border-2 border-purple-100'
-                    : 'bg-neutral-100 border-2 border-neutral-100 hover:bg-neutral-200'
+                    ? 'bg-[var(--surface-3)] border-2 border-[var(--border-strong)]'
+                    : 'bg-[var(--surface)] border-2 border-border hover:bg-[var(--surface-2)]'
                 }`}
                 onClick={() => handleMicrophoneSelect(mic.deviceId)}
                 style={{ minWidth: 0 }}

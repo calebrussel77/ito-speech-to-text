@@ -1,66 +1,33 @@
+/* Thème unique dark. Ces variables ne redéfinissent plus de couleurs en dur :
+ * elles pointent vers les tokens de globals.css, pour que la titlebar ne
+ * puisse plus dériver du reste de l'app. */
 :root {
-  color-scheme: light;
   --window-icon-height: 16px;
   --window-title-margin: 42px;
-  --window-titlebar-height: 48px;
+  --window-titlebar-height: 36px;
   --window-titlebar-font-size: 13px;
-  --window-scrollbar-width: 12px;
+  --window-scrollbar-width: 10px;
   --window-mac-titlebar-controls-margin: 80px;
-  --window-background-transition-duration: 0.3s;
-  --window-c-popup-font-weight: normal;
+  --window-background-transition-duration: 0.2s;
   --window-titlebar-font-weight: 500;
-  --window-c-popup-font-weight: 500;
+  --window-c-popup-font-weight: 450;
 
-  /* Matches globals.css --background: hsl(210 40% 98%) */
-    --window-c-background: hsl(210, 40%, 98%);
-    --window-c-titlebar-background: hsl(210, 40%, 98%);
-  --window-c-titlebar-border: #8080801a;
-  --window-c-text: #000000c8;
-  --window-c-hover: #ececec;
-  --window-c-popup-background: #f6f6f6;
-  --window-c-popup-border: #dcdcdc;
-  --window-c-popup-shadow: hsla(0, 0%, 0%, 0.1);
-  --window-c-separator: #80808033;
-  --window-c-control-hover: #0000001a;
-  --window-c-control-close-hover: #ff453b;
-  --window-c-control-close-hover-text: #fff;
-  --window-c-scrollbar-track: #e0e0e0;
-  --window-c-scrollbar-thumb: #b0b0b0;
-  --window-c-scrollbar-thumb-hover: #888888cf;
-  --window-c-text-shadow: transparent;
-}
-
-:root.dark {
-  color-scheme: dark;
-  --window-icon-height: 16px;
-  --window-title-margin: 42px;
-  --window-titlebar-height: 48px;
-  --window-titlebar-font-size: 13px;
-  --window-scrollbar-width: 12px;
-  --window-mac-titlebar-controls-margin: 80px;
-  --window-background-transition-duration: 0.3s;
-  --window-c-popup-font-weight: normal;
-
-  /* Premium Dark Theme - Refined Obsidian */
-    --window-c-background: hsl(225 15% 6%);
-    --window-c-titlebar-background: hsl(225 15% 6%);
-  
-    --window-c-titlebar-border: hsl(225 10% 18%);
-    --window-c-text: hsl(210 20% 96%);
-  
-    --window-c-hover: hsl(225 12% 14%);
-  
-    --window-c-popup-background: hsl(225 15% 8%);
-    --window-c-popup-border: hsl(225 10% 18%);
-    --window-c-popup-shadow: rgba(0, 0, 0, 0.5);
-  
-    --window-c-separator: hsl(225 10% 18%);
-    --window-c-control-hover: rgba(255, 255, 255, 0.08);
-    --window-c-control-close-hover: hsl(0 72% 51%);
-    --window-c-scrollbar-track: hsl(225 15% 9%);
-    --window-c-scrollbar-thumb: hsl(225 12% 20%);
-    --window-c-scrollbar-thumb-hover: hsl(225 12% 30%);
-    --window-c-text-shadow: none;
+  --window-c-background: var(--background);
+  --window-c-titlebar-background: transparent;
+  --window-c-titlebar-border: var(--border);
+  --window-c-text: var(--foreground);
+  --window-c-hover: var(--surface-2);
+  --window-c-popup-background: var(--surface-2);
+  --window-c-popup-border: var(--border);
+  --window-c-popup-shadow: oklch(0% 0 0 / 0.7);
+  --window-c-separator: var(--border);
+  --window-c-control-hover: var(--surface-3);
+  --window-c-control-close-hover: var(--destructive);
+  --window-c-control-close-hover-text: var(--destructive-foreground);
+  --window-c-scrollbar-track: transparent;
+  --window-c-scrollbar-thumb: var(--surface-3);
+  --window-c-scrollbar-thumb-hover: var(--border-strong);
+  --window-c-text-shadow: none;
 }
 
 .window-frame {
@@ -129,11 +96,14 @@
   margin: 0;
 }
 
+/* Rendus dans le groupe de droite de la titlebar (cf. Titlebar.tsx), plus en
+ * absolu à gauche : l'ancien placement reproduisait la convention macOS sur
+ * Windows. */
 .window-titlebar-controls {
   display: flex;
-  position: absolute;
-  left: 0;
-  top: 0;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
   -webkit-app-region: no-drag;
   z-index: 20;
 }
@@ -202,10 +172,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 30px;
+  width: 30px;
+  height: 24px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--muted-foreground);
   cursor: pointer;
   background-color: transparent;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.titlebar-controlButton svg {
+  width: 9px;
+  height: 9px;
 }
 
 .titlebar-controlButton:hover {
@@ -228,8 +208,9 @@
 
 .window-content::-webkit-scrollbar-thumb {
   background-color: var(--window-c-scrollbar-thumb);
-  border-radius: 4px;
-  border: 3px solid var(--window-c-scrollbar-track);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 
 .window-content::-webkit-scrollbar-thumb:hover {

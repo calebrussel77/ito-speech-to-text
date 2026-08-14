@@ -30,14 +30,21 @@ export function createAppWindow(
   const { showOnReady = true } = options
   // Create the main window.
   mainWindow = new BrowserWindow({
-    width: 1170,
-    height: 700,
+    // Taille fixe et volontairement basse. Avec l'échelle typographique
+    // resserrée, 900×620 laisse ~640px de large au panneau de contenu, ce qui
+    // suffit aux lignes de réglages (libellé + contrôle) et aux transcriptions
+    // sans les étirer. C'est le plancher : en dessous, les lignes de Settings
+    // se cassent en deux.
+    width: 900,
+    height: 620,
     show: false,
-    backgroundColor: '#0d0e12',
+    // Doit correspondre à --background (#0A0A0A) : c'est la couleur peinte
+    // pendant le premier frame, avant que le CSS ne soit appliqué.
+    backgroundColor: '#0a0a0a',
     icon: appIcon,
     frame: false,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 20, y: 17 },
+    trafficLightPosition: { x: 14, y: 11 },
     title: 'Ito',
     maximizable: false,
     resizable: false,

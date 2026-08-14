@@ -10,7 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/app/components/ui/select'
-import { Label } from '@/app/components/ui/label'
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsNote,
+  CONTROL_WIDTH,
+} from '@/app/components/ui/settings'
 
 export default function GeneralSettingsContent() {
   const {
@@ -135,220 +140,171 @@ export default function GeneralSettingsContent() {
       const played = result.fileName || 'sound'
       setInteractionSoundStatus(`Playing "${played}"`)
     } catch (error) {
-      console.error('[GeneralSettingsContent] Failed to play test sound:', error)
+      console.error(
+        '[GeneralSettingsContent] Failed to play test sound:',
+        error,
+      )
       setInteractionSoundStatus('Failed to trigger test playback.')
     }
   }
 
+  const isWindows = windowContext?.window?.platform === 'win32'
+  const isMac = windowContext?.window?.platform === 'darwin'
+
   return (
-    <div className="space-y-8">
-      <div>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                Share analytics
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Share anonymous usage data to help us improve Ito.
-              </div>
-            </div>
+    <>
+      <SettingsGroup title="Application">
+        <SettingsRow
+          title="Launch at login"
+          description="Open Ito automatically when your computer starts."
+        >
+          <Switch checked={launchAtLogin} onCheckedChange={setLaunchAtLogin} />
+        </SettingsRow>
+
+        {isWindows && (
+          <SettingsRow
+            title="Run in background"
+            description="Keep Ito running in the system tray when the window is closed."
+          >
             <Switch
-              checked={shareAnalytics}
-              onCheckedChange={setShareAnalytics}
+              checked={runInBackground}
+              onCheckedChange={setRunInBackground}
             />
-          </div>
+          </SettingsRow>
+        )}
 
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                Launch at Login
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Open Ito automatically when your computer starts.
-              </div>
-            </div>
+        <SettingsRow
+          title="Show Ito bar at all times"
+          description="Keep the floating bar visible instead of only while dictating."
+        >
+          <Switch
+            checked={showItoBarAlways}
+            onCheckedChange={setShowItoBarAlways}
+          />
+        </SettingsRow>
+
+        {isMac && (
+          <SettingsRow
+            title="Show app in dock"
+            description="Show the Ito app in the dock for quick access."
+          >
             <Switch
-              checked={launchAtLogin}
-              onCheckedChange={setLaunchAtLogin}
+              checked={showAppInDock}
+              onCheckedChange={setShowAppInDock}
             />
-          </div>
+          </SettingsRow>
+        )}
+      </SettingsGroup>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                Interaction sounds
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Play a sound after a voice transcription is completed.
-              </div>
-            </div>
-            <Switch
-              checked={interactionSounds}
-              onCheckedChange={setInteractionSounds}
-            />
-          </div>
+      <SettingsGroup title="Sound">
+        <SettingsRow
+          title="Interaction sounds"
+          description="Play a sound after a voice transcription is completed."
+        >
+          <Switch
+            checked={interactionSounds}
+            onCheckedChange={setInteractionSounds}
+          />
+        </SettingsRow>
 
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                Interaction sound theme
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Choose the sound style: Pop, Marimba, or a custom audio file.
-              </div>
-            </div>
+        <SettingsRow
+          title="Sound theme"
+          description="Pop, Marimba, or a custom audio file."
+          align="start"
+        >
+          <Select
+            value={interactionSoundTheme}
+            onValueChange={value =>
+              void handleInteractionSoundThemeChange(
+                value as 'pop' | 'marimba' | 'custom',
+              )
+            }
+          >
+            <SelectTrigger id="interactionSoundTheme" className={CONTROL_WIDTH}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pop">Pop</SelectItem>
+              <SelectItem value="marimba">Marimba</SelectItem>
+              <SelectItem value="custom">
+                {customInteractionSoundName
+                  ? `Custom (${customInteractionSoundName})`
+                  : 'Custom'}
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
-            <div className="w-56 space-y-2">
-              <Select
-                value={interactionSoundTheme}
-                onValueChange={value =>
-                  void handleInteractionSoundThemeChange(
-                    value as 'pop' | 'marimba' | 'custom',
-                  )
-                }
-              >
-                <SelectTrigger id="interactionSoundTheme" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pop">Pop</SelectItem>
-                  <SelectItem value="marimba">Marimba</SelectItem>
-                  <SelectItem value="custom">
-                    {customInteractionSoundName
-                      ? `Custom (${customInteractionSoundName})`
-                      : 'Custom'}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isSoundActionLoading}
-                  onClick={() => void handleUploadCustomInteractionSound()}
-                >
-                  Upload audio
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isSoundActionLoading}
-                  onClick={() => void playInteractionSoundTest()}
-                >
-                  Test
-                </Button>
-              </div>
-            </div>
+          <div className="flex gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isSoundActionLoading}
+              onClick={() => void handleUploadCustomInteractionSound()}
+            >
+              Upload audio
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isSoundActionLoading}
+              onClick={() => void playInteractionSoundTest()}
+            >
+              Test
+            </Button>
           </div>
 
           {interactionSoundTheme === 'custom' && !hasCustomInteractionSound && (
-            <div className="text-xs text-amber-600">
-              No custom sound installed yet. Click Upload audio to add one.
-            </div>
+            <SettingsNote>No custom sound installed yet.</SettingsNote>
           )}
-
           {interactionSoundStatus && (
-            <div className="text-xs text-muted-foreground">
-              {interactionSoundStatus}
-            </div>
+            <SettingsNote>{interactionSoundStatus}</SettingsNote>
           )}
+        </SettingsRow>
+      </SettingsGroup>
 
-          {windowContext?.window?.platform === 'win32' && (
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">
-                  Run in background
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Keep Ito running in the system tray when the window is closed.
-                </div>
-              </div>
-              <Switch
-                checked={runInBackground}
-                onCheckedChange={setRunInBackground}
-              />
-            </div>
-          )}
+      {isWindows && (
+        <SettingsGroup title="Terminals">
+          <SettingsRow
+            title="Paste shortcut"
+            description="Combo used to paste into Git Bash and Windows terminals."
+          >
+            <Select
+              value={pasteCombo}
+              onValueChange={value =>
+                setPasteCombo(
+                  value as 'auto' | 'ctrl-v' | 'ctrl-shift-v' | 'shift-insert',
+                )
+              }
+            >
+              <SelectTrigger id="pasteCombo" className={CONTROL_WIDTH}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto (detect)</SelectItem>
+                <SelectItem value="ctrl-v">Ctrl + V (default)</SelectItem>
+                <SelectItem value="ctrl-shift-v">
+                  Ctrl + Shift + V (Git Bash)
+                </SelectItem>
+                <SelectItem value="shift-insert">
+                  Shift + Insert (terminals)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        </SettingsGroup>
+      )}
 
-          {windowContext?.window?.platform === 'win32' && (
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium text-foreground">
-                  Paste shortcut for terminals
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Choisis le combo utilisé pour coller dans Git Bash / terminaux Windows.
-                </div>
-              </div>
-              <div className="w-44">
-                <Label className="sr-only" htmlFor="pasteCombo">
-                  Paste shortcut
-                </Label>
-                <Select
-                  value={pasteCombo}
-                  onValueChange={value =>
-                    setPasteCombo(
-                      value as
-                        | 'auto'
-                        | 'ctrl-v'
-                        | 'ctrl-shift-v'
-                        | 'shift-insert',
-                    )
-                  }
-                >
-                  <SelectTrigger id="pasteCombo" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto (détection)</SelectItem>
-                    <SelectItem value="ctrl-v">Ctrl + V (par défaut)</SelectItem>
-                    <SelectItem value="ctrl-shift-v">
-                      Ctrl + Shift + V (Git Bash)
-                    </SelectItem>
-                    <SelectItem value="shift-insert">
-                      Shift + Insert (terminals)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                Show Ito bar at all times
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Show the Ito bar at all times.
-              </div>
-            </div>
-            <Switch
-              checked={showItoBarAlways}
-              onCheckedChange={setShowItoBarAlways}
-            />
-          </div>
-
-          {windowContext?.window?.platform === 'darwin' && (
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">
-                  Show app in dock
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Show the Ito app in the dock for quick access.
-                </div>
-              </div>
-              <Switch
-                checked={showAppInDock}
-                onCheckedChange={setShowAppInDock}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+      <SettingsGroup title="Privacy">
+        <SettingsRow
+          title="Share analytics"
+          description="Share anonymous usage data to help us improve Ito."
+        >
+          <Switch
+            checked={shareAnalytics}
+            onCheckedChange={setShareAnalytics}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+    </>
   )
 }

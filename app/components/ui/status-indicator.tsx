@@ -44,15 +44,15 @@ export function StatusIndicator({
           : 'translate-y-0 opacity-100 animate-slide-up'
       }`}
     >
-      <div className="px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 bg-black text-white">
+      <div className="px-4 py-3 rounded-xl flex items-center gap-2 border border-border bg-[var(--surface-2)] text-foreground shadow-[var(--elev-3)]">
         {status === 'success' ? (
           <>
-            <Check className="w-4 h-4 text-green-400" />
+            <Check className="w-4 h-4 text-foreground" />
             <span className="font-medium">{successMessage}</span>
           </>
         ) : (
           <>
-            <X className="w-4 h-4 text-red-400" />
+            <X className="w-4 h-4 text-[var(--destructive)]" />
             <span className="font-medium">{errorMessage}</span>
           </>
         )}

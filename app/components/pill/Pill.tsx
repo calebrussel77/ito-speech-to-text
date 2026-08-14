@@ -8,7 +8,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip'
 import { X, StopSquare } from '@mynaui/icons-react'
 import { AudioBars } from './contents/AudioBars'
 import { PreviewAudioBars } from './contents/PreviewAudioBars'
-import { LoadingAnimation } from './contents/LoadingAnimation'
+import { ProcessingBars } from './contents/ProcessingBars'
 import { useAudioStore } from '@/app/store/useAudioStore'
 import { analytics, ANALYTICS_EVENTS } from '../analytics'
 import { IPC_EVENTS } from '@/lib/types/ipc'
@@ -20,35 +20,50 @@ import type {
 import { ItoMode } from '@/app/generated/ito_pb'
 import { playInteractionSoundPayload } from '@/app/utils/interactionSoundPlayer'
 
-// Premium Dark Theme Colors (matching globals.css Refined Obsidian palette)
+/**
+ * Palette de la pill.
+ *
+ * ATTENTION — la fenêtre de la pill ne charge PAS `app.css` (cf. renderer.tsx :
+ * l'import est sauté pour la route `#/pill`, pour ne pas hériter des styles de
+ * `body`). Les variables CSS de globals.css n'y existent donc pas, et ces
+ * valeurs doivent être écrites en dur. Elles sont les équivalents sRGB exacts
+ * des tokens ; globals.css reste la source de vérité, ceci en est le miroir.
+ */
 const THEME = {
-  // Base colors
   background: {
-    primary: 'hsl(225, 15%, 8%)',
-    elevated: 'hsl(225, 15%, 10%)',
-    hover: 'hsl(225, 12%, 16%)',
-    glass: 'hsla(225, 15%, 12%, 0.85)',
+    primary: 'rgba(19, 18, 17, 0.92)', // --surface   #131211
+    elevated: 'rgba(26, 25, 24, 0.92)', // --surface-2 #1A1918
+    hover: 'rgba(34, 33, 31, 0.92)', // --surface-3 #22211F
+    glass: 'rgba(10, 10, 10, 0.82)', // --background #0A0A0A
   },
   border: {
-    subtle: 'hsla(210, 20%, 96%, 0.08)',
-    hover: 'hsla(210, 20%, 96%, 0.15)',
-    active: 'hsla(263, 70%, 55%, 0.4)',
-    recording: 'hsla(0, 72%, 51%, 0.5)',
+    subtle: 'rgba(251, 250, 249, 0.08)',
+    hover: 'rgba(251, 250, 249, 0.16)',
+    // Le violet d'origine (hsla(263 70% 55%)) n'appartenait à aucune palette
+    // de l'app : l'état « traitement » se lit désormais au contraste seul.
+    processing: 'rgba(251, 250, 249, 0.22)',
+    // L'enregistrement se signale par une bordure blanche franche, deux fois
+    // plus lumineuse que l'état de repos. Aucune teinte n'est en jeu.
+    recording: 'rgba(251, 250, 249, 0.34)',
+    // Mode Intelligent : même langage, poussé d'un cran — c'est la seule
+    // différence entre les deux modes depuis le retrait du vermillon.
+    recordingIntelligent: 'rgba(251, 250, 249, 0.6)',
   },
   glow: {
-    idle: '0 2px 8px hsla(0, 0%, 0%, 0.35)',
-    hover: '0 3px 10px hsla(0, 0%, 0%, 0.4)',
-    recording: '0 3px 12px hsla(0, 0%, 0%, 0.45)',
-    processing: '0 3px 12px hsla(0, 0%, 0%, 0.45)',
+    idle: '0 2px 8px rgba(0, 0, 0, 0.5)',
+    hover: '0 3px 10px rgba(0, 0, 0, 0.55)',
+    recording:
+      '0 3px 14px rgba(0, 0, 0, 0.6), 0 0 20px -8px rgba(251, 250, 249, 0.35)',
+    processing: '0 3px 12px rgba(0, 0, 0, 0.55)',
   },
   accent: {
-    violet: 'hsl(263, 70%, 55%)',
-    amber: 'hsl(38, 95%, 55%)',
-    red: 'hsl(0, 72%, 51%)',
-    foreground: 'hsl(210, 20%, 96%)',
+    danger: '#D23855', // --destructive
+    foreground: '#FBFAF9', // --foreground
+    muted: '#A3A19F', // --muted-foreground
   },
 }
 
+// Les @font-face viennent de styles/pill.css, chargé par renderer.tsx.
 const globalStyles = `
   html, body, #app {
     height: 100%;
@@ -64,14 +79,7 @@ const globalStyles = `
 
     pointer-events: none;
 
-    font-family:
-      'Inter',
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      Roboto,
-      sans-serif;
+    font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
   @keyframes subtleBreathe {
@@ -86,17 +94,14 @@ const globalStyles = `
 
 const BAR_UPDATE_INTERVAL = 64
 
-// Premium color mapping for different recording modes
-const getAudioBarColor = (mode: ItoMode | undefined): string => {
-  switch (mode) {
-    case ItoMode.TRANSCRIBE:
-      return THEME.accent.foreground
-    case ItoMode.EDIT:
-      return THEME.accent.amber
-    default:
-      return THEME.accent.foreground
-  }
-}
+/**
+ * Les barres sont blanches, quel que soit le mode : le blanc est la seule
+ * couleur primaire de l'app. La distinction entre dictée simple et Mode
+ * Intelligent passe par la bordure de la pill (cf. THEME.border), pas par une
+ * teinte.
+ */
+const getAudioBarColor = (_mode: ItoMode | undefined): string =>
+  THEME.accent.foreground
 
 const Pill = () => {
   // Get initial values from store using separate selectors to avoid infinite re-renders
@@ -263,23 +268,31 @@ const Pill = () => {
   let boxShadow = THEME.glow.idle
   let animationName = 'none'
 
+  // Le Mode Intelligent se distingue par une bordure plus lumineuse, pas par
+  // une teinte : c'est le seul écart entre les deux modes depuis le retrait du
+  // vermillon.
+  const recordingBorder =
+    recordingMode === ItoMode.EDIT
+      ? THEME.border.recordingIntelligent
+      : THEME.border.recording
+
   if (isManualRecording) {
     currentWidth = manualRecordingWidth
     currentHeight = manualRecordingHeight
     backgroundColor = THEME.background.primary
-    borderColor = THEME.border.hover
+    borderColor = recordingBorder
     boxShadow = THEME.glow.recording
   } else if (anyRecording) {
     currentWidth = recordingWidth
     currentHeight = recordingHeight
     backgroundColor = THEME.background.primary
-    borderColor = THEME.border.hover
+    borderColor = recordingBorder
     boxShadow = THEME.glow.recording
   } else if (isProcessing) {
     currentWidth = processingWidth
     currentHeight = processingHeight
     backgroundColor = THEME.background.primary
-    borderColor = THEME.border.active
+    borderColor = THEME.border.processing
     boxShadow = THEME.glow.processing
     animationName = 'subtleBreathe 2s ease-in-out infinite'
   } else if (isHovered) {
@@ -393,8 +406,8 @@ const Pill = () => {
 
   // Premium button style for action buttons
   const actionButtonStyle: React.CSSProperties = {
-    background: 'hsla(210, 20%, 96%, 0.08)',
-    border: '1px solid hsla(210, 20%, 96%, 0.12)',
+    background: 'rgba(251, 250, 249, 0.08)',
+    border: '1px solid rgba(251, 250, 249, 0.14)',
     borderRadius: '8px',
     cursor: 'pointer',
     display: 'flex',
@@ -425,12 +438,14 @@ const Pill = () => {
                 onClick={handleCancel}
                 style={actionButtonStyle}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = 'hsla(210, 20%, 96%, 0.12)'
-                  e.currentTarget.style.borderColor = 'hsla(210, 20%, 96%, 0.2)'
+                  e.currentTarget.style.background = 'rgba(251, 250, 249, 0.16)'
+                  e.currentTarget.style.borderColor =
+                    'rgba(251, 250, 249, 0.28)'
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.background = 'hsla(210, 20%, 96%, 0.06)'
-                  e.currentTarget.style.borderColor = 'hsla(210, 20%, 96%, 0.1)'
+                  e.currentTarget.style.background = 'rgba(251, 250, 249, 0.08)'
+                  e.currentTarget.style.borderColor =
+                    'rgba(251, 250, 249, 0.14)'
                 }}
               >
                 <X
@@ -470,19 +485,23 @@ const Pill = () => {
                 onClick={handleStop}
                 style={{
                   ...actionButtonStyle,
-                  background: 'hsla(0, 72%, 51%, 0.15)',
-                  borderColor: 'hsla(0, 72%, 51%, 0.3)',
+                  background: 'rgba(210, 56, 85, 0.14)',
+                  borderColor: 'rgba(210, 56, 85, 0.38)',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = 'hsla(0, 72%, 51%, 0.25)'
-                  e.currentTarget.style.borderColor = 'hsla(0, 72%, 51%, 0.5)'
+                  e.currentTarget.style.background = 'rgba(210, 56, 85, 0.24)'
+                  e.currentTarget.style.borderColor = 'rgba(210, 56, 85, 0.6)'
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.background = 'hsla(0, 72%, 51%, 0.15)'
-                  e.currentTarget.style.borderColor = 'hsla(0, 72%, 51%, 0.3)'
+                  e.currentTarget.style.background = 'rgba(210, 56, 85, 0.14)'
+                  e.currentTarget.style.borderColor = 'rgba(210, 56, 85, 0.38)'
                 }}
               >
-                <StopSquare width={12} height={12} color={THEME.accent.red} />
+                <StopSquare
+                  width={12}
+                  height={12}
+                  color={THEME.accent.danger}
+                />
               </button>
             </TooltipTrigger>
             <TooltipContent
@@ -516,7 +535,7 @@ const Pill = () => {
     }
 
     if (isProcessing) {
-      return <LoadingAnimation color={getAudioBarColor(recordingMode)} />
+      return <ProcessingBars color={getAudioBarColor(recordingMode)} />
     }
 
     if (isHovered) {

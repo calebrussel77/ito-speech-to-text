@@ -4,7 +4,7 @@ import { useDictionaryStore } from '../../../../store/useDictionaryStore'
 import { useOnboardingStore } from '../../../../store/useOnboardingStore'
 import { Button } from '../../../ui/button'
 import { Input } from '../../../ui/input'
-import { Label } from '../../../ui/label'
+import { SettingsGroup, SettingsRow, CONTROL_WIDTH } from '../../../ui/settings'
 import {
   Dialog,
   DialogContent,
@@ -80,45 +80,39 @@ export default function AccountSettingsContent() {
   }
 
   return (
-    <div className="h-full justify-between">
-      <div className="space-y-6">
-        {/* First name */}
-        <div className="flex items-center justify-between">
-          <Label htmlFor="name" className="text-sm font-medium">
-            Name
-          </Label>
+    <div>
+      <SettingsGroup>
+        <SettingsRow title="Name" description="How Ito addresses you.">
           <Input
             id="name"
             type="text"
-            value={user?.name}
+            value={user?.name ?? ''}
             onChange={e => setName(e.target.value)}
-            className="w-80"
+            className={CONTROL_WIDTH}
           />
-        </div>
+        </SettingsRow>
 
-        {/* Email */}
-        <div className="flex items-center justify-between py-3 my-1">
-          <Label className="text-sm font-medium">Email</Label>
-          <div className="w-80 text-sm text-muted-foreground px-4">
-            {user?.email}
+        {/* L'e-mail vient du fournisseur d'identité : lisible, pas modifiable.
+            Il s'affichait dans un div nu, donc invisible quand la valeur était
+            vide — il a maintenant le même gabarit qu'un champ désactivé. */}
+        <SettingsRow title="Email" description="Tied to your sign-in provider.">
+          <div
+            className={`${CONTROL_WIDTH} truncate rounded-lg border border-border bg-[var(--surface)] px-2.5 py-1 text-right text-xs text-[var(--muted-foreground)]`}
+            title={user?.email ?? undefined}
+          >
+            {user?.email || '—'}
           </div>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsGroup>
 
-      {/* Action buttons */}
-      <div className="flex pt-8 w-full justify-center">
-        <Button variant="secondary" size="lg" onClick={handleSignOut}>
-          Sign out
-        </Button>
-      </div>
-      <div className="flex pt-12 w-full justify-center">
-        <Button
-          variant="ghost"
-          size="lg"
-          onClick={() => setShowDeleteDialog(true)}
-          className="text-destructive hover:text-destructive/80"
-        >
+      {/* Actions alignées à droite comme tous les autres contrôles — elles
+          étaient centrées, seules de tout l'écran à l'être. */}
+      <div className="mt-5 flex items-center justify-end gap-2 border-t border-border/70 pt-4">
+        <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
           Delete account
+        </Button>
+        <Button variant="outline" onClick={handleSignOut}>
+          Sign out
         </Button>
       </div>
 
