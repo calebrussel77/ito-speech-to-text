@@ -51,6 +51,10 @@ export interface SettingsStore {
   microphoneName: string
   isShortcutGloballyEnabled: boolean
   keyboardShortcuts: KeyboardShortcutConfig[]
+  /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
+  cycleModeShortcut: KeyName[]
+  /** Id du mode utilisé quand aucun raccourci dédié ne l'a court-circuité. */
+  activeModeId?: string
   firstName: string
   lastName: string
   email: string
@@ -168,6 +172,7 @@ export const defaultValues: AppStore = {
         modeId: 'intelligent',
       },
     ],
+    cycleModeShortcut: ['control-left', 'shift-left', 'm'] as KeyName[],
     firstName: '',
     lastName: '',
     email: '',

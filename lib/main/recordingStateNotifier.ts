@@ -4,6 +4,7 @@ import {
   RecordingStatePayload,
   ProcessingStatePayload,
   PendingDictationsPayload,
+  ActiveModePayload,
 } from '../types/ipc'
 
 /**
@@ -20,6 +21,19 @@ export class RecordingStateNotifier {
     })
     this.sendToWindows(IPC_EVENTS.RECORDING_STATE_UPDATE, {
       isRecording: true,
+      modeId: mode.id,
+      modeName: mode.name,
+      modeIcon: mode.icon,
+    })
+  }
+
+  public notifyActiveModeChanged(mode: {
+    id: string
+    name: string
+    icon: string
+  }) {
+    console.log(`[RecordingStateNotifier] Active mode: ${mode.name}`)
+    this.sendToWindows(IPC_EVENTS.ACTIVE_MODE_UPDATE, {
       modeId: mode.id,
       modeName: mode.name,
       modeIcon: mode.icon,
@@ -56,7 +70,8 @@ export class RecordingStateNotifier {
     payload:
       | RecordingStatePayload
       | ProcessingStatePayload
-      | PendingDictationsPayload,
+      | PendingDictationsPayload
+      | ActiveModePayload,
   ) {
     // Send to pill window
     getPillWindow()?.webContents.send(event, payload)

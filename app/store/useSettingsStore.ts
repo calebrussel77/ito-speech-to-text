@@ -32,6 +32,9 @@ interface SettingsState {
   microphoneName: string
   theme: 'light' | 'dark' | 'system'
   keyboardShortcuts: KeyboardShortcutConfig[]
+  /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
+  cycleModeShortcut: KeyName[]
+  setCycleModeShortcut: (keys: KeyName[]) => void
   setShareAnalytics: (share: boolean) => void
   setLaunchAtLogin: (launch: boolean) => void
   setShowItoBarAlways: (show: boolean) => void
@@ -82,6 +85,11 @@ const getInitialState = () => {
         modeId: 'voice-to-text',
         id: crypto.randomUUID(),
       },
+    ],
+    cycleModeShortcut: storedSettings?.cycleModeShortcut ?? [
+      'control-left',
+      'shift-left',
+      'm',
     ],
     firstName: storedSettings?.firstName ?? '',
     lastName: storedSettings?.lastName ?? '',
@@ -205,6 +213,13 @@ export const useSettingsStore = create<SettingsState>(set => {
       syncToStore(partialState)
     },
     setTheme: createSetter('theme', 'ui'),
+    setCycleModeShortcut: (keys: KeyName[]) => {
+      set(() => {
+        const partialState = { cycleModeShortcut: normalizeChord(keys) }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
     createKeyboardShortcut: (modeId: string): ShortcutResult => {
       const currentShortcuts = useSettingsStore.getState().keyboardShortcuts
 

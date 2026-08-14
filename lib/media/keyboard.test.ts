@@ -54,6 +54,35 @@ const mockMainStore = {
 }
 mock.module('../main/store', () => ({
   default: mockMainStore,
+  store: mockMainStore,
+  getCurrentUserId: () => 'self-hosted',
+  getAdvancedSettings: () => ({}),
+}))
+
+mock.module('../main/modes/activeMode', () => ({
+  cycleActiveMode: mock(async () => ({
+    id: 'intelligent',
+    name: 'Intelligent',
+    icon: 'Sparkles',
+  })),
+  resolveActiveMode: async () => ({
+    id: 'voice-to-text',
+    name: 'Voice to text',
+    icon: 'Microphone',
+  }),
+  resolveMode: async () => ({
+    id: 'voice-to-text',
+    name: 'Voice to text',
+    icon: 'Microphone',
+  }),
+}))
+
+mock.module('../main/recordingStateNotifier', () => ({
+  recordingStateNotifier: {
+    notifyActiveModeChanged: mock(() => {}),
+    notifyRecordingStarted: mock(() => {}),
+    notifyRecordingStopped: mock(() => {}),
+  },
 }))
 
 mock.module('../constants/store-keys', () => ({

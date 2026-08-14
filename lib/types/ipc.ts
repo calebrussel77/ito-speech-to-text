@@ -9,6 +9,7 @@ export const IPC_EVENTS = {
   ONBOARDING_UPDATE: 'onboarding-update',
   USER_AUTH_UPDATE: 'user-auth-update',
   PENDING_DICTATIONS_UPDATE: 'pending-dictations-update',
+  ACTIVE_MODE_UPDATE: 'active-mode-update',
 } as const
 
 // IPC Payload Types
@@ -17,6 +18,12 @@ export interface RecordingStatePayload {
   modeId?: string
   modeName?: string
   modeIcon?: string
+}
+
+export interface ActiveModePayload {
+  modeId: string
+  modeName: string
+  modeIcon: string
 }
 
 export interface ProcessingStatePayload {

@@ -7,6 +7,7 @@ import {
 } from '../main/modes/activeMode'
 import { findPreset, MODE_PRESETS } from '../constants/modePresets'
 import { getCurrentUserId } from '../main/store'
+import { recordingStateNotifier } from '../main/recordingStateNotifier'
 import type { Mode } from '../main/sqlite/models'
 
 /**
@@ -116,11 +117,19 @@ export function registerModeIpc() {
     return copy
   })
 
-  ipcMain.handle('modes:set-active', (_e, id: string) => setActiveModeId(id))
+  // Sans cette notification, la pill garderait l'ancien mode après un clic
+  // dans la page Modes.
+  ipcMain.handle('modes:set-active', async (_e, id: string) => {
+    setActiveModeId(id)
+    const mode = await ModesTable.findById(id)
+    if (mode) recordingStateNotifier.notifyActiveModeChanged(mode)
+  })
   ipcMain.handle('modes:get-active', () => getActiveModeId())
-  ipcMain.handle('modes:cycle-active', (_e, direction: 1 | -1 = 1) =>
-    cycleActiveMode(direction),
-  )
+  ipcMain.handle('modes:cycle-active', async (_e, direction: 1 | -1 = 1) => {
+    const mode = await cycleActiveMode(direction)
+    recordingStateNotifier.notifyActiveModeChanged(mode)
+    return mode
+  })
 
   ipcMain.handle('modes:examples:get', (_e, modeId: string) =>
     ModeExamplesTable.findByMode(modeId),

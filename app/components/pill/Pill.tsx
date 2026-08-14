@@ -117,6 +117,7 @@ const Pill = () => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [recordingModeName, setRecordingModeName] = useState<string>('')
+  const [activeModeName, setActiveModeName] = useState('')
   const isManualRecordingRef = useRef(false)
   const [showItoBarAlways, setShowItoBarAlways] = useState(
     initialShowItoBarAlways,
@@ -130,6 +131,17 @@ const Pill = () => {
   // Fixed size array of volume values to be used for the audio bars, size is 21
   const [volumeHistory, setVolumeHistory] = useState<number[]>([])
   const [lastVolumeUpdate, setLastVolumeUpdate] = useState(0)
+
+  useEffect(() => {
+    void window.api.modes.getActive().then(async id => {
+      const modes = await window.api.modes.getAll()
+      setActiveModeName(modes.find(mode => mode.id === id)?.name ?? '')
+    })
+
+    return window.api.on('active-mode-update', (payload: any) =>
+      setActiveModeName(payload.modeName ?? ''),
+    )
+  }, [])
 
   useEffect(() => {
     // Listen for recording state changes from the main process
@@ -267,7 +279,8 @@ const Pill = () => {
   // Un libellé lisible dit ce qu'une nuance de bordure ne pouvait que
   // suggérer : la bordure d'enregistrement est donc uniforme.
   const recordingBorder = THEME.border.recording
-  const modeLabel = recordingModeName || null
+  // Pendant une dictée, le mode qui l'a démarrée ; au repos, le mode actif.
+  const modeLabel = recordingModeName || activeModeName || null
 
   if (isManualRecording) {
     currentWidth = manualRecordingWidth

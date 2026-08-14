@@ -8,6 +8,7 @@ import {
   SettingsRow,
   SettingsNote,
 } from '@/app/components/ui/settings'
+import KeyboardShortcutEditor from '@/app/components/ui/keyboard-shortcut-editor'
 import type { KeyName } from '@/lib/types/keyboard'
 
 /**
@@ -17,7 +18,8 @@ import type { KeyName } from '@/lib/types/keyboard'
  * — « mon raccourci ne fait plus rien » — est le plus pénible à diagnostiquer.
  */
 export default function KeyboardSettingsContent() {
-  const { keyboardShortcuts } = useSettingsStore()
+  const { keyboardShortcuts, cycleModeShortcut, setCycleModeShortcut } =
+    useSettingsStore()
   const { modes, loaded, load } = useModesStore()
   const platform = usePlatform()
 
@@ -46,6 +48,26 @@ export default function KeyboardSettingsContent() {
 
   return (
     <div className="px-1.5">
+      <SettingsGroup title="Global">
+        <SettingsRow
+          title="Change the active mode"
+          description="Walks through the modes without opening this window. It never starts a dictation."
+          align="start"
+        >
+          <KeyboardShortcutEditor
+            hideTitle
+            keySize={40}
+            minHeight={48}
+            shortcut={{
+              id: 'cycle-mode',
+              keys: cycleModeShortcut,
+              modeId: '',
+            }}
+            onShortcutChange={(_id, keys) => setCycleModeShortcut(keys)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
       <SettingsGroup
         title="Mode shortcuts"
         description="Edit these in Modes. A mode without a shortcut is reached through the active mode."
