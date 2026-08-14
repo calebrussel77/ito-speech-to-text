@@ -2,7 +2,7 @@ import { LocalTranscriptionError } from './LocalTranscriptionService'
 import type { PinnedProvider } from '../../constants/modelCatalog'
 
 export type ChatMessage = {
-  role: 'system' | 'user'
+  role: 'system' | 'user' | 'assistant'
   content: string
 }
 

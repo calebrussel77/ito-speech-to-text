@@ -2,34 +2,108 @@ import type { ChatMessage } from '../transcription/OpenRouterChatService'
 import type { ContextData } from '../context/ContextGrabber'
 import type { Mode } from '../sqlite/models'
 import { LANGUAGE_NAMES } from '../../constants/modeLanguages'
-
-const FALLBACK_INSTRUCTIONS =
-  "Format the user's message. Fix grammar, spelling and punctuation. Output only the formatted text."
+import { ModeExamplesTable } from './ModeRepository'
 
 /**
- * Assemble le prompt d'un mode.
+ * Fabrique la conversation envoyée au modèle texte.
  *
- * La dictée est le **message utilisateur** — c'est l'hypothèse que font les
- * instructions elles-mêmes, qui parlent de « the user message ». Le lot 2 y
- * ajoute les exemples en faux tours de conversation et les contextes.
+ * Trois choix de forme, tous délibérés :
+ *
+ * - **Les exemples sont de vrais tours de conversation**, pas une liste dans
+ *   le prompt système. C'est la forme que les API de chat comprennent le
+ *   mieux, et elle montre au modèle ce qu'il doit *produire* plutôt que de le
+ *   lui décrire.
+ * - **La dictée est le dernier message utilisateur.** Les instructions écrites
+ *   par l'utilisateur parlent de « the user message » : la dictée doit donc en
+ *   être un, sans quoi les instructions désignent quelque chose qui n'existe
+ *   pas.
+ * - **Les contextes sont balisés en XML** dans ce même message, avant la
+ *   dictée. Un modèle distingue mieux « ce que je dois traiter » de « ce qui
+ *   m'aide à le traiter » avec des balises qu'avec des tirets.
  */
+
+const FALLBACK_INSTRUCTIONS =
+  "You are a text formatting AI. Format the user's message: fix grammar, spelling and punctuation, apply any spoken self-correction, and output only the formatted text — no commentary, no answer."
+
+const SAME_LANGUAGE_CLAUSE =
+  'Do not translate. Write the result in the same language as the user message.'
+
+/** Un bloc de contexte, ou rien du tout quand il n'y a rien à dire. */
+function block(tag: string, body: string): string {
+  const trimmed = body.trim()
+  return trimmed ? `<${tag}>\n${trimmed}\n</${tag}>\n\n` : ''
+}
+
+function buildSystemMessage(mode: Mode): string {
+  const instructions = mode.instructions.trim() || FALLBACK_INSTRUCTIONS
+
+  if (mode.language === 'auto') {
+    return `${instructions}\n\n${SAME_LANGUAGE_CLAUSE}`
+  }
+
+  const languageName =
+    LANGUAGE_NAMES[mode.language as keyof typeof LANGUAGE_NAMES]
+  return languageName
+    ? `${instructions}\n\nAlways write the result in ${languageName}, whatever language the user message is in.`
+    : `${instructions}\n\n${SAME_LANGUAGE_CLAUSE}`
+}
+
+function buildUserMessage(transcript: string, mode: Mode, context: ContextData) {
+  let content = ''
+
+  if (mode.contextApplication) {
+    content += block(
+      'application_context',
+      [
+        context.appName && `Application: ${context.appName}`,
+        context.windowTitle && `Window: ${context.windowTitle}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+  }
+
+  if (mode.contextClipboard) {
+    content += block('copied_text', context.clipboardText)
+  }
+
+  if (mode.contextSelection) {
+    content += block('selected_text', context.contextText)
+  }
+
+  return content + transcript
+}
+
 export async function buildMessages(
   transcript: string,
   mode: Mode,
-  _context: ContextData,
+  context: ContextData,
 ): Promise<ChatMessage[]> {
-  const instructions = mode.instructions.trim() || FALLBACK_INSTRUCTIONS
-  const languageName =
-    mode.language === 'auto'
-      ? null
-      : LANGUAGE_NAMES[mode.language as keyof typeof LANGUAGE_NAMES]
-
-  const system = languageName
-    ? `${instructions}\n\nAlways write the result in ${languageName}.`
-    : instructions
-
-  return [
-    { role: 'system', content: system },
-    { role: 'user', content: transcript },
+  const messages: ChatMessage[] = [
+    { role: 'system', content: buildSystemMessage(mode) },
   ]
+
+  let examples: { spokenInput: string; aiOutput: string }[] = []
+  try {
+    examples = await ModeExamplesTable.findByMode(mode.id)
+  } catch (error) {
+    // Un exemple illisible ne doit pas coûter la dictée.
+    console.warn('[promptBuilder] Could not read the mode examples:', error)
+  }
+
+  for (const example of examples) {
+    const spoken = example.spokenInput?.trim()
+    const output = example.aiOutput?.trim()
+    // Une moitié manquante apprendrait au modèle à répondre par du vide.
+    if (!spoken || !output) continue
+    messages.push({ role: 'user', content: spoken })
+    messages.push({ role: 'assistant', content: output })
+  }
+
+  messages.push({
+    role: 'user',
+    content: buildUserMessage(transcript, mode, context),
+  })
+
+  return messages
 }

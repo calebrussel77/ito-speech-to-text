@@ -13,7 +13,7 @@ export type TranscriptionOptions = {
 
 export type ChatCompletionOptions = {
   model: string
-  messages: { role: 'system' | 'user'; content: string }[]
+  messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
   temperature?: number
   maxTokens?: number
 }
