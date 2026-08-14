@@ -16,10 +16,6 @@ import {
 } from '@/app/components/ui/select'
 import ApiKeySettings from './ApiKeySettings'
 import {
-  OPENROUTER_TRANSCRIPTION_MODELS,
-  TranscriptionEngineMode,
-} from '@/lib/constants/transcription'
-import {
   Card,
   CardContent,
   CardDescription,
@@ -40,27 +36,13 @@ type LlmSettingConfig = {
   options?: string[]
 }
 
-const modelProviderLengthLimit = 30
 const floatLengthLimit = 4
 const asrPromptLengthLimit = 100
 const llmPromptLengthLimit = 3500
 
+// Model and provider choices moved to the Models section, which picks them
+// from the curated catalogue instead of accepting free-form ids.
 const llmSettingsConfig: LlmSettingConfig[] = [
-  {
-    name: 'asrProvider',
-    label: 'ASR Provider',
-    placeholder: 'Enter ASR provider name',
-    description: '',
-    maxLength: modelProviderLengthLimit,
-    readOnly: true,
-  },
-  {
-    name: 'asrModel',
-    label: 'ASR Model',
-    placeholder: 'Enter ASR model name',
-    description: 'The ASR model used for speech-to-text transcription',
-    maxLength: modelProviderLengthLimit,
-  },
   {
     name: 'asrLanguage',
     label: 'ASR Language',
@@ -77,22 +59,6 @@ const llmSettingsConfig: LlmSettingConfig[] = [
       'A custom prompt to guide the ASR transcription process for better accuracy. Dictionary will be appended. (Leave empty for default)',
     maxLength: asrPromptLengthLimit,
     resize: true,
-  },
-  {
-    name: 'llmProvider',
-    label: 'LLM Provider',
-    placeholder: 'Select LLM provider',
-    description: 'LLM provider for text generation tasks',
-    maxLength: modelProviderLengthLimit,
-    isSelect: true,
-    options: ['groq', 'cerebras'],
-  },
-  {
-    name: 'llmModel',
-    label: 'LLM Model',
-    placeholder: 'Enter LLM model name',
-    description: 'The LLM model used for text generation tasks',
-    maxLength: modelProviderLengthLimit,
   },
   {
     name: 'llmTemperature',
@@ -229,27 +195,14 @@ function SettingInput({ config, value, onChange }: SettingInputProps) {
   )
 }
 
-const ENGINE_MODE_OPTIONS: {
-  value: TranscriptionEngineMode
-  label: string
-}[] = [
-  { value: 'auto', label: 'Auto (recommended)' },
-  { value: 'groq', label: 'Groq only' },
-  { value: 'openrouter', label: 'OpenRouter only' },
-]
-
 export default function AdvancedSettingsContent() {
   const {
     llm,
     grammarServiceEnabled,
     macosAccessibilityContextEnabled,
-    transcriptionEngineMode,
-    openRouterModel,
     setLlmSettings,
     setGrammarServiceEnabled,
     setMacosAccessibilityContextEnabled,
-    setTranscriptionEngineMode,
-    setOpenRouterModel,
   } = useAdvancedSettingsStore()
   const windowContext = useWindowContext()
   const debounceRef = useRef<NodeJS.Timeout>(null)
@@ -333,66 +286,6 @@ export default function AdvancedSettingsContent() {
           </CardHeader>
 
           <CardContent className="space-y-4 pb-8">
-            <div>
-              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
-                Transcription Engine
-              </h3>
-              <div className="mb-6">
-                <Label className="block text-xs font-medium text-foreground mb-1">
-                  Engine
-                </Label>
-                <Select
-                  value={transcriptionEngineMode}
-                  onValueChange={value =>
-                    setTranscriptionEngineMode(value as TranscriptionEngineMode)
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select engine" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ENGINE_MODE_OPTIONS.map(option => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
-                  Auto sends recordings of 60 seconds or more to the precise
-                  OpenRouter engine and keeps shorter ones on Groq (instant,
-                  free). If the OpenRouter call fails, the dictation falls back
-                  to Groq automatically.
-                </p>
-              </div>
-              <div className="mb-6">
-                <Label className="block text-xs font-medium text-foreground mb-1">
-                  Long-dictation model (OpenRouter)
-                </Label>
-                <Select
-                  value={openRouterModel}
-                  onValueChange={setOpenRouterModel}
-                  disabled={transcriptionEngineMode === 'groq'}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OPENROUTER_TRANSCRIPTION_MODELS.map(model => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
-                  gpt-transcribe is the accuracy pick; voxtral-mini-transcribe
-                  is faster and cheaper. Requires an OpenRouter API key (see API
-                  Configuration above).
-                </p>
-              </div>
-            </div>
-
             <div>
               <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
                 LLM Settings

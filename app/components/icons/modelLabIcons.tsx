@@ -31,7 +31,10 @@ export const MODEL_LAB_ICONS: Record<
   zai: ZaiIcon,
 }
 
-export const PROVIDER_ICONS = {
+export const PROVIDER_ICONS: Record<
+  'groq' | 'openrouter' | 'cerebras',
+  React.ComponentType<LogoProps>
+> = {
   groq: GroqIcon,
   openrouter: OpenRouterIcon,
   cerebras: CerebrasIcon,

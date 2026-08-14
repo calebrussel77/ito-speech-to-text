@@ -12,6 +12,11 @@ import {
   UNRECOVERABLE_CODES,
   LONG_DICTATION_THRESHOLD_MS,
 } from '../constants/transcription'
+import {
+  DEFAULT_LONG_VOICE_KEY,
+  DEFAULT_SHORT_VOICE_KEY,
+  resolveModel,
+} from '../constants/modelCatalog'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
@@ -163,8 +168,13 @@ export class ItoStreamController {
       )
     }
 
+    const shortModel = resolveModel(
+      advancedSettings.shortVoiceModelKey,
+      DEFAULT_SHORT_VOICE_KEY,
+    )
+
     const groqOptions: TranscriptionOptions = {
-      asrModel: advancedSettings.llm.asrModel,
+      asrModel: shortModel.slug,
       vocabulary: context.vocabularyWords,
       noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
       fileType: 'wav',
@@ -174,12 +184,14 @@ export class ItoStreamController {
 
     let transcript: string
     // Groq is the default attribution; overwritten when OpenRouter answers.
-    let asrEngine = advancedSettings.llm.asrModel || 'whisper-large-v3'
+    let asrEngine = shortModel.slug
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
         if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
-          const openRouterModel =
-            advancedSettings.openRouterModel || 'openai/gpt-transcribe'
+          const openRouterModel = resolveModel(
+            advancedSettings.longVoiceModelKey,
+            DEFAULT_LONG_VOICE_KEY,
+          ).slug
           try {
             const text = await openRouterTranscriptionService.transcribeAudio(
               wavAudio,
@@ -261,25 +273,23 @@ export class ItoStreamController {
     }
   }
 
-  // 'auto' routes recordings >= 60s to the precise OpenRouter engine; the
-  // forced modes override the duration. Without an OpenRouter key everything
+  // Recordings at or above the threshold go to the precise OpenRouter engine
+  // when the long-dictation toggle is on. Without an OpenRouter key everything
   // stays on Groq.
   private shouldUseOpenRouter(
     advancedSettings: ReturnType<typeof getAdvancedSettings>,
     durationMs: number,
   ): boolean {
-    const mode = advancedSettings.transcriptionEngineMode ?? 'auto'
-    const wantsOpenRouter =
-      mode === 'openrouter' ||
-      (mode === 'auto' && durationMs >= LONG_DICTATION_THRESHOLD_MS)
-    if (!wantsOpenRouter) return false
+    if (advancedSettings.longDictationEnabled === false) return false
+
+    const threshold =
+      advancedSettings.longDictationThresholdMs ?? LONG_DICTATION_THRESHOLD_MS
+    if (durationMs < threshold) return false
 
     if (!advancedSettings.openRouterApiKey?.trim()) {
-      if (mode === 'openrouter') {
-        console.warn(
-          '[ItoStreamController] OpenRouter mode selected but no API key configured, using Groq',
-        )
-      }
+      console.warn(
+        '[ItoStreamController] Long dictation but no OpenRouter API key configured, using Groq',
+      )
       return false
     }
     return true

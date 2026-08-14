@@ -1,10 +1,13 @@
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
+import { LONG_DICTATION_THRESHOLD_MS } from '../constants/transcription'
 import {
-  DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
-  TranscriptionEngineMode,
-} from '../constants/transcription'
+  DEFAULT_LONG_VOICE_KEY,
+  DEFAULT_SHORT_VOICE_KEY,
+  DEFAULT_TEXT_KEY,
+  findModelBySlug,
+} from '../constants/modelCatalog'
 import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
 import { ItoMode } from '@/app/generated/ito_pb.js'
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
@@ -88,13 +91,17 @@ export interface AdvancedSettings {
   grammarServiceEnabled: boolean
   macosAccessibilityContextEnabled: boolean
   groqApiKey?: string
-  // Engine routing: 'auto' sends recordings >= 60s to OpenRouter, the rest
-  // to Groq; 'groq'/'openrouter' force one engine for every dictation.
-  transcriptionEngineMode?: TranscriptionEngineMode
-  // OpenRouter model id for long dictations — a plain string setting so
-  // switching engines never requires a rebuild.
-  openRouterModel?: string
   openRouterApiKey?: string
+  // Catalogue keys (see lib/constants/modelCatalog.ts), never raw model
+  // slugs: the catalogue owns which provider serves a model and how it is
+  // routed, so those cannot drift out of sync with the stored choice.
+  shortVoiceModelKey?: string
+  longVoiceModelKey?: string
+  textModelKey?: string
+  // Route dictations at or above the threshold to the dedicated long-form
+  // engine. Off means Groq transcribes everything.
+  longDictationEnabled?: boolean
+  longDictationThresholdMs?: number
 }
 
 interface AppStore {
@@ -184,9 +191,12 @@ export const defaultValues: AppStore = {
       noSpeechThreshold: DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
     groqApiKey: '',
-    transcriptionEngineMode: 'auto',
-    openRouterModel: DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL,
     openRouterApiKey: '',
+    shortVoiceModelKey: DEFAULT_SHORT_VOICE_KEY,
+    longVoiceModelKey: DEFAULT_LONG_VOICE_KEY,
+    textModelKey: DEFAULT_TEXT_KEY,
+    longDictationEnabled: true,
+    longDictationThresholdMs: LONG_DICTATION_THRESHOLD_MS,
   },
   openMic: false,
   selectedAudioInput: null,
@@ -382,6 +392,45 @@ const migrations: Migration[] = [
         advanced.llm = { ...advanced.llm, llmModel: next }
         s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
       }
+    },
+  },
+  {
+    // Must run after the Groq shutdown migration above: it reads llmModel, and
+    // reading it before the dead ids were rewritten would drop the user onto
+    // the default instead of onto their model's replacement.
+    id: '2026-08-14-model-catalog-keys',
+    run: s => {
+      // Model choices move from raw slugs typed by hand to keys into the
+      // curated catalogue, and the three-way engine mode collapses to a
+      // toggle. Translate rather than reset: a stored slug that still exists
+      // in the catalogue keeps the user's choice.
+      const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
+
+      if (advanced.longDictationEnabled === undefined) {
+        // 'openrouter' forced the precise engine on every dictation. Mapping
+        // it to the toggle's on state keeps OpenRouter for long dictations and
+        // hands short ones back to Groq — faster and far cheaper, never worse.
+        advanced.longDictationEnabled =
+          advanced.transcriptionEngineMode !== 'groq'
+      }
+      advanced.longDictationThresholdMs ??= LONG_DICTATION_THRESHOLD_MS
+
+      advanced.shortVoiceModelKey ??=
+        findModelBySlug('voice', advanced.llm?.asrModel, 'groq')?.key ??
+        DEFAULT_SHORT_VOICE_KEY
+      advanced.longVoiceModelKey ??=
+        findModelBySlug('voice', advanced.openRouterModel, 'openrouter')?.key ??
+        DEFAULT_LONG_VOICE_KEY
+      // The local pipeline has always sent LLM calls to Groq, whatever
+      // llmProvider said, so Groq is the right side of the lookup for the
+      // models the catalogue lists twice.
+      advanced.textModelKey ??=
+        findModelBySlug('text', advanced.llm?.llmModel, 'groq')?.key ??
+        DEFAULT_TEXT_KEY
+
+      delete advanced.transcriptionEngineMode
+      delete advanced.openRouterModel
+      s.set(STORE_KEYS.ADVANCED_SETTINGS, advanced)
     },
   },
   {

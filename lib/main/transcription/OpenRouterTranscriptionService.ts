@@ -1,5 +1,8 @@
 import { LocalTranscriptionError } from './LocalTranscriptionService'
-import { DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL } from '../../constants/transcription'
+import {
+  DEFAULT_LONG_VOICE_KEY,
+  resolveModel,
+} from '../../constants/modelCatalog'
 
 export type OpenRouterTranscriptionOptions = {
   apiKey: string
@@ -29,7 +32,8 @@ function buildRequestBody(
   base64Audio: string,
   options: OpenRouterTranscriptionOptions,
 ): Record<string, unknown> {
-  const model = options.model || DEFAULT_OPENROUTER_TRANSCRIPTION_MODEL
+  const model =
+    options.model || resolveModel(undefined, DEFAULT_LONG_VOICE_KEY).slug
   const vocabulary = (options.vocabulary || []).slice(0, MAX_HINT_TERMS)
   const language = options.language?.trim() || 'fr'
   const contextPrompt = options.customPrompt?.trim() || DEFAULT_CONTEXT_PROMPT

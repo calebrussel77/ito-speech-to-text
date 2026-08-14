@@ -339,6 +339,25 @@ export function resolveModel(
   return findModel(key) ?? BY_KEY.get(fallbackKey)!
 }
 
+/**
+ * Reverse lookup, used once: translating settings that stored raw model slugs
+ * into catalogue keys. `provider` disambiguates the models we list twice, such
+ * as gpt-oss-120b served both by Groq directly and by Cerebras via OpenRouter.
+ */
+export function findModelBySlug(
+  kind: ModelKind,
+  slug: string | undefined,
+  provider?: CatalogProvider,
+): CatalogModel | undefined {
+  if (!slug) return undefined
+  return CATALOG.find(
+    model =>
+      model.kind === kind &&
+      model.slug === slug &&
+      (provider === undefined || model.provider === provider),
+  )
+}
+
 /** Short-dictation transcription always runs on Groq. */
 export const SHORT_VOICE_MODELS = VOICE_MODELS.filter(
   model => model.provider === 'groq',

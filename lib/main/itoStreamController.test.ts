@@ -304,13 +304,14 @@ describe('ItoStreamController (local)', () => {
     const withOpenRouter = (overrides: Record<string, unknown> = {}) =>
       mockGetAdvancedSettings.mockReturnValue({
         ...baseAdvancedSettings(),
-        transcriptionEngineMode: 'auto',
-        openRouterModel: 'openai/gpt-transcribe',
+        longDictationEnabled: true,
+        longDictationThresholdMs: 60_000,
+        longVoiceModelKey: 'gpt-transcribe',
         openRouterApiKey: 'sk-or-test',
         ...overrides,
       } as any)
 
-    test('auto mode routes long recordings to OpenRouter', async () => {
+    test('routes long recordings to OpenRouter', async () => {
       longAudio()
       withOpenRouter()
 
@@ -333,7 +334,7 @@ describe('ItoStreamController (local)', () => {
       expect(result.transcript).toBe('adjusted transcript')
     })
 
-    test('auto mode keeps short recordings on Groq', async () => {
+    test('keeps short recordings on Groq', async () => {
       withOpenRouter()
 
       const { ItoStreamController } = await import('./itoStreamController')
@@ -363,8 +364,15 @@ describe('ItoStreamController (local)', () => {
       expect(mockPendingDictationStore.delete).toHaveBeenCalled()
     })
 
-    test('forced openrouter mode routes even short recordings', async () => {
-      withOpenRouter({ transcriptionEngineMode: 'openrouter' })
+    test('a lowered threshold routes shorter recordings too', async () => {
+      // The default 5s fixture recording sits under the 60s default but above
+      // the shortest threshold users can pick.
+      mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
+        wavAudio: Buffer.from('wav'),
+        sampleRate: 16000,
+        durationMs: 40_000,
+      })
+      withOpenRouter({ longDictationThresholdMs: 30_000 })
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
@@ -377,9 +385,9 @@ describe('ItoStreamController (local)', () => {
       ).not.toHaveBeenCalled()
     })
 
-    test('forced groq mode never calls OpenRouter, even for long recordings', async () => {
+    test('the toggle off never calls OpenRouter, even for long recordings', async () => {
       longAudio()
-      withOpenRouter({ transcriptionEngineMode: 'groq' })
+      withOpenRouter({ longDictationEnabled: false })
 
       const { ItoStreamController } = await import('./itoStreamController')
       const controller = new ItoStreamController()
