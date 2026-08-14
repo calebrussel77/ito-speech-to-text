@@ -351,6 +351,48 @@ describe('InteractionManager', () => {
     })
   })
 
+  describe('Raw transcript', () => {
+    test('stores the raw transcript alongside the rewritten one', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'Reminders:\n- Milk\n- Cheese',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        5000,
+        {
+          engine: 'whisper-large-v3-turbo',
+          modeId: 'intelligent',
+          modeName: 'Intelligent',
+          rawTranscript: 'buy milk eggs no not eggs cheese',
+        },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.transcript).toBe('Reminders:\n- Milk\n- Cheese')
+      expect(row.asr_output.rawTranscript).toBe(
+        'buy milk eggs no not eggs cheese',
+      )
+    })
+
+    test('a mode that does not rewrite stores no raw transcript — it would be a duplicate', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'same text',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        5000,
+        { engine: 'whisper-large-v3-turbo', rawTranscript: 'same text' },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.rawTranscript).toBeNull()
+    })
+  })
+
   describe('Error Handling', () => {
     test('should handle database insertion errors gracefully', async () => {
       mockUpsert.mockRejectedValueOnce(new Error('Database error'))

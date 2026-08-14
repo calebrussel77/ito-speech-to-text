@@ -249,6 +249,7 @@ export class ItoSessionManager {
           fallback: result.asrFallback,
           modeId: result.modeId,
           modeName: result.modeName,
+          rawTranscript: result.rawTranscript,
         },
       )
       this.playInteractionCompletionSoundIfEnabled()

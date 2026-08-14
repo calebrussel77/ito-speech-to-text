@@ -44,6 +44,7 @@ export class InteractionManager {
       fallback?: AsrFallback
       modeId?: string
       modeName?: string
+      rawTranscript?: string
     },
   ) {
     if (!this.currentInteractionId) {
@@ -83,6 +84,15 @@ export class InteractionManager {
         modeId: asr?.modeId || null,
         // Figé : renommer un mode ne doit pas réécrire l'histoire.
         modeName: asr?.modeName || null,
+        // Vide quand il est identique au final : le stocker deux fois
+        // doublerait la base sans rien apprendre à personne. La comparaison se
+        // fait après trim — un simple espace de différence ferait apparaître
+        // « Show original » et « Add as example » sur une dictée que personne
+        // n'a réécrite.
+        rawTranscript:
+          asr?.rawTranscript && asr.rawTranscript.trim() !== transcript.trim()
+            ? asr.rawTranscript
+            : null,
       }
 
       // Generate a meaningful title from the transcript

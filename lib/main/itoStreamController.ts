@@ -86,6 +86,12 @@ export interface LocalTranscriptionResult {
   /** Le mode qui a produit ce transcript, figé pour l'historique. */
   modeId: string
   modeName: string
+  /**
+   * Ce que le moteur vocal a réellement rendu, après correction du
+   * dictionnaire mais avant toute réécriture par le mode. Moitié gauche
+   * d'une paire d'exemple, et onglet « Original » de l'historique.
+   */
+  rawTranscript: string
 }
 
 /**
@@ -315,6 +321,11 @@ export class ItoStreamController {
       context.dictionaryEntries,
     )
 
+    // Ce que le moteur vocal a réellement rendu. C'est la moitié gauche d'une
+    // paire d'exemple, et l'onglet « Original » de l'historique : sans elle,
+    // corriger un mode à partir de ses échecs est impossible.
+    const rawTranscript = transcript
+
     if (pendingPath) {
       pendingDictationStore.delete(pendingPath)
       this.notifyPendingCount()
@@ -342,6 +353,7 @@ export class ItoStreamController {
       asrFallback,
       modeId: mode.id,
       modeName: mode.name,
+      rawTranscript,
     }
   }
 
