@@ -4,6 +4,8 @@ import {
   FileText,
   CogFour,
   InfoCircle,
+  Sparkles,
+  Chip,
 } from '@mynaui/icons-react'
 import type { ReactNode } from 'react'
 import { ItoIcon } from '../icons/ItoIcon'
@@ -12,11 +14,17 @@ import { useAudioStore } from '@/app/store/useAudioStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { usePlatform } from '@/app/hooks/usePlatform'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import type { KeyName } from '@/lib/types/keyboard'
 
-type PageKey = 'home' | 'dictionary' | 'notes' | 'settings' | 'about'
+type PageKey =
+  | 'home'
+  | 'modes'
+  | 'models'
+  | 'dictionary'
+  | 'notes'
+  | 'settings'
+  | 'about'
 
 const NAV: {
   key: PageKey
@@ -24,6 +32,8 @@ const NAV: {
   icon: React.ComponentType<{ className?: string }>
 }[] = [
   { key: 'home', label: 'Home', icon: Home },
+  { key: 'modes', label: 'Modes', icon: Sparkles },
+  { key: 'models', label: 'Models', icon: Chip },
   { key: 'dictionary', label: 'Dictionary', icon: BookOpen },
   { key: 'notes', label: 'Notes', icon: FileText },
   { key: 'settings', label: 'Settings', icon: CogFour },
@@ -49,12 +59,12 @@ export default function HomeShell({
 }) {
   const { navExpanded } = useMainStore()
   const isRecording = useAudioStore(s => s.isRecording)
-  const { getItoModeShortcuts } = useSettingsStore()
+  const { keyboardShortcuts } = useSettingsStore()
   const platform = usePlatform()
   const groqApiKey = useAdvancedSettingsStore(s => s.groqApiKey)
 
   const keys: string[] = (
-    getItoModeShortcuts(ItoMode.TRANSCRIBE)?.[0]?.keys ?? []
+    keyboardShortcuts.find(s => s.modeId === 'voice-to-text')?.keys ?? []
   ).map((k: string) =>
     getKeyDisplay(k as KeyName, platform, {
       showDirectionalText: false,

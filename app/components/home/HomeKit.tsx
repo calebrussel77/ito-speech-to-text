@@ -7,6 +7,8 @@ import { PaidStatus } from '@/lib/main/sqlite/models'
 import { useEffect, useState, useRef } from 'react'
 import HomeShell from './HomeShell'
 import HomeContent from './contents/HomeContent'
+import ModesContent from './contents/ModesContent'
+import ModelsSettingsContent from './contents/settings/ModelsSettingsContent'
 import DictionaryContent from './contents/DictionaryContent'
 import NotesContent from './contents/NotesContent'
 import SettingsContent from './contents/SettingsContent'
@@ -137,6 +139,10 @@ export default function HomeKit() {
     switch (currentPage) {
       case 'home':
         return <HomeContent isStartingTrial={isStartingTrial} />
+      case 'modes':
+        return <ModesContent />
+      case 'models':
+        return <ModelsSettingsContent />
       case 'dictionary':
         return <DictionaryContent />
       case 'notes':
