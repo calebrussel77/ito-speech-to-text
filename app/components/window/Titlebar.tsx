@@ -2,7 +2,7 @@ import { useWindowContext } from './WindowContext'
 import React, { useState, useEffect } from 'react'
 import { OnboardingTitlebar } from './OnboardingTitlebar'
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
-import { UserCircle, PanelLeft, CogFour, Logout } from '@mynaui/icons-react'
+import { PanelLeft, CogFour, Logout } from '@mynaui/icons-react'
 import { useMainStore } from '@/app/store/useMainStore'
 import { useAuthStore } from '@/app/store/useAuthStore'
 import { useAuth } from '@/app/components/auth/useAuth'
@@ -162,15 +162,13 @@ export const Titlebar = () => {
               tabIndex={0}
               onClick={toggleUserDropdown}
             >
-              {user?.name ? (
-                <UserAvatar
-                  name={user.name}
-                  size={16}
-                  className="overflow-hidden rounded-full"
-                />
-              ) : (
-                <UserCircle style={{ width: 15, height: 15 }} />
-              )}
+              <UserAvatar
+                name={user?.name}
+                email={user?.email}
+                id={user?.id}
+                size={16}
+                className="overflow-hidden rounded-full"
+              />
             </div>
 
             {/* User Dropdown Menu */}

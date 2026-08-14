@@ -12,7 +12,7 @@ const blobs = new Style(definition as never)
 
 /**
  * Identicon for the signed-in user, in DiceBear's "blobs" style, derived from
- * their name.
+ * whichever piece of their identity is available.
  *
  * Generated locally rather than fetched from api.dicebear.com. The HTTP route
  * is one line shorter but would send the user's name to a third party on every
@@ -22,16 +22,23 @@ const blobs = new Style(definition as never)
  */
 export default function UserAvatar({
   name,
+  email,
+  id,
   size = 16,
   className,
 }: {
   name?: string | null
+  email?: string | null
+  id?: string | null
   size?: number
   className?: string
 }) {
-  // Falls back to a fixed seed so the shape stays stable rather than jumping
-  // around while a name loads or when there is none.
-  const seed = name?.trim() || 'ito'
+  // Name first, since that is what the user recognises as theirs, then two
+  // fallbacks so that an account without a name still gets its own avatar
+  // rather than the same shape as everyone else: the email, and finally the
+  // id, which every account has — including the self-hosted profile, whose id
+  // is a constant and therefore stable across launches.
+  const seed = name?.trim() || email?.trim() || id?.trim() || 'ito'
 
   const svg = useMemo(
     () => new Avatar(blobs, { seed, size }).toString(),
