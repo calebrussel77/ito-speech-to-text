@@ -2,195 +2,100 @@ import {
   LlmSettings,
   useAdvancedSettingsStore,
 } from '@/app/store/useAdvancedSettingsStore'
-import { ChangeEvent, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useWindowContext } from '@/app/components/window/WindowContext'
 import { Input } from '@/app/components/ui/input'
-import { Label } from '@/app/components/ui/label'
-import { Checkbox } from '@/app/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/app/components/ui/select'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/app/components/ui/card'
 import { Textarea } from '@/app/components/ui/textarea'
+import { Switch } from '@/app/components/ui/switch'
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  CONTROL_WIDTH,
+} from '@/app/components/ui/settings'
 
-type LlmSettingConfig = {
+const FLOAT_LENGTH_LIMIT = 4
+const ASR_PROMPT_LENGTH_LIMIT = 100
+const LLM_PROMPT_LENGTH_LIMIT = 3500
+
+type PromptField = {
   name: keyof LlmSettings
-  label: string
-  placeholder: string
+  title: string
   description: string
+  placeholder: string
   maxLength: number
-  resize?: boolean
-  readOnly?: boolean
-  isSelect?: boolean
-  options?: string[]
+  rows: number
 }
 
-const floatLengthLimit = 4
-const asrPromptLengthLimit = 100
-const llmPromptLengthLimit = 3500
-
-// Model and provider choices moved to the Models section, which picks them
-// from the curated catalogue instead of accepting free-form ids.
-const llmSettingsConfig: LlmSettingConfig[] = [
-  {
-    name: 'asrLanguage',
-    label: 'ASR Language',
-    placeholder: 'fr',
-    description:
-      'ISO-639-1 language hint for transcription (e.g. fr, en). Improves accuracy and latency. Leave empty for auto-detection.',
-    maxLength: 5,
-  },
+const PROMPT_FIELDS: PromptField[] = [
   {
     name: 'asrPrompt',
-    label: 'ASR Prompt',
-    placeholder: 'Enter custom ASR prompt',
+    title: 'Transcription priming',
     description:
-      'A custom prompt to guide the ASR transcription process for better accuracy. Dictionary will be appended. (Leave empty for default)',
-    maxLength: asrPromptLengthLimit,
-    resize: true,
-  },
-  {
-    name: 'llmTemperature',
-    label: 'LLM Temperature',
-    placeholder: 'Enter LLM temperature (e.g., 0.7)',
-    description:
-      'Controls the randomness of the LLM output. Higher values produce more diverse results.',
-    maxLength: floatLengthLimit,
+      'Whisper mimics this text rather than obeying it: write a sample of the style you dictate in. Your dictionary is appended automatically.',
+    placeholder: 'Leave empty for the French default',
+    maxLength: ASR_PROMPT_LENGTH_LIMIT,
+    rows: 3,
   },
   {
     name: 'transcriptionPrompt',
-    label: 'Transcription Prompt',
-    placeholder: 'Enter custom transcription prompt',
+    title: 'Transcription instructions',
     description:
-      'A custom prompt to guide the transcription process for better accuracy. (Leave empty for default)',
-    maxLength: llmPromptLengthLimit,
-    resize: true,
+      'Sent to the model that returns the raw transcript, before any editing.',
+    placeholder: 'Leave empty for the default',
+    maxLength: LLM_PROMPT_LENGTH_LIMIT,
+    rows: 4,
   },
   {
-    name: 'noSpeechThreshold',
-    label: 'No Speech Threshold',
-    placeholder: 'e.g., 0.6',
-    description: 'Threshold for detecting no speech segments in audio.',
-    maxLength: floatLengthLimit,
+    name: 'editingPrompt',
+    title: 'Intelligent Mode instructions',
+    description:
+      'Drives what Intelligent Mode turns a dictation into — an issue, an email, a summary. This is the prompt to change when its output is not shaped the way you want.',
+    placeholder: 'Leave empty for the default',
+    maxLength: LLM_PROMPT_LENGTH_LIMIT,
+    rows: 6,
   },
 ]
 
+/** Numeric settings read better rounded, but only while not being edited. */
 function formatDisplayValue(value: string): string {
-  // If its a number then format it to 2 decimal places
-  if (!isNaN(Number(value)) && value !== '') {
+  if (value !== '' && !isNaN(Number(value))) {
     return Number(value).toFixed(2)
   }
   return value
 }
 
-interface SettingInputProps {
-  config: LlmSettingConfig
+function NumericInput({
+  value,
+  placeholder,
+  onChange,
+}: {
   value: string
-  onChange: (
-    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-    config: LlmSettingConfig,
-  ) => void
-}
-
-function SettingInput({ config, value, onChange }: SettingInputProps) {
+  placeholder: string
+  onChange: (value: string) => void
+}) {
   const [isFocused, setIsFocused] = useState(false)
   const [editingValue, setEditingValue] = useState('')
 
-  const handleChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-  ) => {
-    const newValue = e.target.value
-    setEditingValue(newValue)
-    onChange(e, config)
-  }
-
-  const handleSelectChange = (newValue: string) => {
-    const syntheticEvent = {
-      target: { value: newValue },
-    } as ChangeEvent<HTMLSelectElement>
-    onChange(syntheticEvent, config)
-  }
-
-  const handleFocus = () => {
-    setIsFocused(true)
-    const startValue = formatDisplayValue(value)
-    setEditingValue(startValue)
-  }
-
-  const handleBlur = () => {
-    setIsFocused(false)
-    setEditingValue('')
-  }
-
-  const displayValue = isFocused ? editingValue : formatDisplayValue(value)
-
   return (
-    <div className="mb-6">
-      <Label
-        htmlFor={config.name}
-        className="block text-xs font-medium text-foreground mb-1"
-      >
-        {config.label}{' '}
-        {config?.maxLength &&
-          value?.length > 0 &&
-          `(${value.length}/${config.maxLength})`}
-      </Label>
-      {config.isSelect ? (
-        <Select
-          value={value}
-          onValueChange={handleSelectChange}
-          disabled={config.readOnly}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder={config.placeholder} />
-          </SelectTrigger>
-          <SelectContent>
-            {config.options?.map(option => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : config.resize ? (
-        <Textarea
-          id={config.name}
-          value={displayValue}
-          onChange={handleChange as never}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          rows={3}
-          placeholder={config.placeholder}
-          maxLength={config.maxLength}
-          readOnly={config.readOnly}
-        />
-      ) : (
-        <Input
-          id={config.name}
-          value={displayValue}
-          onChange={handleChange}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder={config.placeholder}
-          maxLength={config.maxLength}
-          readOnly={config.readOnly}
-          disabled={config.readOnly}
-        />
-      )}
-      <p className="mt-1 text-[11px] leading-snug text-[var(--subtle-foreground)]">
-        {config.description}
-      </p>
-    </div>
+    <Input
+      className={CONTROL_WIDTH}
+      value={isFocused ? editingValue : formatDisplayValue(value)}
+      placeholder={placeholder}
+      maxLength={FLOAT_LENGTH_LIMIT}
+      onFocus={() => {
+        setIsFocused(true)
+        setEditingValue(formatDisplayValue(value))
+      }}
+      onBlur={() => {
+        setIsFocused(false)
+        setEditingValue('')
+      }}
+      onChange={e => {
+        setEditingValue(e.target.value)
+        onChange(e.target.value)
+      }}
+    />
   )
 }
 
@@ -208,152 +113,129 @@ export default function AdvancedSettingsContent() {
 
   useEffect(() => {
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
-      }
+      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [])
 
-  function scheduleAdvancedSettingsUpdate(
+  function scheduleUpdate(
     nextLlm: LlmSettings,
     nextGrammarEnabled: boolean,
     nextMacosAccessibilityEnabled: boolean,
   ) {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
 
     debounceRef.current = setTimeout(async () => {
-      const settingsToSave = {
+      await window.api.updateAdvancedSettings({
         llm: nextLlm,
         grammarServiceEnabled: nextGrammarEnabled,
         macosAccessibilityContextEnabled: nextMacosAccessibilityEnabled,
-      }
-      console.log('[AdvancedSettings] Saving settings...')
-      await window.api.updateAdvancedSettings(settingsToSave)
+      })
     }, 1000)
   }
 
-  function handleInputChange(
-    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-    config: LlmSettingConfig,
-  ) {
-    const newValue = e.target.value
-    const updatedLlm = { ...llm, [config.name]: newValue }
-    setLlmSettings({ [config.name]: newValue })
-    scheduleAdvancedSettingsUpdate(
-      updatedLlm,
+  function updateLlm(name: keyof LlmSettings, value: string) {
+    setLlmSettings({ [name]: value })
+    scheduleUpdate(
+      { ...llm, [name]: value },
       grammarServiceEnabled,
       macosAccessibilityContextEnabled,
     )
   }
 
-  function handleGrammarServiceToggle(e: ChangeEvent<HTMLInputElement>) {
-    const enabled = e.target.checked
-    setGrammarServiceEnabled(enabled)
-    scheduleAdvancedSettingsUpdate(
-      llm,
-      enabled,
-      macosAccessibilityContextEnabled,
-    )
-  }
-
-  function handleMacosAccessibilityContextToggle(
-    e: ChangeEvent<HTMLInputElement>,
-  ) {
-    const enabled = e.target.checked
-    setMacosAccessibilityContextEnabled(enabled)
-    scheduleAdvancedSettingsUpdate(llm, grammarServiceEnabled, enabled)
-  }
-
   return (
     <div className="px-1.5">
-      {/* LLM Settings Section */}
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="space-y-1.5">
-                <CardTitle>Advanced Settings</CardTitle>
-                <CardDescription>
-                  Configure advanced settings for Ito.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
+      <SettingsGroup
+        title="Tuning"
+        description="Sane defaults ship with the app; these only matter when something is off."
+      >
+        <SettingsRow
+          title="Transcription language"
+          description="ISO-639-1 hint (fr, en…). Improves accuracy and latency. Empty means auto-detect."
+        >
+          <Input
+            className={CONTROL_WIDTH}
+            value={llm.asrLanguage}
+            placeholder="fr"
+            maxLength={5}
+            onChange={e => updateLlm('asrLanguage', e.target.value)}
+          />
+        </SettingsRow>
 
-          <CardContent className="space-y-4 pb-8">
-            <div>
-              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
-                LLM Settings
-              </h3>
-              <div className="space-y-4">
-                {llmSettingsConfig.map(config => (
-                  <SettingInput
-                    key={config.name}
-                    config={config}
-                    value={llm[config.name as string]}
-                    onChange={handleInputChange}
-                  />
-                ))}
-              </div>
-            </div>
+        <SettingsRow
+          title="Temperature"
+          description="How much freedom Intelligent Mode has. Higher wanders further from what you said."
+        >
+          <NumericInput
+            value={String(llm.llmTemperature ?? '')}
+            placeholder="0.10"
+            onChange={value => updateLlm('llmTemperature', value)}
+          />
+        </SettingsRow>
 
-            <div>
-              <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
-                Grammar
-              </h3>
-              <label className="flex items-start gap-3 ml-1 cursor-pointer">
-                <Checkbox
-                  checked={grammarServiceEnabled}
-                  onCheckedChange={checked =>
-                    handleGrammarServiceToggle({
-                      target: { checked },
-                    } as ChangeEvent<HTMLInputElement>)
-                  }
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block text-xs font-medium text-foreground">
-                    Enable Grammar Service
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-[var(--subtle-foreground)]">
-                    Apply Ito's local grammar adjustments before inserting text.
-                  </span>
-                </span>
-              </label>
-            </div>
+        <SettingsRow
+          title="No-speech threshold"
+          description="Above this confidence a segment is dropped as silence. Raise it if whole words go missing, lower it if phantom text appears."
+        >
+          <NumericInput
+            value={String(llm.noSpeechThreshold ?? '')}
+            placeholder="0.60"
+            onChange={value => updateLlm('noSpeechThreshold', value)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
 
-            {windowContext?.window?.platform === 'darwin' && (
-              <div>
-                <h3 className="font-heading text-xs font-semibold tracking-tight text-foreground mb-2">
-                  Context
-                </h3>
-                <label className="flex items-start gap-3 ml-1 cursor-pointer">
-                  <Checkbox
-                    checked={macosAccessibilityContextEnabled}
-                    onCheckedChange={checked =>
-                      handleMacosAccessibilityContextToggle({
-                        target: { checked },
-                      } as ChangeEvent<HTMLInputElement>)
-                    }
-                    className="mt-1"
-                  />
-                  <span>
-                    <span className="block text-xs font-medium text-foreground">
-                      Use Accessibility Context
-                    </span>
-                    <span className="mt-0.5 block text-[11px] leading-snug text-[var(--subtle-foreground)]">
-                      Use Accessibility APIs to capture text context around the
-                      cursor for improved accuracy.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <SettingsGroup title="Prompts">
+        {PROMPT_FIELDS.map(field => (
+          <SettingsCard
+            key={field.name}
+            title={field.title}
+            description={field.description}
+            action={
+              <span className="text-[10px] tabular-nums text-[var(--subtle-foreground)]">
+                {String(llm[field.name] ?? '').length}/{field.maxLength}
+              </span>
+            }
+          >
+            <Textarea
+              value={String(llm[field.name] ?? '')}
+              placeholder={field.placeholder}
+              maxLength={field.maxLength}
+              rows={field.rows}
+              onChange={e => updateLlm(field.name, e.target.value)}
+            />
+          </SettingsCard>
+        ))}
+      </SettingsGroup>
+
+      <SettingsGroup title="System">
+        <SettingsRow
+          title="Grammar service"
+          description="Apply Ito's local grammar adjustments before inserting text."
+        >
+          <Switch
+            checked={grammarServiceEnabled}
+            onCheckedChange={enabled => {
+              setGrammarServiceEnabled(enabled)
+              scheduleUpdate(llm, enabled, macosAccessibilityContextEnabled)
+            }}
+          />
+        </SettingsRow>
+
+        {windowContext?.window?.platform === 'darwin' && (
+          <SettingsRow
+            title="Accessibility context"
+            description="Read the text around the cursor through the Accessibility APIs to sharpen Intelligent Mode."
+          >
+            <Switch
+              checked={macosAccessibilityContextEnabled}
+              onCheckedChange={enabled => {
+                setMacosAccessibilityContextEnabled(enabled)
+                scheduleUpdate(llm, grammarServiceEnabled, enabled)
+              }}
+            />
+          </SettingsRow>
+        )}
+      </SettingsGroup>
     </div>
   )
 }
