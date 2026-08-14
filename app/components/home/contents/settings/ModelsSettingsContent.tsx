@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import {
   SettingsGroup,
@@ -13,7 +13,7 @@ import {
   type CatalogModel,
 } from '@/lib/constants/modelCatalog'
 import ModelTable, { type ModelSlot } from './models/ModelTable'
-import ProviderKeyRow from './models/ProviderKeyRow'
+import ProviderKeyRow, { type KeyRejection } from './models/ProviderKeyRow'
 import { cn } from '@/lib/utils'
 
 const isGroq = (model: CatalogModel) => model.provider === 'groq'
@@ -71,6 +71,19 @@ export default function ModelsSettingsContent() {
   } = useAdvancedSettingsStore()
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
+
+  // Read once on mount: the main process only returns a failure that still
+  // describes the key currently stored, so there is nothing to keep in sync.
+  const [openRouterRejection, setOpenRouterRejection] =
+    useState<KeyRejection | null>(null)
+  useEffect(() => {
+    window.api
+      .getOpenRouterFailure()
+      .then((failure: KeyRejection | null) =>
+        setOpenRouterRejection(failure ?? null),
+      )
+      .catch(() => setOpenRouterRejection(null))
+  }, [])
 
   const availableProviders = new Set<string>()
   if (groqApiKey) availableProviders.add('groq')
@@ -144,6 +157,7 @@ export default function ModelsSettingsContent() {
           placeholder="sk-or-v1-..."
           consoleUrl="https://openrouter.ai/settings/keys"
           storedKey={openRouterApiKey}
+          rejection={openRouterRejection}
           expanded={expandedProvider === 'openrouter'}
           onToggle={() =>
             setExpandedProvider(

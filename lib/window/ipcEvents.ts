@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, shell, app, dialog } from 'electron'
 import log from 'electron-log'
 import os from 'os'
 import { exec } from 'child_process'
-import store, { getCurrentUserId } from '../main/store'
+import store, { getAdvancedSettings, getCurrentUserId } from '../main/store'
 import { STORE_KEYS } from '../constants/store-keys'
 import {
   checkAccessibilityPermission,
@@ -876,6 +876,21 @@ export function registerIPC() {
       return await openRouterTranscriptionService.testConnection(apiKey)
     } catch (error: any) {
       return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  // Why the last long dictation could not use OpenRouter. Returns null unless
+  // the failure describes the key currently stored, so a record left by a key
+  // that has since been replaced never shows up as a live warning.
+  handleIPC('get-openrouter-failure', async () => {
+    const { getOpenRouterFailure } = await import(
+      '../main/transcription/openRouterHealth'
+    )
+    try {
+      return getOpenRouterFailure(getAdvancedSettings()?.openRouterApiKey)
+    } catch (error) {
+      log.warn('[IPC] Could not read the OpenRouter failure record:', error)
+      return null
     }
   })
 

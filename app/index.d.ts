@@ -67,4 +67,20 @@ export interface IpcApi {
     count: () => Promise<number>
     retry: () => Promise<number>
   }
+  testGroqApiKey: (apiKey: string) => Promise<ApiTestResult>
+  testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
+  /** Null unless the record describes the key currently stored. */
+  getOpenRouterFailure: () => Promise<OpenRouterFailureRecord | null>
+}
+
+export interface ApiTestResult {
+  ok: boolean
+  message?: string
+}
+
+export interface OpenRouterFailureRecord {
+  code: string
+  message: string
+  model: string
+  at: string
 }

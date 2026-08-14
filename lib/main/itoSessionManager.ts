@@ -213,7 +213,7 @@ export class ItoSessionManager {
         undefined,
         undefined,
         durationMs,
-        result.asrEngine,
+        { engine: result.asrEngine, fallback: result.asrFallback },
       )
       this.playInteractionCompletionSoundIfEnabled()
       console.log(

@@ -13,6 +13,7 @@ import { ItoMode } from '@/app/generated/ito_pb.js'
 import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
+import type { OpenRouterFailure } from './transcription/openRouterHealth'
 import * as electron from 'electron'
 
 const safeStorageApi: any = (electron as any).safeStorage
@@ -102,6 +103,10 @@ export interface AdvancedSettings {
   // engine. Off means Groq transcribes everything.
   longDictationEnabled?: boolean
   longDictationThresholdMs?: number
+  // Why the last long dictation could not use OpenRouter. Written by the
+  // transcription pipeline, never by the settings UI — see
+  // main/transcription/openRouterHealth.ts.
+  openRouterFailure?: OpenRouterFailure | null
 }
 
 interface AppStore {

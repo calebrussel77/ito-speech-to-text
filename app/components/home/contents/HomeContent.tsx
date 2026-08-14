@@ -474,6 +474,19 @@ export default function HomeContent({
       }
     }
 
+    // A dictation that was routed to the precise engine and came back from
+    // Groq reads exactly like an ordinary one. The tooltip is the only place
+    // that says otherwise, so it carries the engine that was skipped and why.
+    const fallback = interaction.asr_output?.fallback
+    if (fallback) {
+      return {
+        text: transcript,
+        isError: false,
+        tone: 'ok',
+        tooltip: `${fallback.from} was unavailable (${fallback.code}: ${fallback.message}) — Groq transcribed this dictation instead.`,
+      }
+    }
+
     // Return the actual transcript
     return {
       text: transcript,

@@ -5,6 +5,7 @@ import log from 'electron-log'
 import { v4 as uuidv4 } from 'uuid'
 import { BrowserWindow } from 'electron'
 import { timingCollector } from '../timing/TimingCollector'
+import type { AsrFallback } from '../itoStreamController'
 
 export class InteractionManager {
   private currentInteractionId: string | null = null
@@ -36,7 +37,9 @@ export class InteractionManager {
     errorMessage?: string,
     errorCode?: string,
     audioDurationMs?: number,
-    asrEngine?: string,
+    // How the transcript was produced: the engine that answered, and — when
+    // the routed engine did not — why it was not the one asked for.
+    asr?: { engine?: string; fallback?: AsrFallback },
   ) {
     if (!this.currentInteractionId) {
       log.warn(
@@ -70,7 +73,8 @@ export class InteractionManager {
         timestamp: new Date().toISOString(),
         durationMs,
         interactionDurationMs,
-        engine: asrEngine || null,
+        engine: asr?.engine || null,
+        fallback: asr?.fallback || null,
       }
 
       // Generate a meaningful title from the transcript

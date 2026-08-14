@@ -18,6 +18,12 @@ import {
   resolveModel,
 } from '../constants/modelCatalog'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
+import {
+  clearOpenRouterFailure,
+  failureNotice,
+  getRejectedKeyFailure,
+  recordOpenRouterFailure,
+} from './transcription/openRouterHealth'
 import { transcriptAdjuster } from './transcription/TranscriptAdjuster'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
@@ -28,7 +34,24 @@ import { getAdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 
 const RETRYABLE_CODES = new Set(['RATE_LIMIT', 'NETWORK'])
-const MAX_TRANSCRIPTION_ATTEMPTS = 3
+
+type RetryPolicy = {
+  attempts: number
+  /** A wait longer than this is not worth it: give up and let the caller move on. */
+  maxDelayMs: number
+}
+
+const GROQ_RETRY: RetryPolicy = {
+  attempts: 3,
+  maxDelayMs: Number.POSITIVE_INFINITY,
+}
+
+// Each OpenRouter attempt re-uploads the whole dictation (~3.5 MB for 80s) and
+// takes roughly as long as the recording itself, and Groq still has to run
+// afterwards if it fails — so one extra try is all a waiting user can absorb.
+// For the same reason a server-suggested delay of more than a second and a
+// half is declined: falling back is faster than honouring it.
+const OPENROUTER_RETRY: RetryPolicy = { attempts: 2, maxDelayMs: 1500 }
 
 function showNotification(title: string, body: string) {
   try {
@@ -40,6 +63,18 @@ function showNotification(title: string, body: string) {
   }
 }
 
+/**
+ * Why a dictation that should have gone to the precise engine came back from
+ * Groq instead. Travels with the transcript so the history row can say it,
+ * rather than leaving a downgrade indistinguishable from a normal dictation.
+ */
+export interface AsrFallback {
+  /** Model slug that was skipped or that failed. */
+  from: string
+  code: string
+  message: string
+}
+
 export interface LocalTranscriptionResult {
   transcript: string
   audioBuffer: Buffer
@@ -48,6 +83,7 @@ export interface LocalTranscriptionResult {
   // Model that actually produced the transcript (e.g. 'whisper-large-v3',
   // 'openai/gpt-transcribe') — shown as a badge in the history.
   asrEngine: string
+  asrFallback?: AsrFallback
 }
 
 /**
@@ -186,40 +222,61 @@ export class ItoStreamController {
     let transcript: string
     // Groq is the default attribution; overwritten when OpenRouter answers.
     let asrEngine = shortModel.slug
+    let asrFallback: AsrFallback | undefined
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
         if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
+          const apiKey = advancedSettings.openRouterApiKey || ''
           const openRouterModel = resolveModel(
             advancedSettings.longVoiceModelKey,
             DEFAULT_LONG_VOICE_KEY,
           ).slug
-          try {
-            const text = await openRouterTranscriptionService.transcribeAudio(
-              wavAudio,
-              {
-                apiKey: advancedSettings.openRouterApiKey || '',
-                model: openRouterModel,
-                vocabulary: context.vocabularyWords,
-                language: advancedSettings.llm.asrLanguage,
-              },
-            )
-            asrEngine = openRouterModel
-            return text
-          } catch (error: any) {
-            // The precise engine must never lose or block a dictation:
-            // whatever went wrong, the Groq path (and its retry/persistence
-            // layer) takes over.
+          const rejected = getRejectedKeyFailure(apiKey)
+
+          if (rejected) {
+            // This key already came back refused. Trying again would upload
+            // the whole dictation for another certain 401, so go straight to
+            // Groq — and still say so, rather than passing the downgrade off
+            // as a normal dictation.
             console.warn(
-              `[ItoStreamController] OpenRouter transcription failed (${error?.code}), falling back to Groq:`,
-              error?.message,
+              `[ItoStreamController] Skipping OpenRouter: the stored key was refused on ${rejected.at}`,
             )
-            showNotification(
-              'Ito — repli sur Groq',
-              'La transcription OpenRouter a échoué ; la dictée est transcrite par Groq.',
-            )
+            asrFallback = {
+              from: openRouterModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const text = await this.withRetry(
+                `OpenRouter (${openRouterModel})`,
+                OPENROUTER_RETRY,
+                () =>
+                  openRouterTranscriptionService.transcribeAudio(wavAudio, {
+                    apiKey,
+                    model: openRouterModel,
+                    vocabulary: context.vocabularyWords,
+                    language: advancedSettings.llm.asrLanguage,
+                  }),
+              )
+              asrEngine = openRouterModel
+              clearOpenRouterFailure()
+              return text
+            } catch (error: any) {
+              // The precise engine must never lose or block a dictation:
+              // whatever went wrong, the Groq path (and its retry/persistence
+              // layer) takes over.
+              asrFallback = this.recordOpenRouterFallback(
+                error,
+                openRouterModel,
+                apiKey,
+              )
+            }
           }
         }
-        return await this.transcribeWithRetry(wavAudio, groqOptions)
+        return await this.withRetry('Groq', GROQ_RETRY, () =>
+          localTranscriptionService.transcribeAudio(wavAudio, groqOptions),
+        )
       })
     } catch (error: any) {
       if (pendingPath) {
@@ -271,7 +328,31 @@ export class ItoStreamController {
       sampleRate,
       durationMs,
       asrEngine,
+      asrFallback,
     }
+  }
+
+  /**
+   * Turns an OpenRouter failure into the three traces it deserves: a line in
+   * the log, a notification that names the actual cause, and a record in the
+   * settings that outlives both.
+   */
+  private recordOpenRouterFallback(
+    error: any,
+    model: string,
+    apiKey: string,
+  ): AsrFallback {
+    const code = error?.code || 'UNKNOWN'
+    const message = error?.message || 'OpenRouter request failed'
+
+    console.warn(
+      `[ItoStreamController] OpenRouter (${model}) failed (${code}), falling back to Groq:`,
+      message,
+    )
+    recordOpenRouterFailure({ code, message, model, apiKey })
+    showNotification('Ito — repli sur Groq', failureNotice(code))
+
+    return { from: model, code, message }
   }
 
   // Recordings at or above the threshold go to the precise OpenRouter engine
@@ -296,33 +377,34 @@ export class ItoStreamController {
     return true
   }
 
-  private async transcribeWithRetry(
-    wavAudio: Buffer,
-    options: TranscriptionOptions,
-  ): Promise<string> {
-    let lastError: unknown
-    for (let attempt = 1; attempt <= MAX_TRANSCRIPTION_ATTEMPTS; attempt++) {
+  /**
+   * Retries a transcription call for the failures that are worth retrying —
+   * a rate limit or a dropped connection — and gives up immediately on the
+   * ones a second identical request cannot fix.
+   */
+  private async withRetry<T>(
+    label: string,
+    policy: RetryPolicy,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
       try {
-        return await localTranscriptionService.transcribeAudio(
-          wavAudio,
-          options,
-        )
+        return await run()
       } catch (error: any) {
-        lastError = error
+        const delayMs = error?.retryAfterMs ?? 500 * 2 ** (attempt - 1)
         const retryable =
           error instanceof LocalTranscriptionError &&
-          RETRYABLE_CODES.has(error.code)
-        if (!retryable || attempt === MAX_TRANSCRIPTION_ATTEMPTS) {
-          throw error
-        }
-        const delayMs = error.retryAfterMs ?? 500 * 2 ** (attempt - 1)
+          RETRYABLE_CODES.has(error.code) &&
+          attempt < policy.attempts &&
+          delayMs <= policy.maxDelayMs
+        if (!retryable) throw error
+
         console.warn(
-          `[ItoStreamController] Transcription attempt ${attempt} failed (${error.code}), retrying in ${delayMs}ms`,
+          `[ItoStreamController] ${label} attempt ${attempt} failed (${error.code}), retrying in ${delayMs}ms`,
         )
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
-    throw lastError
   }
 
   private flushingPending = false
