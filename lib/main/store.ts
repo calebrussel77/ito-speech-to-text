@@ -641,6 +641,14 @@ export async function initializeStore() {
   if (process.env.NODE_ENV !== 'test') {
     runMigrations(store, migrations)
   }
+
+  // 5) Sème les modes. Après les migrations : la migration des raccourcis
+  //    référence les ids semés, donc les modes doivent exister d'abord.
+  if (process.env.NODE_ENV !== 'test') {
+    const { seedModes } = await import('./modes/modeSeeder')
+    const userId = getCurrentUserId() || 'self-hosted'
+    await seedModes(userId)
+  }
 }
 
 export default store
