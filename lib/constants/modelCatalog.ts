@@ -56,12 +56,11 @@ export interface CatalogModel {
    */
   price: string | null
   /**
-   * 1-5 gauges, only where the figure is measured and published. Groq and
-   * Cerebras document throughput; OpenRouter reports `p50_throughput: null`
-   * for every model, so those rows stay blank rather than guessed.
+   * 1-5 gauge, only where throughput is measured and published. Groq and
+   * Cerebras document it; OpenRouter reports `p50_throughput: null` for every
+   * model, so those rows stay blank rather than guessed.
    */
   speed?: number
-  accuracy?: number
   /** Short tag shown next to the name. */
   note?: string
   /** Validated on real dictations during the long-form engine bake-off. */
@@ -78,8 +77,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.111 / h',
     speed: 4,
-    accuracy: 4,
-    note: 'Most accurate',
+    note: 'Most accurate — 10.3% WER',
   },
   {
     key: 'whisper-large-v3-turbo',
@@ -90,8 +88,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.04 / h',
     speed: 5,
-    accuracy: 3,
-    note: 'Cheapest',
+    note: 'Cheapest — 12% WER',
   },
   {
     key: 'gpt-transcribe',

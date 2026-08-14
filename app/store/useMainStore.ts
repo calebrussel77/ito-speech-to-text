@@ -7,6 +7,7 @@ type SettingsPageType =
   | 'keyboard'
   | 'audio'
   | 'account'
+  | 'models'
   | 'advanced'
   | 'pricing-billing'
 

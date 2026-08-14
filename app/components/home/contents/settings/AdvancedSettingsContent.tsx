@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/app/components/ui/select'
-import ApiKeySettings from './ApiKeySettings'
 import {
   Card,
   CardContent,
@@ -271,8 +270,6 @@ export default function AdvancedSettingsContent() {
     <div className="px-1.5">
       {/* LLM Settings Section */}
       <div className="space-y-4">
-        <ApiKeySettings />
-
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
