@@ -229,8 +229,11 @@ export const TEXT_MODELS: CatalogModel[] = [
     slug: 'qwen/qwen3.6-27b',
     provider: 'groq',
     lab: 'qwen',
-    price: null,
+    price: '$0.60 / $3.00 per M',
     speed: 4,
+    // Groq lists this one under Preview, which its own policy defines as
+    // evaluation-only and removable at short notice.
+    note: 'Preview at Groq — may disappear without warning',
   },
   {
     key: 'gpt-oss-120b-cerebras',
