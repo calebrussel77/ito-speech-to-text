@@ -74,6 +74,11 @@ mock.module('./context/ContextGrabber', () => ({
   contextGrabber: mockContextGrabber,
 }))
 
+const mockRememberInsertedText = mock()
+mock.module('./context/ClipboardContext', () => ({
+  rememberInsertedText: mockRememberInsertedText,
+}))
+
 const mockGrammarRulesService = {
   setCaseFirstWord: mock((text: string) => text),
   addLeadingSpaceIfNeeded: mock((text: string) => text),
@@ -127,7 +132,9 @@ mock.module('./modes/activeMode', () => ({
   resolveMode: async (id: string) =>
     id === 'intelligent'
       ? testMode({ id: 'intelligent', name: 'Intelligent', useLlm: true })
-      : testMode(),
+      : id === 'copy-mode'
+        ? testMode({ id: 'copy-mode', name: 'Copy mode', autoPaste: false })
+        : testMode(),
 }))
 
 const mockSoundFeedback = {
@@ -148,6 +155,7 @@ beforeEach(() => {
   Object.values(mockItoStreamController).forEach(fn => fn.mockClear())
   Object.values(mockTextInserter).forEach(fn => fn.mockClear())
   Object.values(mockInteractionManager).forEach(fn => fn.mockClear())
+  mockRememberInsertedText.mockClear()
   Object.values(mockGrammarRulesService).forEach(fn => fn.mockClear())
   Object.values(mockTimingCollector).forEach(fn => fn.mockClear())
   Object.values(mockSoundFeedback).forEach(fn => fn.mockClear())
@@ -223,6 +231,27 @@ describe('itoSessionManager (local mode)', () => {
     expect(
       mockSoundFeedback.playInteractionCompletionSound,
     ).not.toHaveBeenCalled()
+  })
+
+  test('what was inserted is remembered, so the clipboard context can skip it', async () => {
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('voice-to-text')
+    await session.completeSession()
+
+    expect(mockRememberInsertedText).toHaveBeenCalledWith('test transcript')
+  })
+
+  test('what was copied is also remembered, when auto-paste is off', async () => {
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('copy-mode')
+    await session.completeSession()
+
+    expect(mockTextInserter.insertText).not.toHaveBeenCalled()
+    expect(mockRememberInsertedText).toHaveBeenCalledWith('test transcript')
   })
 
   test('plays completion sound when interaction sounds are enabled', async () => {

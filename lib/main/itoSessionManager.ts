@@ -8,6 +8,7 @@ import {
 import { TextInserter } from './text/TextInserter'
 import { interactionManager } from './interactions/InteractionManager'
 import { contextGrabber } from './context/ContextGrabber'
+import { rememberInsertedText } from './context/ClipboardContext'
 import { GrammarRulesService } from './grammar/GrammarRulesService'
 import store, { getAdvancedSettings } from './store'
 import log from 'electron-log'
@@ -236,6 +237,7 @@ export class ItoSessionManager {
           'Le résultat est dans le presse-papier.',
         )
       }
+      rememberInsertedText(textToInsert)
 
       await interactionManager.createInteraction(
         transcript,

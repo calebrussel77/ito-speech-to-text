@@ -13,6 +13,7 @@ import { waitForAllKeysReleased } from '../../media/keyboardState'
 import log from 'electron-log'
 import { timingCollector, TimingEventName } from '../timing/TimingCollector'
 import { macOSAccessibilityContextProvider } from '../../media/macOSAccessibilityContextProvider'
+import { readClipboardText } from './ClipboardContext'
 import type { DictionaryTerm } from '../transcription/DictionaryCorrector'
 import type { Mode } from '../sqlite/models'
 
@@ -25,7 +26,7 @@ export interface ContextData {
   windowTitle: string
   appName: string
   contextText: string
-  /** Contenu du presse-papier, quand le mode l'a demandé (lot 2). */
+  /** Contenu du presse-papier, quand le mode l'a demandé. */
   clipboardText: string
   advancedSettings: ReturnType<typeof getAdvancedSettings>
 }
@@ -44,16 +45,20 @@ export class ContextGrabber {
     // Get vocabulary words from dictionary
     const { vocabularyWords, dictionaryEntries } = await this.getVocabulary()
 
-    // Get active window context
-    const { windowTitle, appName } = await timingCollector.timeAsync(
-      TimingEventName.WINDOW_CONTEXT_GATHER,
-      async () => await this.getWindowContext(),
-    )
+    // Get active window context — skipped entirely when the mode doesn't
+    // want it: a native round-trip is real latency to not pay for nothing.
+    const { windowTitle, appName } = mode.contextApplication
+      ? await timingCollector.timeAsync(
+          TimingEventName.WINDOW_CONTEXT_GATHER,
+          async () => await this.getWindowContext(),
+        )
+      : { windowTitle: '', appName: '' }
 
     // Le mode décide en amont : ici on obéit au drapeau, sans le réinterpréter.
-    const contextText = mode.contextSelection
-      ? await this.getSelectedText()
-      : ''
+    const [contextText, clipboardText] = await Promise.all([
+      mode.contextSelection ? this.getSelectedText() : Promise.resolve(''),
+      Promise.resolve(mode.contextClipboard ? readClipboardText() : ''),
+    ])
 
     // Get advanced settings
     const advancedSettings = getAdvancedSettings()
@@ -66,7 +71,7 @@ export class ContextGrabber {
       windowTitle,
       appName,
       contextText,
-      clipboardText: '',
+      clipboardText,
       advancedSettings,
     }
   }
