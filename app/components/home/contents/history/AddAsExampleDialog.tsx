@@ -44,6 +44,7 @@ export default function AddAsExampleDialog({
   const [output, setOutput] = useState(currentResult)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
 
   useEffect(() => {
     if (!loaded) void load()
@@ -52,21 +53,40 @@ export default function AddAsExampleDialog({
   // Un exemple appartient forcément à un mode qui réécrit — les modes
   // « voice to text » n'ont rien à réapprendre.
   const rewritingModes = modes.filter(mode => mode.useLlm)
+  const modeStillRewrites = rewritingModes.some(mode => mode.id === modeId)
 
+  // defaultModeId date du moment de la dictée : le mode peut avoir été
+  // supprimé (soft delete) ou être passé en « voice to text » depuis. Un id
+  // non vide n'est donc pas forcément valide — on retombe sur le premier
+  // mode réécrivant dans les deux cas (id vide ou id périmé).
   useEffect(() => {
-    if (!modeId && rewritingModes.length) setModeId(rewritingModes[0].id)
-  }, [rewritingModes, modeId])
+    if (rewritingModes.length && !modeStillRewrites) {
+      setModeId(rewritingModes[0].id)
+    }
+  }, [rewritingModes, modeStillRewrites])
 
-  const canSave = Boolean(modeId && spoken.trim() && output.trim())
+  // Vrai uniquement quand la dictée avait un mode d'origine et que ce mode
+  // a disparu de la liste des modes réécrivants — sert à prévenir
+  // l'utilisateur plutôt que de retargeter en silence.
+  const originalModeUnavailable =
+    loaded &&
+    defaultModeId !== null &&
+    rewritingModes.length > 0 &&
+    !rewritingModes.some(mode => mode.id === defaultModeId)
+  const fallbackModeName = rewritingModes.find(mode => mode.id === modeId)?.name
+
+  const canSave = Boolean(modeStillRewrites && spoken.trim() && output.trim())
 
   const save = async () => {
     if (!canSave) return
     setSaving(true)
+    setSaveError(false)
     try {
       await window.api.modes.examples.add(modeId, spoken.trim(), output.trim())
       setSaved(true)
     } catch (error) {
       console.error('Failed to add example:', error)
+      setSaveError(true)
     } finally {
       setSaving(false)
     }
@@ -86,18 +106,27 @@ export default function AddAsExampleDialog({
         {loaded && rewritingModes.length === 0 ? (
           <SettingsNote>No mode with rewriting enabled yet.</SettingsNote>
         ) : (
-          <Select value={modeId} onValueChange={setModeId} disabled={!loaded}>
-            <SelectTrigger className={CONTROL_WIDTH}>
-              <SelectValue placeholder="Choose a mode" />
-            </SelectTrigger>
-            <SelectContent>
-              {rewritingModes.map(mode => (
-                <SelectItem key={mode.id} value={mode.id}>
-                  {mode.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <>
+            <Select value={modeId} onValueChange={setModeId} disabled={!loaded}>
+              <SelectTrigger className={CONTROL_WIDTH}>
+                <SelectValue placeholder="Choose a mode" />
+              </SelectTrigger>
+              <SelectContent>
+                {rewritingModes.map(mode => (
+                  <SelectItem key={mode.id} value={mode.id}>
+                    {mode.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {originalModeUnavailable && (
+              <SettingsNote>
+                This dictation&rsquo;s original mode is no longer available for
+                rewriting. The example will be added to{' '}
+                {fallbackModeName ?? 'the mode below'} instead.
+              </SettingsNote>
+            )}
+          </>
         )}
 
         <div className="grid grid-cols-2 gap-2">
@@ -114,6 +143,11 @@ export default function AddAsExampleDialog({
         </div>
 
         {saved && <SettingsNote>Example added.</SettingsNote>}
+        {saveError && (
+          <SettingsNote tone="error">
+            Couldn&rsquo;t add the example. Try again.
+          </SettingsNote>
+        )}
 
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>
