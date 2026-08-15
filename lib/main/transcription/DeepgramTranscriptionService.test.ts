@@ -1,5 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { deepgramTranscriptionService } from './DeepgramTranscriptionService'
+import {
+  deepgramTranscriptionService,
+  groupWordsBySpeaker,
+} from './DeepgramTranscriptionService'
 
 const originalFetch = globalThis.fetch
 
@@ -187,6 +190,10 @@ describe('DeepgramTranscriptionService', () => {
     ])
   })
 
+  test('groupWordsBySpeaker([]) returns [] without throwing', () => {
+    expect(groupWordsBySpeaker([])).toEqual([])
+  })
+
   test('without diarization there are no segments, only text', async () => {
     const result = await deepgramTranscriptionService.transcribeAudio(
       Buffer.from('x'),
@@ -219,6 +226,36 @@ describe('DeepgramTranscriptionService', () => {
         model: 'nova-3',
       }),
     ).rejects.toMatchObject({ code: 'RATE_LIMIT' })
+  })
+
+  test('a 429 with Retry-After surfaces it as retryAfterMs', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ err_msg: 'slow down' }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '5',
+        },
+      }),
+    )
+
+    await expect(
+      deepgramTranscriptionService.transcribeAudio(Buffer.from('x'), {
+        apiKey: 'dg',
+        model: 'nova-3',
+      }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMIT', retryAfterMs: 5000 })
+  })
+
+  test('a 429 without Retry-After still maps to RATE_LIMIT with no bogus delay', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ err_msg: 'slow down' }, 429))
+
+    await expect(
+      deepgramTranscriptionService.transcribeAudio(Buffer.from('x'), {
+        apiKey: 'dg',
+        model: 'nova-3',
+      }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMIT', retryAfterMs: undefined })
   })
 
   test('maps 5xx to NETWORK', async () => {

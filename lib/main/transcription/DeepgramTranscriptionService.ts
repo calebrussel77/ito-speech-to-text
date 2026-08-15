@@ -111,10 +111,15 @@ async function mapHttpError(res: Response): Promise<LocalTranscriptionError> {
     )
   }
   if (res.status === 429) {
+    const retryAfterHeader = res.headers.get('retry-after')
+    const retryAfterMs = retryAfterHeader
+      ? Number(retryAfterHeader) * 1000 || undefined
+      : undefined
     return new LocalTranscriptionError(
       'Deepgram rate limit hit',
       'RATE_LIMIT',
       res.status,
+      retryAfterMs,
     )
   }
   if (res.status >= 500) {
