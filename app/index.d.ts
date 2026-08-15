@@ -62,10 +62,13 @@ export interface IpcApi {
     getById: (id: string) => Promise<any>
     delete: (id: string) => Promise<void>
     clearAll: () => Promise<void>
+    // true when the interaction existed, had speaker segments, and was
+    // rewritten; false otherwise (unknown id, no segments, or malformed
+    // labels) — lets the caller tell a real rename from a silent no-op.
     renameSpeakers: (
       id: string,
       labels: Record<number, string>,
-    ) => Promise<void>
+    ) => Promise<boolean>
   }
   pendingDictations: {
     count: () => Promise<number>

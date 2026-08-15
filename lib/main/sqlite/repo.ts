@@ -205,14 +205,22 @@ export class InteractionsTable {
    * libellé (affiché). Renommer réécrit le libellé de **tous** les segments
    * du locuteur : c'est ce qui transforme un transcript en « Speaker 2 »
    * partout en un compte-rendu nommé.
+   *
+   * Renvoie `true` si l'interaction a bien été réécrite, `false` sinon —
+   * id inconnu, interaction sans segments, ou `labels` malformé. Ceci est
+   * atteignable depuis l'IPC (`interactions:rename-speakers`), non
+   * type-checké à l'exécution : un appelant doit pouvoir distinguer un
+   * renommage effectif d'un id qui ne correspond à rien.
    */
   static async updateSpeakerLabels(
     id: string,
     labels: Record<number, string>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const interaction = await InteractionsTable.findById(id)
     const speakers = interaction?.asr_output?.speakers
-    if (!Array.isArray(speakers)) return
+    // `labels` peut arriver null/undefined depuis l'IPC (non type-checké à
+    // l'exécution) : le sous-scripter hors de l'optional chain planterait.
+    if (!Array.isArray(speakers) || !labels) return false
 
     const renamed = speakers.map((segment: any) => ({
       ...segment,
@@ -227,6 +235,7 @@ export class InteractionsTable {
         id,
       ],
     )
+    return true
   }
 }
 

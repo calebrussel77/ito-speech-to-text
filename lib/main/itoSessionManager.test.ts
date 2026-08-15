@@ -34,13 +34,20 @@ const mockItoStreamController = {
   endInteraction: mock(),
   cancelTranscription: mock(),
   clearInteractionAudio: mock(),
-  processLocalTranscription: mock(() =>
-    Promise.resolve({
-      transcript: 'test transcript',
-      audioBuffer: Buffer.alloc(0),
-      sampleRate: 16000,
-      durationMs: 500,
-    }),
+  processLocalTranscription: mock(
+    (): Promise<{
+      transcript: string
+      audioBuffer: Buffer
+      sampleRate: number
+      durationMs: number
+      speakerSegments?: any[]
+    }> =>
+      Promise.resolve({
+        transcript: 'test transcript',
+        audioBuffer: Buffer.alloc(0),
+        sampleRate: 16000,
+        durationMs: 500,
+      }),
   ),
 }
 mock.module('./itoStreamController', () => ({
@@ -244,6 +251,39 @@ describe('itoSessionManager (local mode)', () => {
     expect(
       mockSoundFeedback.playInteractionCompletionSound,
     ).not.toHaveBeenCalled()
+  })
+
+  test('speaker segments computed during transcription reach the history row', async () => {
+    // Regression test: a completed transcription used to compute
+    // speakerSegments and then drop them on the floor because nothing forwarded
+    // them into createInteraction's `asr` payload — recorded meetings silently
+    // lost their speakers while imported files kept theirs.
+    const speakerSegments = [
+      { speaker: 0, label: 'Speaker 1', startMs: 0, endMs: 900, text: 'a' },
+      { speaker: 1, label: 'Speaker 2', startMs: 1000, endMs: 1500, text: 'b' },
+    ]
+    mockItoStreamController.processLocalTranscription.mockResolvedValue({
+      transcript: 'test transcript',
+      audioBuffer: Buffer.alloc(0),
+      sampleRate: 16000,
+      durationMs: 500,
+      speakerSegments,
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('voice-to-text')
+    await session.completeSession()
+
+    expect(mockInteractionManager.createInteraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      undefined,
+      expect.anything(),
+      expect.objectContaining({ speakers: speakerSegments }),
+    )
   })
 
   test('what was inserted is remembered, so the clipboard context can skip it', async () => {

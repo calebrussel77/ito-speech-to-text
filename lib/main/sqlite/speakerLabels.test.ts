@@ -75,9 +75,54 @@ describe('InteractionsTable.updateSpeakerLabels', () => {
       llm_output: '{}',
     }
 
-    await InteractionsTable.updateSpeakerLabels('i1', { 0: 'Cindy' })
+    const result = await InteractionsTable.updateSpeakerLabels('i1', {
+      0: 'Cindy',
+    })
 
     expect(mockRun).not.toHaveBeenCalled()
+    expect(result).toBe(false)
+  })
+
+  test('an unknown interaction id is a no-op, not a crash', async () => {
+    row = null
+
+    const result = await InteractionsTable.updateSpeakerLabels('missing', {
+      0: 'Cindy',
+    })
+
+    expect(mockRun).not.toHaveBeenCalled()
+    expect(result).toBe(false)
+  })
+
+  test('a null or undefined labels argument is a safe no-op, not a crash', async () => {
+    row = withSpeakers([
+      { speaker: 0, label: 'Speaker 1', startMs: 0, endMs: 1, text: 'a' },
+    ])
+
+    const resultNull = await InteractionsTable.updateSpeakerLabels(
+      'i1',
+      null as any,
+    )
+    const resultUndefined = await InteractionsTable.updateSpeakerLabels(
+      'i1',
+      undefined as any,
+    )
+
+    expect(mockRun).not.toHaveBeenCalled()
+    expect(resultNull).toBe(false)
+    expect(resultUndefined).toBe(false)
+  })
+
+  test('a successful rename reports back that it renamed', async () => {
+    row = withSpeakers([
+      { speaker: 0, label: 'Speaker 1', startMs: 0, endMs: 1, text: 'a' },
+    ])
+
+    const result = await InteractionsTable.updateSpeakerLabels('i1', {
+      0: 'Cindy',
+    })
+
+    expect(result).toBe(true)
   })
 
   test('the rest of asr_output survives the rewrite', async () => {
