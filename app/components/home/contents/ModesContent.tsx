@@ -5,7 +5,7 @@ import { usePlatform } from '@/app/hooks/usePlatform'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import { MODE_PRESETS } from '@/lib/constants/modePresets'
 import { Button } from '@/app/components/ui/button'
-import { SettingsGroup } from '@/app/components/ui/settings'
+import { SettingsGroup, SettingsNote } from '@/app/components/ui/settings'
 import ModeRow from './modes/ModeRow'
 import ModeEditor from './modes/ModeEditor'
 import { modeIcon } from './modes/modeIcons'
@@ -18,6 +18,7 @@ export default function ModesContent() {
   const platform = usePlatform()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [fileError, setFileError] = useState('')
 
   useEffect(() => {
     if (!loaded) void load()
@@ -49,10 +50,28 @@ export default function ModesContent() {
             unless a dedicated shortcut says otherwise.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreating(true)}>
-          Create mode
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const result = await window.api.transcribeFile()
+              if (result.error) setFileError(result.error)
+            }}
+          >
+            Transcribe a file
+          </Button>
+          <Button size="sm" onClick={() => setCreating(true)}>
+            Create mode
+          </Button>
+        </div>
       </div>
+
+      {fileError && (
+        <div className="mb-3">
+          <SettingsNote tone="error">{fileError}</SettingsNote>
+        </div>
+      )}
 
       {creating && (
         <SettingsGroup title="Pick a preset">

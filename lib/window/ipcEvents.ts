@@ -841,6 +841,27 @@ export function registerIPC() {
     return await itoStreamController.flushPendingDictations()
   })
 
+  // Transcribe a recording made outside Ito (Teams, OBS, a dictaphone…)
+  // through the active mode.
+  handleIPC('transcribe-file', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Transcribe a recording',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Audio and video',
+          extensions: ['wav', 'mp3', 'm4a', 'mp4', 'ogg', 'flac', 'webm'],
+        },
+      ],
+    })
+    if (canceled || !filePaths[0]) return { ok: false }
+
+    const { transcribeExistingFile } = await import(
+      '../main/transcription/fileTranscription'
+    )
+    return transcribeExistingFile(filePaths[0])
+  })
+
   // User Data Deletion
   handleIPC('delete-user-data', async _e => {
     const userId = getCurrentUserId()

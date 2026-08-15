@@ -140,6 +140,11 @@ const api = {
     retry: (): Promise<number> =>
       ipcRenderer.invoke('pending-dictations:retry'),
   },
+  transcribeFile: (): Promise<{
+    ok: boolean
+    interactionId?: string
+    error?: string
+  }> => ipcRenderer.invoke('transcribe-file'),
   trial: {
     complete: () => ipcRenderer.invoke('trial:complete'),
     startAfterOnboarding: () =>

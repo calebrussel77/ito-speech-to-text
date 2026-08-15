@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { BrowserWindow } from 'electron'
 import { timingCollector } from '../timing/TimingCollector'
 import type { AsrFallback } from '../itoStreamController'
+import type { SpeakerSegment } from '../transcription/DeepgramTranscriptionService'
 
 export class InteractionManager {
   private currentInteractionId: string | null = null
@@ -223,7 +224,15 @@ export class InteractionManager {
     pendingPath?: string | null,
     audioDurationMs?: number,
     asrEngine?: string,
-  ) {
+    // Ce qu'un import de fichier (transcription d'un enregistrement existant)
+    // a besoin d'attacher à la ligne, en plus des champs de base ci-dessus.
+    extra?: {
+      rawTranscript?: string
+      modeId?: string
+      modeName?: string
+      speakers?: SpeakerSegment[]
+    },
+  ): Promise<string | undefined> {
     try {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
       const userId = userProfile?.id || 'self-hosted'
@@ -252,6 +261,16 @@ export class InteractionManager {
           pending: false,
           recovered: true,
           engine: asrEngine || null,
+          modeId: extra?.modeId || null,
+          modeName: extra?.modeName || null,
+          // Vide quand il est identique au final, comme dans createInteraction :
+          // le stocker deux fois n'apprendrait rien de plus à personne.
+          rawTranscript:
+            extra?.rawTranscript &&
+            extra.rawTranscript.trim() !== transcript.trim()
+              ? extra.rawTranscript
+              : null,
+          speakers: extra?.speakers?.length ? extra.speakers : null,
         },
         llm_output: {},
         raw_audio: null,
@@ -266,11 +285,13 @@ export class InteractionManager {
       })
 
       this.notifyInteractionCreated(id, transcript, now, audioDurationMs ?? 0)
+      return id
     } catch (error) {
       log.error(
         '[InteractionManager] Failed to store recovered interaction:',
         error,
       )
+      return undefined
     }
   }
 

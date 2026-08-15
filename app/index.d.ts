@@ -67,6 +67,11 @@ export interface IpcApi {
     count: () => Promise<number>
     retry: () => Promise<number>
   }
+  transcribeFile: () => Promise<{
+    ok: boolean
+    interactionId?: string
+    error?: string
+  }>
   testGroqApiKey: (apiKey: string) => Promise<ApiTestResult>
   testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
   testDeepgramApiKey: (apiKey: string) => Promise<ApiTestResult>
