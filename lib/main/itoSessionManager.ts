@@ -67,6 +67,9 @@ export class ItoSessionManager {
   }
 
   private async doStartSession(modeId?: string): Promise<string | null> {
+    // Tracks whether the microphone was actually started, so the catch
+    // below knows whether there is anything to stop.
+    let audioRecordingStarted = false
     try {
       const mode = modeId
         ? await resolveMode(modeId)
@@ -97,6 +100,7 @@ export class ItoSessionManager {
       }
 
       voiceInputService.startAudioRecording()
+      audioRecordingStarted = true
       itoStreamController.setMode(mode)
       recordingStateNotifier.notifyRecordingStarted(mode)
 
@@ -116,8 +120,16 @@ export class ItoSessionManager {
       // leaves `state` stuck at 'starting' forever — every later shortcut
       // press would be silently ignored until the app restarts. Fail the
       // same way the `!started` branch above already does.
-      log.error('[itoSessionManager] Failed to start session:', error)
+      console.error('[itoSessionManager] Failed to start session:', error)
       this.state = 'idle'
+      if (audioRecordingStarted) {
+        // The throw landed after the mic was already capturing (e.g.
+        // itoStreamController.setMode or the notifier threw) — resetting
+        // `state` alone would leave the recorder running while the state
+        // machine reports idle. Mirror cancelSession's cleanup.
+        itoStreamController.cancelTranscription()
+        await voiceInputService.stopAudioRecording()
+      }
       recordingStateNotifier.notifyRecordingStopped()
       return null
     }
@@ -149,7 +161,7 @@ export class ItoSessionManager {
       // lib/media/keyboard.ts fires this as `void itoSessionManager.setMode(...)`:
       // an uncaught throw here would be an unhandled rejection, not just a
       // failure to switch modes mid-recording.
-      log.error('[itoSessionManager] Failed to switch mode:', error)
+      console.error('[itoSessionManager] Failed to switch mode:', error)
     }
   }
 

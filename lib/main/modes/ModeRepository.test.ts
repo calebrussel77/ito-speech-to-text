@@ -154,6 +154,44 @@ describe('ModesTable', () => {
     expect(examplesQuery).not.toContain('DELETE FROM')
     expect(examplesParams).toContain('intelligent')
   })
+
+  test('findAllIdsIncludingDeleted does not filter deleted_at — the seeder needs to see soft-deleted presets too', async () => {
+    rows.push(
+      row({ id: 'mail', deleted_at: '2026-08-14T12:00:00.000Z' }),
+      row({ id: 'blank', deleted_at: null }),
+    )
+
+    const ids = await ModesTable.findAllIdsIncludingDeleted('self-hosted')
+    const [query] = mockAll.mock.calls[0]
+
+    expect(query).not.toContain('deleted_at')
+    expect(ids).toEqual(['mail', 'blank'])
+  })
+
+  test('findOwner reports the user_id of a row regardless of user or deletion status', async () => {
+    rows.push(row({ id: 'mail', user_id: 'user-a' }))
+
+    const owner = await ModesTable.findOwner('mail')
+    const [query] = mockGet.mock.calls[0]
+
+    expect(owner).toBe('user-a')
+    expect(query).not.toContain('user_id = ?')
+    expect(query).not.toContain('deleted_at')
+  })
+
+  test('findOwner returns undefined when the id does not exist', async () => {
+    const owner = await ModesTable.findOwner('nope')
+    expect(owner).toBeUndefined()
+  })
+
+  test('reassignOwner updates only user_id (and updated_at), scoped by id', async () => {
+    await ModesTable.reassignOwner('voice-to-text', 'user-b')
+    const [query, params] = mockRun.mock.calls[0]
+
+    expect(query).toContain('UPDATE modes SET user_id = ?')
+    expect(query).toContain('WHERE id = ?')
+    expect(params).toEqual(['user-b', expect.any(String), 'voice-to-text'])
+  })
 })
 
 describe('ModeExamplesTable', () => {

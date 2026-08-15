@@ -13,12 +13,34 @@ mock.module('../store', () => ({
   store: { get: mockStoreGet, set: mockStoreSet },
 }))
 
-const existing: any[] = []
-const mockFindAll = mock(async (_userId: string) => existing)
-const mockInsert = mock(async (mode: any) => mode)
+// `modes.id` is a global PRIMARY KEY, not scoped by user_id — at most one
+// row can ever exist for a given preset id, across every user. This mirrors
+// that: a flat list of { id, userId }, no per-user partitioning.
+type Row = { id: string; userId: string }
+let rows: Row[] = []
+
+const mockFindAllIdsIncludingDeleted = mock(async (userId: string) =>
+  rows.filter(r => r.userId === userId).map(r => r.id),
+)
+const mockFindOwner = mock(
+  async (id: string) => rows.find(r => r.id === id)?.userId,
+)
+const mockReassignOwner = mock(async (id: string, userId: string) => {
+  const row = rows.find(r => r.id === id)
+  if (row) row.userId = userId
+})
+const mockInsert = mock(async (mode: any) => {
+  rows.push({ id: mode.id, userId: mode.userId })
+  return mode
+})
 
 mock.module('./ModeRepository', () => ({
-  ModesTable: { findAll: mockFindAll, insert: mockInsert },
+  ModesTable: {
+    findAllIdsIncludingDeleted: mockFindAllIdsIncludingDeleted,
+    findOwner: mockFindOwner,
+    reassignOwner: mockReassignOwner,
+    insert: mockInsert,
+  },
 }))
 
 const { seedModes } = await import('./modeSeeder')
@@ -26,8 +48,10 @@ const { seedModes } = await import('./modeSeeder')
 describe('seedModes', () => {
   beforeEach(() => {
     applied = []
-    existing.length = 0
-    mockFindAll.mockClear()
+    rows = []
+    mockFindAllIdsIncludingDeleted.mockClear()
+    mockFindOwner.mockClear()
+    mockReassignOwner.mockClear()
     mockInsert.mockClear()
     mockStoreSet.mockClear()
   })
@@ -58,18 +82,18 @@ describe('seedModes', () => {
   })
 
   test('is idempotent — a second run creates nothing', async () => {
-    existing.push(
-      ...['voice-to-text', 'intelligent', 'message', 'mail', 'blank'].map(
-        id => ({ id }),
-      ),
-    )
+    await seedModes('self-hosted')
+    mockInsert.mockClear()
 
     expect(await seedModes('self-hosted')).toBe(0)
     expect(mockInsert).not.toHaveBeenCalled()
   })
 
   test('only fills the gaps on a first run', async () => {
-    existing.push({ id: 'voice-to-text' }, { id: 'intelligent' })
+    rows.push(
+      { id: 'voice-to-text', userId: 'self-hosted' },
+      { id: 'intelligent', userId: 'self-hosted' },
+    )
 
     const created = await seedModes('self-hosted')
 
@@ -94,19 +118,68 @@ describe('seedModes', () => {
   })
 
   test('a mode deleted by the user is never re-seeded', async () => {
-    // findAll ne voit pas les lignes supprimées : sans drapeau persistant, un
-    // mode supprimé reviendrait à chaque lancement.
-    await seedModes('self-hosted')
-    mockInsert.mockClear()
+    // findAllIdsIncludingDeleted (unlike the old, deleted_at-filtering
+    // findAll) sees a soft-deleted row too — from the seeder's point of
+    // view a deleted 'mail' and a live one are the same: both mean "don't
+    // insert".
+    mockFindAllIdsIncludingDeleted.mockImplementationOnce(async () => [
+      'voice-to-text',
+      'intelligent',
+      'message',
+      'mail',
+      'blank',
+    ])
 
-    existing.push(
-      ...['voice-to-text', 'intelligent', 'message', 'blank'].map(id => ({
-        id,
-      })),
-    )
+    const created = await seedModes('self-hosted')
 
-    expect(await seedModes('self-hosted')).toBe(0)
+    expect(created).toBe(0)
     expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  test('re-homes a preset already seeded under a different user instead of inserting a duplicate', async () => {
+    // self-hosted already owns 'voice-to-text' from before a user signed
+    // in. modes.id being a global PRIMARY KEY means inserting it again
+    // under 'user-a' would be a key collision, not a new row.
+    rows.push({ id: 'voice-to-text', userId: 'self-hosted' })
+
+    const created = await seedModes('user-a')
+
+    expect(mockReassignOwner).toHaveBeenCalledWith('voice-to-text', 'user-a')
+    expect(mockInsert.mock.calls.map(c => c[0].id)).not.toContain(
+      'voice-to-text',
+    )
+    expect(mockInsert.mock.calls.map(c => c[0].id)).toEqual([
+      'intelligent',
+      'message',
+      'mail',
+      'blank',
+    ])
+    expect(created).toBe(4)
+  })
+
+  test('bridges the legacy global flag so an existing single-user install is not re-seeded', async () => {
+    // Installs from before the flag was keyed per user set the bare
+    // SEED_ID flag. Without the bridge, every one of them looks unseeded
+    // on next launch — harmless if every preset survives, a collision (or
+    // worse, a resurrected preset) the moment the user deleted one.
+    applied = ['2026-08-14-seed-modes']
+
+    const created = await seedModes('self-hosted')
+
+    expect(created).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
+    expect(mockFindAllIdsIncludingDeleted).not.toHaveBeenCalled()
+    expect(applied).toEqual(
+      expect.arrayContaining(['2026-08-14-seed-modes:self-hosted']),
+    )
+  })
+
+  test('never throws — a seeding failure must not be able to take down startup', async () => {
+    mockFindAllIdsIncludingDeleted.mockImplementationOnce(async () => {
+      throw new Error('SQLite is on fire')
+    })
+
+    await expect(seedModes('self-hosted')).resolves.toBe(0)
   })
 
   test('the done flag lands in appliedMigrations, the only list initializeStore reloads', async () => {
@@ -118,18 +191,23 @@ describe('seedModes', () => {
     )
   })
 
-  test('the seed flag is keyed per user, so signing in as someone new still seeds', async () => {
-    // Modes are scoped by user_id, but a global flag would see the new user
-    // as "already seeded" and refuse to run, leaving them with zero modes.
+  test('the seed flag is keyed per user, so signing in as someone new re-homes the existing presets instead of refusing to run', async () => {
+    // Modes are scoped by user_id, but a global flag would see the new
+    // user as "already seeded" and refuse to run, leaving them with zero
+    // modes.
     await seedModes('user-a')
     mockInsert.mockClear()
+    mockReassignOwner.mockClear()
 
     const createdForB = await seedModes('user-b')
 
-    expect(createdForB).toBe(5)
-    expect(mockInsert.mock.calls.every(c => c[0].userId === 'user-b')).toBe(
-      true,
-    )
+    // Real installs share one global id space (modes.id is a PRIMARY KEY),
+    // so user-b can't get an independent duplicate 'voice-to-text' row —
+    // they get user-a's, re-homed.
+    expect(createdForB).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
+    expect(mockReassignOwner).toHaveBeenCalledTimes(5)
+    expect(rows.every(r => r.userId === 'user-b')).toBe(true)
     expect(applied).toEqual(
       expect.arrayContaining([
         '2026-08-14-seed-modes:user-a',

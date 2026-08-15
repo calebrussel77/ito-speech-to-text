@@ -115,6 +115,55 @@ export class ModesTable {
     return row?.n ?? 0
   }
 
+  /**
+   * Ids de toutes les lignes de l'utilisateur, supprimées comprises.
+   *
+   * Le seeder s'en sert pour décider quoi semer : `findAll` masque les
+   * lignes supprimées, donc tester la présence contre elle seule ferait
+   * revenir un preset que l'utilisateur a délibérément supprimé.
+   */
+  static async findAllIdsIncludingDeleted(userId: string): Promise<string[]> {
+    const rows = await all<{ id: string }>(
+      'SELECT id FROM modes WHERE user_id = ?',
+      [userId],
+    )
+    return rows.map(r => r.id)
+  }
+
+  /**
+   * Le `user_id` propriétaire d'une ligne, tous statuts de suppression
+   * confondus — `undefined` si l'id n'existe pas du tout.
+   *
+   * `modes.id` est une clé primaire globale (pas composée avec `user_id`),
+   * donc au plus une ligne existe jamais pour un id de preset donné.
+   */
+  static async findOwner(id: string): Promise<string | undefined> {
+    const row = await get<{ user_id: string }>(
+      'SELECT user_id FROM modes WHERE id = ?',
+      [id],
+    )
+    return row?.user_id
+  }
+
+  /**
+   * Ré-attribue une ligne existante à un autre utilisateur.
+   *
+   * Sert le seeder : un preset déjà semé sous un ancien `user_id` (ex.
+   * `self-hosted`, avant qu'un compte se connecte) doit être rapatrié vers
+   * l'utilisateur courant plutôt que ré-inséré — `modes.id` étant une clé
+   * globale, une seconde ligne avec le même id serait un conflit de clé
+   * primaire, pas un nouveau mode. Rapatrier préserve aussi les éventuelles
+   * modifications que l'utilisateur a faites sur ce preset au lieu de les
+   * écraser par une réinsertion des valeurs par défaut.
+   */
+  static async reassignOwner(id: string, userId: string): Promise<void> {
+    await run('UPDATE modes SET user_id = ?, updated_at = ? WHERE id = ?', [
+      userId,
+      new Date().toISOString(),
+      id,
+    ])
+  }
+
   static async insert(mode: InsertMode): Promise<Mode> {
     const now = new Date().toISOString()
     const created: Mode = {

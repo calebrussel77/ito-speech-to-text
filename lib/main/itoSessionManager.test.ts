@@ -472,6 +472,40 @@ describe('itoSessionManager (state machine)', () => {
     expect(session.getState()).toBe('recording')
   })
 
+  test('a throw after the mic starts stops the recording instead of leaving it running', async () => {
+    // itoStreamController.setMode runs right after voiceInputService
+    // .startAudioRecording() — a throw here used to leave the mic capturing
+    // while the state machine reported 'idle'.
+    mockItoStreamController.setMode.mockImplementationOnce(() => {
+      throw new Error('setMode blew up after the mic was already running')
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    const result = await session.startSession('voice-to-text')
+
+    expect(result).toBeNull()
+    expect(session.getState()).toBe('idle')
+    expect(mockVoiceInputService.startAudioRecording).toHaveBeenCalled()
+    expect(mockVoiceInputService.stopAudioRecording).toHaveBeenCalled()
+    expect(mockItoStreamController.cancelTranscription).toHaveBeenCalled()
+    expect(mockRecordingStateNotifier.notifyRecordingStopped).toHaveBeenCalled()
+  })
+
+  test('a throw before the mic starts does not touch the recorder', async () => {
+    mockResolveActiveMode.mockImplementationOnce(() => {
+      throw new Error('No mode available — the seeder did not run')
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession()
+
+    expect(mockVoiceInputService.startAudioRecording).not.toHaveBeenCalled()
+    expect(mockVoiceInputService.stopAudioRecording).not.toHaveBeenCalled()
+    expect(mockItoStreamController.cancelTranscription).not.toHaveBeenCalled()
+  })
+
   test('setMode swallows a failed mode resolution instead of an unhandled rejection', async () => {
     // lib/media/keyboard.ts fires this as `void itoSessionManager.setMode(...)`.
     const { ItoSessionManager } = await import('./itoSessionManager')
