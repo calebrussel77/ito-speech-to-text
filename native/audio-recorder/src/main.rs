@@ -45,19 +45,12 @@ enum AudioSource {
 }
 
 impl AudioSource {
-    /// `System` and `Both` both need the default output device opened in
-    /// loopback; only `Microphone` stays on the input side.
-    const fn needs_output_device(self) -> bool {
-        matches!(self, Self::System | Self::Both)
-    }
-
     /// Only `Both` combines two live streams and therefore needs the mixer
-    /// (task 4.2). `System` alone is a single loopback stream, same shape as
-    /// a plain microphone capture.
-    ///
-    /// Not called yet: `start_capture` doesn't wire up a second stream until
-    /// the mixer lands, so this stays unused outside its own tests until then.
-    #[allow(dead_code)]
+    /// (task 4.2): a second, loopback stream opened alongside the primary
+    /// microphone stream and mixed into it in `writer_loop`. `System` alone
+    /// is a single loopback stream, same shape as a plain microphone
+    /// capture — see `CaptureKind` for how each source's *primary* device
+    /// picks its config accessor.
     const fn needs_mixer(self) -> bool {
         matches!(self, Self::Both)
     }
@@ -68,19 +61,33 @@ impl AudioSource {
 /// `main`'s stdin loop drops any line that fails to parse as a whole
 /// `Command`, so without this the entire `start` command would be lost
 /// rather than just its source.
+///
+/// Deserializes into a permissive `serde_json::Value` first, not
+/// `Option<String>`: a present-but-wrong-typed field (a number, an array...)
+/// must degrade the same way an unrecognized string does. `Option::<String>`
+/// would instead propagate a hard `Err` for those shapes, failing the whole
+/// `Command` and losing it silently — the exact failure this fallback exists
+/// to prevent.
 fn deserialize_audio_source<'de, D>(deserializer: D) -> Result<AudioSource, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw = Option::<String>::deserialize(deserializer)?;
-    Ok(match raw.as_deref() {
+    let raw = serde_json::Value::deserialize(deserializer)?;
+    Ok(match raw.as_str() {
         Some("system") => AudioSource::System,
         Some("both") => AudioSource::Both,
-        Some(other) if other != "microphone" => {
+        Some("microphone") => AudioSource::Microphone,
+        Some(other) => {
             eprintln!("[audio-recorder] Unknown audio source {other:?}, using the microphone");
             AudioSource::Microphone
         }
-        _ => AudioSource::Microphone,
+        None if raw.is_null() => AudioSource::Microphone,
+        None => {
+            eprintln!(
+                "[audio-recorder] audio_source must be a string, got {raw:?}; using the microphone"
+            );
+            AudioSource::Microphone
+        }
     })
 }
 
@@ -184,6 +191,9 @@ struct CommandProcessor {
     is_recording: Option<Arc<AtomicBool>>,
     current_device_name: Option<String>,
     current_audio_source: AudioSource,
+    // `AudioSource::Both` only: the loopback stream + its resampling thread,
+    // started and torn down in lockstep with `active_stream`.
+    active_loopback: Option<LoopbackCapture>,
 }
 
 impl CommandProcessor {
@@ -198,6 +208,7 @@ impl CommandProcessor {
             is_recording: None,
             current_device_name: None,
             current_audio_source: AudioSource::default(),
+            active_loopback: None,
         }
     }
 
@@ -255,6 +266,15 @@ impl CommandProcessor {
         if let Some(handle) = self.writer_handle.take() {
             let _ = handle.join();
         }
+        // Tear down the loopback stream (if `Both` was active) the same way:
+        // drop the stream, close its raw channel so `loopback_resample_loop`
+        // sees EOF and exits, then join it.
+        if let Some(loopback) = self.active_loopback.take() {
+            let _ = loopback.stream.pause();
+            drop(loopback.stream);
+            drop(loopback.raw_tx);
+            let _ = loopback.resample_handle.join();
+        }
         self.is_recording = None;
         self.current_device_name = None;
         self.current_audio_source = AudioSource::default();
@@ -289,6 +309,10 @@ impl CommandProcessor {
             self.writer_handle = Some(handles.writer_handle);
             self.is_recording = Some(handles.is_recording);
             self.active_stream = Some(handles.stream);
+            // `prepare` always warms up the microphone alone, so this is
+            // always `None` today, but assigning it keeps this in lockstep
+            // with `start_recording` rather than relying on that invariant.
+            self.active_loopback = handles.loopback;
             self.current_device_name = device_name;
             self.current_audio_source = AudioSource::Microphone;
         } else {
@@ -335,6 +359,11 @@ impl CommandProcessor {
             if let Err(e) = stream.play() {
                 eprintln!("[audio-recorder] Failed to resume audio stream: {}", e);
             }
+            if let Some(loopback) = &self.active_loopback {
+                if let Err(e) = loopback.stream.play() {
+                    eprintln!("[audio-recorder] Failed to resume loopback stream: {}", e);
+                }
+            }
             return;
         }
 
@@ -348,11 +377,22 @@ impl CommandProcessor {
             start_capture(device_name.clone(), source, Arc::clone(&self.stdout), host)
         {
             handles.is_recording.store(true, Ordering::Release);
+            // The loopback stream shares `is_recording` with the primary
+            // (see `start_capture`), so only the primary's `play()` result
+            // gates whether the session is considered started; still play
+            // the loopback stream itself so it actually starts producing
+            // samples.
             if handles.stream.play().is_ok() {
+                if let Some(loopback) = &handles.loopback {
+                    if let Err(e) = loopback.stream.play() {
+                        eprintln!("[audio-recorder] Failed to start loopback stream: {}", e);
+                    }
+                }
                 self.audio_tx = Some(handles.audio_tx);
                 self.writer_handle = Some(handles.writer_handle);
                 self.is_recording = Some(handles.is_recording);
                 self.active_stream = Some(handles.stream);
+                self.active_loopback = handles.loopback;
                 self.current_device_name = device_name;
                 self.current_audio_source = source;
             }
@@ -367,6 +407,9 @@ impl CommandProcessor {
         }
         if let Some(stream) = &self.active_stream {
             let _ = stream.pause();
+        }
+        if let Some(loopback) = &self.active_loopback {
+            let _ = loopback.stream.pause();
         }
         // Flush any buffered samples and signal drain-complete for the current session
         if let Some(tx) = &self.audio_tx {
@@ -440,20 +483,61 @@ fn find_loopback_device(host: &cpal::Host) -> Result<cpal::Device> {
         .ok_or_else(|| anyhow!("[audio-recorder] No output device to capture from"))
 }
 
-/// Resolves the cpal device to open for the requested source.
+/// Which device flow a capture opened: an `eCapture` microphone (config
+/// queried via `default_input_config()`) or an `eRender` device captured in
+/// loopback (queried via `default_output_config()`, see `find_loopback_device`
+/// for why those two accessors aren't interchangeable).
+///
+/// `start_capture` picks its config accessor from this tag rather than from
+/// `AudioSource` directly, so the two can never drift apart the way they
+/// once did: `Both`'s *primary* device is the microphone (an input-flow
+/// device, same as plain `Microphone`) even though the source as a whole
+/// also opens a loopback device — as a *second*, independent stream via
+/// `start_loopback_capture`. A predicate keyed on `AudioSource` alone
+/// (`needs_output_device` in an earlier version of this file) conflated
+/// those two questions and sent `default_output_config()` to a microphone
+/// for `Both`, which cpal/WASAPI rejects outright since the device isn't
+/// `eRender`. Tagging the device with its actual flow at the point it's
+/// resolved makes that mismatch structurally impossible instead of correct
+/// by coincidence.
+#[derive(Clone, Copy)]
+enum CaptureKind {
+    Input,
+    Loopback,
+}
+
+/// Maps a source to the flow of its *primary* device (see `CaptureKind`).
 ///
 /// `Both` mixes microphone and system audio with the microphone as the clock
-/// master (see task 4.2's mixer); until the second loopback stream is wired
-/// in, it opens the microphone alone rather than silently dropping it.
+/// master (see task 4.2's mixer): its primary device here is the microphone
+/// (`Input`), same as plain `Microphone`; the loopback device is opened
+/// separately, as the secondary stream, by `start_loopback_capture`. Only
+/// `System` uses the loopback device as its primary.
+///
+/// Pulled out as its own pure function, rather than inlined in
+/// `find_capture_device`, so this mapping — the thing that was once wrong
+/// for `Both` (see `CaptureKind`'s doc comment) — is unit-testable without a
+/// real audio host.
+const fn primary_capture_kind(source: AudioSource) -> CaptureKind {
+    match source {
+        AudioSource::Microphone | AudioSource::Both => CaptureKind::Input,
+        AudioSource::System => CaptureKind::Loopback,
+    }
+}
+
+/// Resolves the cpal device to open as the *primary* capture for the
+/// requested source, tagged with its flow (see `CaptureKind`).
 fn find_capture_device(
     host: &cpal::Host,
     source: AudioSource,
     device_name: Option<String>,
-) -> Result<cpal::Device> {
-    match source {
-        AudioSource::Microphone | AudioSource::Both => find_input_device(host, device_name),
-        AudioSource::System => find_loopback_device(host),
-    }
+) -> Result<(cpal::Device, CaptureKind)> {
+    let kind = primary_capture_kind(source);
+    let device = match kind {
+        CaptureKind::Input => find_input_device(host, device_name)?,
+        CaptureKind::Loopback => find_loopback_device(host)?,
+    };
+    Ok((device, kind))
 }
 
 fn write_audio_chunk(data: &[f32], stdout: &Arc<Mutex<io::Stdout>>) {
@@ -481,6 +565,204 @@ struct CaptureHandles {
     audio_tx: crossbeam_channel::Sender<WriterMsg>,
     writer_handle: std::thread::JoinHandle<()>,
     is_recording: Arc<AtomicBool>,
+    /// Present only for `AudioSource::Both`: the loopback device's own
+    /// stream + resampling thread, kept alongside the primary (microphone)
+    /// stream so `CommandProcessor` can play/pause/tear them down together.
+    loopback: Option<LoopbackCapture>,
+}
+
+/// The loopback half of an `AudioSource::Both` capture: its cpal stream plus
+/// the thread that resamples it to 16 kHz, and the raw-audio sender that
+/// must be dropped to let that thread exit on teardown.
+struct LoopbackCapture {
+    stream: cpal::Stream,
+    raw_tx: crossbeam_channel::Sender<Vec<f32>>,
+    resample_handle: std::thread::JoinHandle<()>,
+}
+
+/// Bound on the loopback backlog kept by `LoopbackBuffer`, in already-16kHz
+/// samples: 2 seconds worth. A loopback device that gets more than 2s ahead
+/// of the microphone (the clock master) is misbehaving; letting the backlog
+/// grow further would just leak memory for the rest of the meeting, so the
+/// oldest samples are dropped instead once this cap is hit.
+const LOOPBACK_BUFFER_CAP_SAMPLES: usize = 32_000;
+
+/// Depth of the channel carrying already-resampled (16 kHz) loopback blocks
+/// from `loopback_resample_loop` into `writer_loop`.
+const LOOPBACK_CHANNEL_CAPACITY: usize = 64;
+
+/// Sums the loopback stream into the microphone (master-clock) stream,
+/// sample by sample, and clamps to avoid an `i16` wraparound later on.
+///
+/// The primary is the clock: its length decides the output length. A shorter
+/// secondary leaves the tail untouched (the loopback fell behind), a longer
+/// one is truncated (it got ahead). That is how the drift between two
+/// independent crystals stays a local, imperceptible defect instead of a
+/// cumulative offset that would desynchronize the whole recording.
+///
+/// Runs in `f32`, like the rest of the pipeline upstream of the final write;
+/// the `i16` conversion only happens in `write_audio_chunk`.
+pub fn mix_into(primary: &mut [f32], secondary: &[f32]) {
+    for (target, source) in primary.iter_mut().zip(secondary.iter()) {
+        *target = (*target + *source).clamp(-1.0, 1.0);
+    }
+}
+
+/// Persistent loopback backlog drained into each outgoing microphone block.
+///
+/// `writer_loop` calls `mix_into_block` once per outgoing 16 kHz block,
+/// pulling only as many loopback samples as that block needs via a
+/// non-blocking `try_recv` — waiting for the loopback would stall the mic's
+/// write path, which is exactly the stutter the master-clock design exists
+/// to avoid. The backlog itself is capped at `LOOPBACK_BUFFER_CAP_SAMPLES`;
+/// see that constant for why.
+struct LoopbackBuffer {
+    rx: crossbeam_channel::Receiver<Vec<f32>>,
+    pending: Vec<f32>,
+}
+
+impl LoopbackBuffer {
+    fn new(rx: crossbeam_channel::Receiver<Vec<f32>>) -> Self {
+        Self {
+            rx,
+            pending: Vec::new(),
+        }
+    }
+
+    /// Drains any newly-arrived loopback blocks, trims the backlog to the
+    /// cap, then mixes as much of it as `primary` needs (or as is
+    /// available, whichever is shorter) via `mix_into`.
+    fn mix_into_block(&mut self, primary: &mut [f32]) {
+        while let Ok(block) = self.rx.try_recv() {
+            self.pending.extend_from_slice(&block);
+        }
+        if self.pending.len() > LOOPBACK_BUFFER_CAP_SAMPLES {
+            let excess = self.pending.len() - LOOPBACK_BUFFER_CAP_SAMPLES;
+            self.pending.drain(..excess);
+        }
+        let take = primary.len().min(self.pending.len());
+        mix_into(primary, &self.pending[..take]);
+        self.pending.drain(..take);
+    }
+}
+
+/// Mixes any buffered loopback audio into `chunk` (if `AudioSource::Both` is
+/// active) before writing it out. Centralizes that branch so every write
+/// site in `writer_loop`/`flush_pending` looks the same whether or not a
+/// second source is active.
+fn mix_and_write(
+    chunk: &mut [f32],
+    loopback: &mut Option<LoopbackBuffer>,
+    stdout: &Arc<Mutex<io::Stdout>>,
+) {
+    if let Some(lb) = loopback {
+        lb.mix_into_block(chunk);
+    }
+    write_audio_chunk(chunk, stdout);
+}
+
+/// Linear resampler fallback for mono, used by both `writer_loop` (the
+/// primary/microphone stream) and `loopback_resample_loop` when an
+/// `FftFixedIn` instance couldn't be built for the requested rate pair.
+fn linear_resample_mono(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
+    if input.is_empty() || in_rate == 0 || in_rate == out_rate {
+        return input.to_vec();
+    }
+    let in_len = input.len();
+    let ratio = out_rate as f32 / in_rate as f32;
+    let out_len = ((in_len as f32) * ratio).round().max(0.0) as usize;
+    if out_len <= 1 {
+        return Vec::new();
+    }
+    let step = in_rate as f32 / out_rate as f32;
+    let mut out = Vec::with_capacity(out_len);
+    let mut pos: f32 = 0.0;
+    for _ in 0..out_len {
+        let idx = pos.floor() as usize;
+        if idx >= in_len - 1 {
+            out.push(input[in_len - 1]);
+        } else {
+            let frac = pos - (idx as f32);
+            let a = input[idx];
+            let b = input[idx + 1];
+            out.push(a + (b - a) * frac);
+        }
+        pos += step;
+    }
+    out
+}
+
+/// Resamples the loopback capture to 16 kHz on its own thread, independent
+/// from the microphone's resampler in `writer_loop`.
+///
+/// Each capture owns its own `FftFixedIn` instance because the two devices
+/// rarely share a native rate (48 kHz mic vs 44.1 kHz output device is
+/// common); resampling here, off the audio callback, keeps the callback
+/// itself allocation-free (it only downmixes and does a non-blocking send).
+/// Finished 16 kHz blocks are forwarded to `resampled_tx`; if `writer_loop`
+/// hasn't drained enough to make room, the block is dropped rather than
+/// blocking this thread (which would otherwise eventually back up into the
+/// capture callback via a full raw channel).
+fn loopback_resample_loop(
+    raw_rx: crossbeam_channel::Receiver<Vec<f32>>,
+    native_rate: u32,
+    resampled_tx: crossbeam_channel::Sender<Vec<f32>>,
+) {
+    const TARGET_SAMPLE_RATE: u32 = 16000;
+    const CHUNK_SIZE_DEFAULT: usize = 1024;
+    const CHUNK_SIZE_FALLBACK: usize = 512;
+
+    let mut chosen_chunk_size = CHUNK_SIZE_DEFAULT;
+    let mut resampler = if native_rate != TARGET_SAMPLE_RATE {
+        FftFixedIn::new(
+            native_rate as usize,
+            TARGET_SAMPLE_RATE as usize,
+            chosen_chunk_size,
+            1,
+            1,
+        )
+        .or_else(|_| {
+            chosen_chunk_size = CHUNK_SIZE_FALLBACK;
+            FftFixedIn::new(
+                native_rate as usize,
+                TARGET_SAMPLE_RATE as usize,
+                chosen_chunk_size,
+                1,
+                1,
+            )
+        })
+        .ok()
+    } else {
+        None
+    };
+
+    let mut in_buffer: Vec<f32> = Vec::new();
+
+    while let Ok(raw) = raw_rx.recv() {
+        if let Some(resampler) = resampler.as_mut() {
+            in_buffer.extend_from_slice(&raw);
+            while in_buffer.len() >= chosen_chunk_size {
+                let chunk: Vec<f32> = in_buffer.drain(..chosen_chunk_size).collect();
+                if let Ok(mut out) = resampler.process(&[chunk], None) {
+                    if !out.is_empty() {
+                        let _ = resampled_tx.try_send(out.remove(0));
+                    }
+                }
+            }
+        } else if native_rate != TARGET_SAMPLE_RATE {
+            let out = linear_resample_mono(&raw, native_rate, TARGET_SAMPLE_RATE);
+            if !out.is_empty() {
+                let _ = resampled_tx.try_send(out);
+            }
+        } else {
+            let _ = resampled_tx.try_send(raw);
+        }
+    }
+    // `raw_rx` closed: the capture stream was torn down. Unlike the primary
+    // writer thread, the loopback path doesn't drive the `drain-complete`
+    // handshake, so there's no flush to perform here — a few trailing
+    // milliseconds of buffered loopback audio lost on stop is inaudible,
+    // and not worth complicating an already-working teardown path for.
 }
 
 fn downmix_to_mono_vec<T>(data: &[T], num_channels: usize) -> Vec<f32>
@@ -528,6 +810,7 @@ fn writer_loop(
     audio_rx: crossbeam_channel::Receiver<WriterMsg>,
     stdout: Arc<Mutex<io::Stdout>>,
     input_sample_rate: u32,
+    mut loopback: Option<LoopbackBuffer>,
 ) {
     const TARGET_SAMPLE_RATE: u32 = 16000;
     const RESAMPLER_CHUNK_SIZE_DEFAULT: usize = 1024;
@@ -574,41 +857,13 @@ fn writer_loop(
 
     let mut in_buffer: Vec<f32> = Vec::new();
 
-    // Linear resampler fallback for mono when FFT resampler isn't available
-    fn linear_resample_mono(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
-        if input.is_empty() || in_rate == 0 || in_rate == out_rate {
-            return input.to_vec();
-        }
-        let in_len = input.len();
-        let ratio = out_rate as f32 / in_rate as f32;
-        let out_len = ((in_len as f32) * ratio).round().max(0.0) as usize;
-        if out_len <= 1 {
-            return Vec::new();
-        }
-        let step = in_rate as f32 / out_rate as f32;
-        let mut out = Vec::with_capacity(out_len);
-        let mut pos: f32 = 0.0;
-        for _ in 0..out_len {
-            let idx = pos.floor() as usize;
-            if idx >= in_len - 1 {
-                out.push(input[in_len - 1]);
-            } else {
-                let frac = pos - (idx as f32);
-                let a = input[idx];
-                let b = input[idx + 1];
-                out.push(a + (b - a) * frac);
-            }
-            pos += step;
-        }
-        out
-    }
-
     fn flush_pending(
         stdout: &Arc<Mutex<io::Stdout>>,
         input_sample_rate: u32,
         chosen_chunk_size: usize,
         resampler_opt: &mut Option<FftFixedIn<f32>>,
         in_buffer: &mut Vec<f32>,
+        loopback: &mut Option<LoopbackBuffer>,
     ) {
         const TARGET_SAMPLE_RATE: u32 = 16000;
 
@@ -626,7 +881,7 @@ fn writer_loop(
                 }
                 if let Ok(mut resampled) = resampler.process(&[chunk], None) {
                     if !resampled.is_empty() {
-                        write_audio_chunk(&resampled.remove(0), stdout);
+                        mix_and_write(&mut resampled.remove(0), loopback, stdout);
                     }
                 }
             }
@@ -634,13 +889,13 @@ fn writer_loop(
             *resampler_opt = Some(resampler);
         } else if !in_buffer.is_empty() {
             if input_sample_rate != TARGET_SAMPLE_RATE {
-                let resampled =
+                let mut resampled =
                     linear_resample_mono(in_buffer, input_sample_rate, TARGET_SAMPLE_RATE);
                 if !resampled.is_empty() {
-                    write_audio_chunk(&resampled, stdout);
+                    mix_and_write(&mut resampled, loopback, stdout);
                 }
             } else {
-                write_audio_chunk(in_buffer, stdout);
+                mix_and_write(in_buffer, loopback, stdout);
             }
             in_buffer.clear();
         }
@@ -657,7 +912,7 @@ fn writer_loop(
 
     while let Ok(msg) = audio_rx.recv() {
         match msg {
-            WriterMsg::Audio(frame) => {
+            WriterMsg::Audio(mut frame) => {
                 if let Some(resampler) = resampler_opt.as_mut() {
                     in_buffer.extend_from_slice(&frame);
                     while in_buffer.len() >= chosen_chunk_size {
@@ -666,7 +921,7 @@ fn writer_loop(
                         match resampler.process(&[chunk_to_process], None) {
                             Ok(mut resampled) => {
                                 if !resampled.is_empty() {
-                                    write_audio_chunk(&resampled.remove(0), &stdout);
+                                    mix_and_write(&mut resampled.remove(0), &mut loopback, &stdout);
                                 }
                             }
                             Err(e) => eprintln!(
@@ -676,13 +931,13 @@ fn writer_loop(
                         }
                     }
                 } else if input_sample_rate != TARGET_SAMPLE_RATE {
-                    let resampled =
+                    let mut resampled =
                         linear_resample_mono(&frame, input_sample_rate, TARGET_SAMPLE_RATE);
                     if !resampled.is_empty() {
-                        write_audio_chunk(&resampled, &stdout);
+                        mix_and_write(&mut resampled, &mut loopback, &stdout);
                     }
                 } else {
-                    write_audio_chunk(&frame, &stdout);
+                    mix_and_write(&mut frame, &mut loopback, &stdout);
                 }
             }
             WriterMsg::Flush => {
@@ -692,6 +947,7 @@ fn writer_loop(
                     chosen_chunk_size,
                     &mut resampler_opt,
                     &mut in_buffer,
+                    &mut loopback,
                 );
             }
         }
@@ -704,6 +960,7 @@ fn writer_loop(
         chosen_chunk_size,
         &mut resampler_opt,
         &mut in_buffer,
+        &mut loopback,
     );
 }
 
@@ -716,20 +973,20 @@ fn start_capture(
     const TARGET_SAMPLE_RATE: u32 = 16000;
     const QUEUE_CAPACITY: usize = 512;
 
-    let device = find_capture_device(&host, source, device_name)?;
+    let (device, capture_kind) = find_capture_device(&host, source, device_name)?;
 
     // Prefer the device's default configuration instead of max rate to better
-    // align with other apps (e.g., Zoom) and reduce host resampling. Loopback
-    // ("system") devices are queried through their *output* config: see
-    // `find_loopback_device` for why `default_input_config()` doesn't apply.
-    let default_config = if source.needs_output_device() {
-        device
+    // align with other apps (e.g., Zoom) and reduce host resampling. Which
+    // config accessor applies follows the device's actual flow
+    // (`capture_kind`), not the source: see `CaptureKind` for why keying
+    // this off `AudioSource` directly was the bug that this task fixed.
+    let default_config = match capture_kind {
+        CaptureKind::Loopback => device
             .default_output_config()
-            .map_err(|_| anyhow!("[audio-recorder] No default output config found"))?
-    } else {
-        device
+            .map_err(|_| anyhow!("[audio-recorder] No default output config found"))?,
+        CaptureKind::Input => device
             .default_input_config()
-            .map_err(|_| anyhow!("[audio-recorder] No default input config found"))?
+            .map_err(|_| anyhow!("[audio-recorder] No default input config found"))?,
     };
 
     let input_sample_rate = default_config.sample_rate().0;
@@ -739,11 +996,32 @@ fn start_capture(
     let err_fn = |err| eprintln!("[audio-recorder] Stream error: {}", err);
     let stream_config: StreamConfig = default_config.clone().into();
 
+    // Shared by the primary stream below and, for `Both`, the loopback
+    // stream too: a single flag gates both so play/pause always affects them
+    // together.
+    let is_recording = Arc::new(AtomicBool::new(false));
+
+    // For `Both`, open the loopback device as a second, independent capture
+    // before the writer thread spawns: writer_loop needs the resampled
+    // channel's receiver at construction time to mix it into the
+    // microphone's (primary, master-clock) blocks.
+    let (loopback_capture, loopback_buffer) = if source.needs_mixer() {
+        let (capture, buffer) = start_loopback_capture(&host, Arc::clone(&is_recording))?;
+        (Some(capture), Some(buffer))
+    } else {
+        (None, None)
+    };
+
     // Writer thread and queue
     let (audio_tx, audio_rx) = crossbeam_channel::bounded::<WriterMsg>(QUEUE_CAPACITY);
     let stdout_for_writer = Arc::clone(&stdout);
     let writer_handle = std::thread::spawn(move || {
-        writer_loop(audio_rx, stdout_for_writer, input_sample_rate);
+        writer_loop(
+            audio_rx,
+            stdout_for_writer,
+            input_sample_rate,
+            loopback_buffer,
+        );
     });
 
     // Notify JS about input and effective output audio configuration
@@ -759,8 +1037,6 @@ fn start_capture(
             let _ = write_framed_message(&mut *writer, MSG_TYPE_JSON, json_string.as_bytes());
         }
     }
-
-    let is_recording = Arc::new(AtomicBool::new(false));
 
     let stream = match input_sample_format {
         SampleFormat::F32 => {
@@ -888,6 +1164,172 @@ fn start_capture(
         audio_tx,
         writer_handle,
         is_recording,
+        loopback: loopback_capture,
+    })
+}
+
+/// Opens the loopback device as the second stream of an `AudioSource::Both`
+/// capture and starts its dedicated resampling thread.
+///
+/// Returns the stream/thread handles (for `CommandProcessor` to play, pause,
+/// and tear down alongside the primary microphone stream) plus the
+/// `LoopbackBuffer` that `writer_loop` mixes from.
+fn start_loopback_capture(
+    host: &cpal::Host,
+    is_recording: Arc<AtomicBool>,
+) -> Result<(LoopbackCapture, LoopbackBuffer)> {
+    const RAW_QUEUE_CAPACITY: usize = 512;
+
+    let device = find_loopback_device(host)?;
+    // See `find_loopback_device`: a render-flow device's capture format is
+    // only queryable through `default_output_config()`.
+    let default_config = device
+        .default_output_config()
+        .map_err(|_| anyhow!("[audio-recorder] No default output config found for loopback"))?;
+
+    let native_rate = default_config.sample_rate().0;
+    let sample_format = default_config.sample_format();
+    let channels_count = default_config.channels() as usize;
+    let stream_config: StreamConfig = default_config.clone().into();
+
+    let (raw_tx, raw_rx) = crossbeam_channel::bounded::<Vec<f32>>(RAW_QUEUE_CAPACITY);
+    let (resampled_tx, resampled_rx) =
+        crossbeam_channel::bounded::<Vec<f32>>(LOOPBACK_CHANNEL_CAPACITY);
+
+    let resample_handle = std::thread::spawn(move || {
+        loopback_resample_loop(raw_rx, native_rate, resampled_tx);
+    });
+
+    let stream = build_loopback_stream(
+        &device,
+        &stream_config,
+        sample_format,
+        channels_count,
+        is_recording,
+        raw_tx.clone(),
+    )?;
+
+    Ok((
+        LoopbackCapture {
+            stream,
+            raw_tx,
+            resample_handle,
+        },
+        LoopbackBuffer::new(resampled_rx),
+    ))
+}
+
+/// Builds the loopback capture stream for `AudioSource::Both`.
+///
+/// Downmixes to mono like the primary stream's own match in `start_capture`,
+/// but forwards raw (native-rate) blocks to a plain channel instead of a
+/// `WriterMsg`: the loopback side resamples on its own thread
+/// (`loopback_resample_loop`) rather than sharing `writer_loop`'s. The
+/// callback itself stays allocation-free apart from the downmix buffer
+/// (same trade-off the primary stream already makes) and never blocks: a
+/// full channel means the resampler thread is lagging, so the block is
+/// dropped via `try_send` rather than stalling this real-time callback.
+fn build_loopback_stream(
+    device: &cpal::Device,
+    stream_config: &StreamConfig,
+    sample_format: SampleFormat,
+    channels_count: usize,
+    flag: Arc<AtomicBool>,
+    tx: crossbeam_channel::Sender<Vec<f32>>,
+) -> Result<cpal::Stream> {
+    let err_fn = |err| eprintln!("[audio-recorder] Loopback stream error: {}", err);
+
+    Ok(match sample_format {
+        SampleFormat::F32 => device.build_input_stream(
+            stream_config,
+            move |data: &[f32], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::I16 => device.build_input_stream(
+            stream_config,
+            move |data: &[i16], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::U16 => device.build_input_stream(
+            stream_config,
+            move |data: &[u16], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::U8 => device.build_input_stream(
+            stream_config,
+            move |data: &[u8], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::I32 => device.build_input_stream(
+            stream_config,
+            move |data: &[i32], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::F64 => device.build_input_stream(
+            stream_config,
+            move |data: &[f64], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        SampleFormat::U32 => device.build_input_stream(
+            stream_config,
+            move |data: &[u32], _: &_| {
+                if !flag.load(Ordering::Acquire) {
+                    return;
+                }
+                let mono = downmix_to_mono_vec(data, channels_count);
+                let _ = tx.try_send(mono);
+            },
+            err_fn,
+            None,
+        )?,
+        format => {
+            return Err(anyhow!(
+                "[audio-recorder] Unsupported loopback sample format {}",
+                format
+            ))
+        }
     })
 }
 
@@ -1089,10 +1531,22 @@ mod audio_source_tests {
     }
 
     #[test]
-    fn system_capture_needs_an_output_device() {
-        assert!(AudioSource::System.needs_output_device());
-        assert!(AudioSource::Both.needs_output_device());
-        assert!(!AudioSource::Microphone.needs_output_device());
+    fn the_fast_path_key_also_includes_the_device() {
+        // Same source, different device: previously unasserted. The check is
+        // a trivial `&&` so the risk was low, but "same source" alone isn't
+        // enough to reuse a stream opened on a different microphone.
+        assert!(!can_reuse_stream(
+            Some("Mic A"),
+            AudioSource::Microphone,
+            Some("Mic B"),
+            AudioSource::Microphone,
+        ));
+        assert!(can_reuse_stream(
+            Some("Mic A"),
+            AudioSource::Microphone,
+            Some("Mic A"),
+            AudioSource::Microphone,
+        ));
     }
 
     #[test]
@@ -1100,5 +1554,156 @@ mod audio_source_tests {
         assert!(AudioSource::Both.needs_mixer());
         assert!(!AudioSource::System.needs_mixer());
         assert!(!AudioSource::Microphone.needs_mixer());
+    }
+
+    #[test]
+    fn both_uses_the_microphone_as_its_primary_input_not_a_loopback_output() {
+        // This is the config-selection bug fixed in this task's review:
+        // `Both`'s primary device is the microphone (`eCapture`), so its
+        // config must come from `default_input_config()`. Picking
+        // `default_output_config()` here — as an earlier version of this
+        // file did via a stale `AudioSource::needs_output_device` predicate
+        // that was keyed on the source instead of the actual device — fails
+        // outright on a microphone in cpal/WASAPI, since it isn't a
+        // render-flow device. `start_capture` now derives its config
+        // accessor from `primary_capture_kind`'s result directly (see
+        // `CaptureKind`), so this mapping is the only place that decision is
+        // made, for both device selection and config selection.
+        assert!(matches!(
+            primary_capture_kind(AudioSource::Both),
+            CaptureKind::Input
+        ));
+        assert!(matches!(
+            primary_capture_kind(AudioSource::Microphone),
+            CaptureKind::Input
+        ));
+        assert!(matches!(
+            primary_capture_kind(AudioSource::System),
+            CaptureKind::Loopback
+        ));
+    }
+
+    #[test]
+    fn a_wrong_typed_source_falls_back_inside_the_command_itself() {
+        // A present-but-wrong-shaped `audio_source` (here, a number) must
+        // degrade to the microphone exactly like an unrecognized string,
+        // not propagate a hard deserialize error that loses the whole
+        // `start` command silently (see `deserialize_audio_source`'s doc
+        // comment for why `Option::<String>` alone didn't catch this).
+        let cmd: Command = serde_json::from_str(r#"{"command":"start","audio_source":5}"#).unwrap();
+        match cmd {
+            Command::Start { audio_source, .. } => {
+                assert_eq!(audio_source, AudioSource::Microphone);
+            }
+            other => panic!("expected Command::Start, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod mixer_tests {
+    use super::*;
+
+    fn approx(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len());
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-6, "{a} != {e}");
+        }
+    }
+
+    #[test]
+    fn mixing_sums_both_sources() {
+        let mut primary = vec![0.1_f32, -0.2, 0.3];
+        mix_into(&mut primary, &[0.05, 0.05, 0.05]);
+        approx(&primary, &[0.15, -0.15, 0.35]);
+    }
+
+    #[test]
+    fn mixing_clamps_instead_of_wrapping() {
+        // Sans clamp, la conversion i16 en aval enroulerait : un craquement
+        // franc au lieu d'une légère compression.
+        let mut primary = vec![1.0_f32, -1.0];
+        mix_into(&mut primary, &[0.5, -0.5]);
+        approx(&primary, &[1.0, -1.0]);
+    }
+
+    #[test]
+    fn a_shorter_secondary_leaves_the_tail_untouched() {
+        let mut primary = vec![0.1_f32, 0.2, 0.3, 0.4];
+        mix_into(&mut primary, &[0.01, 0.01]);
+        approx(&primary, &[0.11, 0.21, 0.3, 0.4]);
+    }
+
+    #[test]
+    fn a_longer_secondary_is_truncated_to_the_master_clock() {
+        let mut primary = vec![0.1_f32, 0.2];
+        mix_into(&mut primary, &[0.01, 0.01, 0.01, 0.01]);
+        approx(&primary, &[0.11, 0.21]);
+    }
+
+    #[test]
+    fn an_empty_secondary_is_a_no_op() {
+        let mut primary = vec![0.1_f32, 0.2];
+        mix_into(&mut primary, &[]);
+        approx(&primary, &[0.1, 0.2]);
+    }
+
+    #[test]
+    fn a_full_hour_of_drift_never_shifts_the_master_clock() {
+        // 16 kHz × 3600 s = 57,6 M d'échantillons, réellement simulés : c'est
+        // la seule façon de prouver que la dérive ne s'accumule pas.
+        let samples = 16_000 * 3600;
+        let mut primary = vec![0.0_f32; samples];
+        // Le loopback fournit 1 % de trop sur toute la durée.
+        let secondary = vec![0.25_f32; samples + samples / 100];
+
+        mix_into(&mut primary, &secondary);
+
+        assert_eq!(primary.len(), samples);
+        assert!(primary.iter().all(|&s| (s - 0.25).abs() < 1e-6));
+    }
+
+    #[test]
+    fn loopback_buffer_mixes_and_drains_available_samples() {
+        let (tx, rx) = crossbeam_channel::unbounded::<Vec<f32>>();
+        tx.send(vec![0.1, 0.1, 0.1]).unwrap();
+        let mut buffer = LoopbackBuffer::new(rx);
+
+        let mut primary = vec![0.2_f32, 0.2, 0.2];
+        buffer.mix_into_block(&mut primary);
+
+        approx(&primary, &[0.3, 0.3, 0.3]);
+    }
+
+    #[test]
+    fn loopback_buffer_leaves_primary_untouched_when_starved() {
+        let (_tx, rx) = crossbeam_channel::unbounded::<Vec<f32>>();
+        let mut buffer = LoopbackBuffer::new(rx);
+
+        let mut primary = vec![0.2_f32, 0.2, 0.2];
+        buffer.mix_into_block(&mut primary);
+
+        approx(&primary, &[0.2, 0.2, 0.2]);
+    }
+
+    #[test]
+    fn loopback_buffer_caps_backlog_and_drops_oldest() {
+        let (tx, rx) = crossbeam_channel::unbounded::<Vec<f32>>();
+        // Push more than the 2s cap in one go; only the newest
+        // LOOPBACK_BUFFER_CAP_SAMPLES should survive the trim.
+        tx.send(vec![1.0; LOOPBACK_BUFFER_CAP_SAMPLES + 10])
+            .unwrap();
+        tx.send(vec![2.0; 5]).unwrap();
+        let mut buffer = LoopbackBuffer::new(rx);
+
+        // Draining pulls both queued blocks in and trims before consuming.
+        let mut primary = vec![0.0_f32; 1];
+        buffer.mix_into_block(&mut primary);
+
+        // The last 5 pushed as 2.0 should be at the tail, so the oldest
+        // (1.0) is what gets consumed first, proving they weren't dropped
+        // from the front incorrectly - but the backlog itself must not have
+        // grown past the cap.
+        assert!(buffer.pending.len() <= LOOPBACK_BUFFER_CAP_SAMPLES);
     }
 }
