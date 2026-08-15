@@ -166,10 +166,25 @@ describe('AudioRecorderService', () => {
     test('should send start recording command with device name', () => {
       const deviceName = 'Built-in Microphone'
 
-      audioRecorderService.startRecording(deviceName)
+      audioRecorderService.startRecording({ deviceId: deviceName })
 
       expect(mockChildProcess.stdin.write).toHaveBeenCalledWith(
         JSON.stringify({ command: 'start', device_name: deviceName }) + '\n',
+      )
+    })
+
+    test('should send start recording command with the audio source', () => {
+      audioRecorderService.startRecording({
+        deviceId: 'Built-in Microphone',
+        audioSource: 'both',
+      })
+
+      expect(mockChildProcess.stdin.write).toHaveBeenCalledWith(
+        JSON.stringify({
+          command: 'start',
+          device_name: 'Built-in Microphone',
+          audio_source: 'both',
+        }) + '\n',
       )
     })
 

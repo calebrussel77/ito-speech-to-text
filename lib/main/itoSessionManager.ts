@@ -99,7 +99,7 @@ export class ItoSessionManager {
         return null
       }
 
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(mode)
       audioRecordingStarted = true
       itoStreamController.setMode(mode)
       recordingStateNotifier.notifyRecordingStarted(mode)

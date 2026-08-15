@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useModesStore } from '@/app/store/useModesStore'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
+import { usePlatform } from '@/app/hooks/usePlatform'
 import { findPreset } from '@/lib/constants/modePresets'
 import {
   SettingsCard,
   SettingsGroup,
   SettingsRow,
   SettingsNote,
+  CONTROL_WIDTH,
 } from '@/app/components/ui/settings'
 import { Input } from '@/app/components/ui/input'
 import { Textarea } from '@/app/components/ui/textarea'
@@ -22,6 +24,7 @@ import ExamplesEditor from './ExamplesEditor'
 import { modeIcon } from './modeIcons'
 import type { ModeLanguage } from '@/lib/constants/modeLanguages'
 import MultiShortcutEditor from '@/app/components/ui/multi-shortcut-editor'
+import { cn } from '@/lib/utils'
 
 const INSTRUCTIONS_LIMIT = 3500
 const ASR_PROMPT_LIMIT = 100
@@ -36,6 +39,7 @@ export default function ModeEditor({
   const { modes, update, updateLocal, remove, duplicate } = useModesStore()
   const { groqApiKey, openRouterApiKey } = useAdvancedSettingsStore()
   const { keyboardShortcuts } = useSettingsStore()
+  const platform = usePlatform()
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [shortcutError, setShortcutError] = useState('')
@@ -300,6 +304,68 @@ export default function ModeEditor({
               <Switch
                 checked={mode.autocapitalize}
                 onCheckedChange={autocapitalize => set({ autocapitalize })}
+              />
+            </SettingsRow>
+          </SettingsGroup>
+
+          <SettingsGroup title="Recording">
+            <SettingsRow
+              title="Audio source"
+              description={
+                platform === 'win32'
+                  ? 'System audio captures what your speakers play — a Meet or Teams call. Both mixes it with your microphone.'
+                  : 'Capturing system audio is Windows-only for now.'
+              }
+            >
+              <select
+                value={mode.audioSource}
+                disabled={platform !== 'win32'}
+                onChange={event => set({ audioSource: event.target.value })}
+                className={cn(
+                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground disabled:opacity-40',
+                  CONTROL_WIDTH,
+                )}
+              >
+                <option value="microphone">Microphone</option>
+                <option value="system">System audio</option>
+                <option value="both">Both</option>
+              </select>
+            </SettingsRow>
+
+            <SettingsRow
+              title="Playback when recording"
+              description="Muting other apps keeps dictations clean — but it would silence a call you are trying to record."
+            >
+              <select
+                value={mode.playbackWhenRecording}
+                onChange={event =>
+                  set({ playbackWhenRecording: event.target.value })
+                }
+                className={cn(
+                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
+                  CONTROL_WIDTH,
+                )}
+              >
+                <option value="mute">Mute other apps</option>
+                <option value="leave">Leave it playing</option>
+              </select>
+            </SettingsRow>
+
+            {mode.audioSource !== 'microphone' &&
+              mode.playbackWhenRecording === 'mute' && (
+                <SettingsNote tone="error">
+                  Muting other apps while capturing system audio would record
+                  silence. Set playback to “Leave it playing”.
+                </SettingsNote>
+              )}
+
+            <SettingsRow
+              title="Identify speakers"
+              description="Separates who said what. Needs a Deepgram key and works best with Nova 3."
+            >
+              <Switch
+                checked={mode.identifySpeakers}
+                onCheckedChange={identifySpeakers => set({ identifySpeakers })}
               />
             </SettingsRow>
           </SettingsGroup>
