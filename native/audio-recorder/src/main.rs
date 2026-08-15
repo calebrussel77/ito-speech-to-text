@@ -2,7 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::io::{self, BufRead, Write};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -15,7 +15,11 @@ use rubato::{FftFixedIn, Resampler};
 #[serde(tag = "command")]
 enum Command {
     #[serde(rename = "start")]
-    Start { device_name: Option<String> },
+    Start {
+        device_name: Option<String>,
+        #[serde(default, deserialize_with = "deserialize_audio_source")]
+        audio_source: AudioSource,
+    },
     #[serde(rename = "prepare")]
     Prepare { device_name: Option<String> },
     #[serde(rename = "stop")]
@@ -25,6 +29,61 @@ enum Command {
     #[serde(rename = "get-device-config")]
     GetDeviceConfig { device_name: Option<String> },
 }
+
+/// Where a recording's audio comes from.
+///
+/// `System` relies on a cpal/WASAPI quirk on Windows: opening the default
+/// **output** device in capture mode transparently activates loopback
+/// capture (see `find_loopback_device`). No extra dependency is needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AudioSource {
+    #[default]
+    Microphone,
+    System,
+    Both,
+}
+
+impl AudioSource {
+    /// `System` and `Both` both need the default output device opened in
+    /// loopback; only `Microphone` stays on the input side.
+    const fn needs_output_device(self) -> bool {
+        matches!(self, Self::System | Self::Both)
+    }
+
+    /// Only `Both` combines two live streams and therefore needs the mixer
+    /// (task 4.2). `System` alone is a single loopback stream, same shape as
+    /// a plain microphone capture.
+    ///
+    /// Not called yet: `start_capture` doesn't wire up a second stream until
+    /// the mixer lands, so this stays unused outside its own tests until then.
+    #[allow(dead_code)]
+    const fn needs_mixer(self) -> bool {
+        matches!(self, Self::Both)
+    }
+}
+
+/// Field-level fallback for `Command::Start.audio_source`: an unrecognized
+/// value degrades to the microphone instead of failing deserialization.
+/// `main`'s stdin loop drops any line that fails to parse as a whole
+/// `Command`, so without this the entire `start` command would be lost
+/// rather than just its source.
+fn deserialize_audio_source<'de, D>(deserializer: D) -> Result<AudioSource, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<String>::deserialize(deserializer)?;
+    Ok(match raw.as_deref() {
+        Some("system") => AudioSource::System,
+        Some("both") => AudioSource::Both,
+        Some(other) if other != "microphone" => {
+            eprintln!("[audio-recorder] Unknown audio source {other:?}, using the microphone");
+            AudioSource::Microphone
+        }
+        _ => AudioSource::Microphone,
+    })
+}
+
 #[derive(Serialize)]
 struct DeviceList {
     #[serde(rename = "type")]
@@ -53,6 +112,19 @@ fn write_framed_message(writer: &mut impl Write, msg_type: u8, data: &[u8]) -> i
 }
 
 fn main() {
+    // Diagnostic subcommand, bypassing the normal stdin protocol: opens the
+    // default output device in capture mode, records ~3s and prints the peak
+    // level. A peak of 0.0000 means WASAPI loopback isn't delivering samples
+    // on this machine.
+    if std::env::args().nth(1).as_deref() == Some("probe-loopback") {
+        let host = build_preferred_host();
+        if let Err(e) = probe_loopback(&host) {
+            eprintln!("[audio-recorder] probe-loopback failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let stdout = Arc::new(Mutex::new(io::stdout()));
     let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<Command>();
 
@@ -75,6 +147,32 @@ fn main() {
     command_processor.run();
 }
 
+/// Prefers the WASAPI backend on Windows for lower latency (10-30ms vs
+/// DirectSound's 50-80ms); falls back to the platform default host elsewhere,
+/// and if WASAPI itself is unavailable.
+fn build_preferred_host() -> cpal::Host {
+    #[cfg(target_os = "windows")]
+    {
+        match cpal::host_from_id(cpal::platform::HostId::Wasapi) {
+            Ok(wasapi_host) => {
+                eprintln!("[audio-recorder] Using WASAPI host (optimal for Windows)");
+                wasapi_host
+            }
+            Err(e) => {
+                eprintln!(
+                    "[audio-recorder] WASAPI unavailable ({}), falling back to default",
+                    e
+                );
+                cpal::default_host()
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        cpal::default_host()
+    }
+}
+
 struct CommandProcessor {
     cmd_rx: crossbeam_channel::Receiver<Command>,
     active_stream: Option<cpal::Stream>,
@@ -85,6 +183,7 @@ struct CommandProcessor {
     writer_handle: Option<std::thread::JoinHandle<()>>,
     is_recording: Option<Arc<AtomicBool>>,
     current_device_name: Option<String>,
+    current_audio_source: AudioSource,
 }
 
 impl CommandProcessor {
@@ -98,6 +197,7 @@ impl CommandProcessor {
             writer_handle: None,
             is_recording: None,
             current_device_name: None,
+            current_audio_source: AudioSource::default(),
         }
     }
 
@@ -106,32 +206,7 @@ impl CommandProcessor {
             return host.clone();
         }
 
-        let host = {
-            #[cfg(target_os = "windows")]
-            {
-                // On Windows, prefer WASAPI directly for best performance (10-30ms latency vs
-                // DirectSound's 50-80ms)
-                match cpal::host_from_id(cpal::platform::HostId::Wasapi) {
-                    Ok(wasapi_host) => {
-                        eprintln!("[audio-recorder] Using WASAPI host (optimal for Windows)");
-                        wasapi_host
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[audio-recorder] WASAPI unavailable ({}), falling back to default",
-                            e
-                        );
-                        cpal::default_host()
-                    }
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                cpal::default_host()
-            }
-        };
-
-        let host_rc = Rc::new(host);
+        let host_rc = Rc::new(build_preferred_host());
         self.cached_host = Some(host_rc.clone());
         host_rc
     }
@@ -140,7 +215,10 @@ impl CommandProcessor {
         while let Ok(command) = self.cmd_rx.recv() {
             match command {
                 Command::ListDevices => self.list_devices(),
-                Command::Start { device_name } => self.start_recording(device_name),
+                Command::Start {
+                    device_name,
+                    audio_source,
+                } => self.start_recording(device_name, audio_source),
                 Command::Prepare { device_name } => self.prepare_stream(device_name),
                 Command::Stop => self.stop_recording(),
                 Command::GetDeviceConfig { device_name } => self.get_device_config(device_name),
@@ -179,26 +257,40 @@ impl CommandProcessor {
         }
         self.is_recording = None;
         self.current_device_name = None;
+        self.current_audio_source = AudioSource::default();
     }
 
     fn prepare_stream(&mut self, device_name: Option<String>) {
         // Create the CPAL stream + writer thread once so subsequent starts are instant.
+        // `prepare` always warms up the microphone; the source-aware fast path
+        // lives in `start_recording`.
         let device_name = Self::normalize_device_name(device_name);
         if self.active_stream.is_some() {
-            if self.current_device_name == device_name {
+            if can_reuse_stream(
+                self.current_device_name.as_deref(),
+                self.current_audio_source,
+                device_name.as_deref(),
+                AudioSource::Microphone,
+            ) {
                 return;
             }
-            // Device changed: recreate the stream to match the selected device.
+            // Device or source changed: recreate the stream to match the selected device.
             self.teardown_stream();
         }
 
         let host = self.get_or_create_host();
-        if let Ok(handles) = start_capture(device_name.clone(), Arc::clone(&self.stdout), host) {
+        if let Ok(handles) = start_capture(
+            device_name.clone(),
+            AudioSource::Microphone,
+            Arc::clone(&self.stdout),
+            host,
+        ) {
             self.audio_tx = Some(handles.audio_tx);
             self.writer_handle = Some(handles.writer_handle);
             self.is_recording = Some(handles.is_recording);
             self.active_stream = Some(handles.stream);
             self.current_device_name = device_name;
+            self.current_audio_source = AudioSource::Microphone;
         } else {
             eprintln!("[audio-recorder] CRITICAL: Failed to prepare audio stream");
         }
@@ -222,11 +314,21 @@ impl CommandProcessor {
         }
     }
 
-    fn start_recording(&mut self, device_name: Option<String>) {
+    fn start_recording(&mut self, device_name: Option<String>, source: AudioSource) {
         let device_name = Self::normalize_device_name(device_name);
 
-        // Fast path: reuse existing stream + writer thread to avoid 1-3s cold-start latency
-        if self.active_stream.is_some() && self.current_device_name == device_name {
+        // Fast path: reuse existing stream + writer thread to avoid 1-3s cold-start
+        // latency. The cache key must include the source: without it, a Meeting-mode
+        // dictation would silently reuse the microphone stream prepared at startup
+        // (see `prepare_stream`) and record silence instead of the call.
+        if self.active_stream.is_some()
+            && can_reuse_stream(
+                self.current_device_name.as_deref(),
+                self.current_audio_source,
+                device_name.as_deref(),
+                source,
+            )
+        {
             let stream = self.active_stream.as_ref().unwrap();
             let flag = self.is_recording.as_ref().unwrap();
             flag.store(true, Ordering::Release);
@@ -236,13 +338,15 @@ impl CommandProcessor {
             return;
         }
 
-        // Stream exists but device changed: recreate to use the requested device.
+        // Stream exists but device or source changed: recreate to match the request.
         if self.active_stream.is_some() {
             self.teardown_stream();
         }
 
         let host = self.get_or_create_host();
-        if let Ok(handles) = start_capture(device_name.clone(), Arc::clone(&self.stdout), host) {
+        if let Ok(handles) =
+            start_capture(device_name.clone(), source, Arc::clone(&self.stdout), host)
+        {
             handles.is_recording.store(true, Ordering::Release);
             if handles.stream.play().is_ok() {
                 self.audio_tx = Some(handles.audio_tx);
@@ -250,6 +354,7 @@ impl CommandProcessor {
                 self.is_recording = Some(handles.is_recording);
                 self.active_stream = Some(handles.stream);
                 self.current_device_name = device_name;
+                self.current_audio_source = source;
             }
         } else {
             eprintln!("[audio-recorder] CRITICAL: Failed to create audio stream");
@@ -273,18 +378,7 @@ impl CommandProcessor {
         const TARGET_SAMPLE_RATE: u32 = 16000;
 
         let host = self.get_or_create_host();
-
-        let device = if let Some(name) = device_name {
-            if name.to_lowercase() == "default" || name.is_empty() {
-                host.default_input_device()
-            } else {
-                host.input_devices()
-                    .ok()
-                    .and_then(|mut it| it.find(|d| d.name().unwrap_or_default() == name))
-            }
-        } else {
-            host.default_input_device()
-        };
+        let device = find_input_device(&host, device_name).ok();
 
         let input_rate = device
             .and_then(|d| d.supported_input_configs().ok())
@@ -302,6 +396,63 @@ impl CommandProcessor {
             let mut writer = self.stdout.lock().unwrap();
             let _ = write_framed_message(&mut *writer, MSG_TYPE_JSON, json_string.as_bytes());
         }
+    }
+}
+
+/// The prepared stream is reusable only if both the device **and** the
+/// source of the new request match what is currently open.
+fn can_reuse_stream(
+    current_device: Option<&str>,
+    current_source: AudioSource,
+    wanted_device: Option<&str>,
+    wanted_source: AudioSource,
+) -> bool {
+    current_device == wanted_device && current_source == wanted_source
+}
+
+/// Resolves the named input device, or the default input device when `name`
+/// is absent, empty, or the literal `"default"`.
+fn find_input_device(host: &cpal::Host, device_name: Option<String>) -> Result<cpal::Device> {
+    if let Some(name) = device_name {
+        if name.to_lowercase() == "default" || name.is_empty() {
+            host.default_input_device()
+        } else {
+            host.input_devices()?
+                .find(|d| d.name().unwrap_or_default() == name)
+        }
+    } else {
+        host.default_input_device()
+    }
+    .ok_or_else(|| anyhow!("[audio-recorder] Failed to find input device"))
+}
+
+/// The default output device, to be opened in capture mode.
+///
+/// On Windows, cpal/WASAPI detects that the device was obtained via
+/// `default_output_device()` (its render "data flow") and sets
+/// `AUDCLNT_STREAMFLAGS_LOOPBACK` automatically once a capture stream is
+/// built on it — no separate loopback API is needed. Its capture format must
+/// then be queried through `default_output_config()`, not
+/// `default_input_config()`: the latter fails outright on a render-flow
+/// device, since it isn't a capture endpoint by itself.
+fn find_loopback_device(host: &cpal::Host) -> Result<cpal::Device> {
+    host.default_output_device()
+        .ok_or_else(|| anyhow!("[audio-recorder] No output device to capture from"))
+}
+
+/// Resolves the cpal device to open for the requested source.
+///
+/// `Both` mixes microphone and system audio with the microphone as the clock
+/// master (see task 4.2's mixer); until the second loopback stream is wired
+/// in, it opens the microphone alone rather than silently dropping it.
+fn find_capture_device(
+    host: &cpal::Host,
+    source: AudioSource,
+    device_name: Option<String>,
+) -> Result<cpal::Device> {
+    match source {
+        AudioSource::Microphone | AudioSource::Both => find_input_device(host, device_name),
+        AudioSource::System => find_loopback_device(host),
     }
 }
 
@@ -558,29 +709,28 @@ fn writer_loop(
 
 fn start_capture(
     device_name: Option<String>,
+    source: AudioSource,
     stdout: Arc<Mutex<io::Stdout>>,
     host: Rc<cpal::Host>,
 ) -> Result<CaptureHandles> {
     const TARGET_SAMPLE_RATE: u32 = 16000;
     const QUEUE_CAPACITY: usize = 512;
 
-    let device = if let Some(name) = device_name {
-        if name.to_lowercase() == "default" || name.is_empty() {
-            host.default_input_device()
-        } else {
-            host.input_devices()?
-                .find(|d| d.name().unwrap_or_default() == name)
-        }
-    } else {
-        host.default_input_device()
-    }
-    .ok_or_else(|| anyhow!("[audio-recorder] Failed to find input device"))?;
+    let device = find_capture_device(&host, source, device_name)?;
 
-    // Prefer the device's default input configuration instead of max rate to
-    // better align with other apps (e.g., Zoom) and reduce host resampling.
-    let default_config = device
-        .default_input_config()
-        .map_err(|_| anyhow!("[audio-recorder] No default input config found"))?;
+    // Prefer the device's default configuration instead of max rate to better
+    // align with other apps (e.g., Zoom) and reduce host resampling. Loopback
+    // ("system") devices are queried through their *output* config: see
+    // `find_loopback_device` for why `default_input_config()` doesn't apply.
+    let default_config = if source.needs_output_device() {
+        device
+            .default_output_config()
+            .map_err(|_| anyhow!("[audio-recorder] No default output config found"))?
+    } else {
+        device
+            .default_input_config()
+            .map_err(|_| anyhow!("[audio-recorder] No default input config found"))?
+    };
 
     let input_sample_rate = default_config.sample_rate().0;
     let input_sample_format = default_config.sample_format();
@@ -741,6 +891,57 @@ fn start_capture(
     })
 }
 
+/// Diagnostic run via `cargo run -- probe-loopback`: opens the default output
+/// device in capture mode, records for ~3 seconds and prints the peak level.
+///
+/// A peak of 0.0000 means WASAPI loopback isn't delivering samples on this
+/// machine — treat that as a hard stop for the whole system-audio batch
+/// rather than a bug to chase further downstream.
+fn probe_loopback(host: &cpal::Host) -> Result<()> {
+    let device = find_loopback_device(host)?;
+    let config = device
+        .default_output_config()
+        .map_err(|_| anyhow!("[audio-recorder] No default output config found"))?;
+    eprintln!(
+        "[audio-recorder] Loopback device: {} @ {} Hz, {} ch",
+        device.name().unwrap_or_default(),
+        config.sample_rate().0,
+        config.channels()
+    );
+    if config.sample_format() != SampleFormat::F32 {
+        // WASAPI shared-mode output is f32 in practice; keep this probe simple
+        // rather than replicating start_capture's full format matrix for a
+        // one-off diagnostic.
+        return Err(anyhow!(
+            "[audio-recorder] probe-loopback only handles f32 output configs, got {}",
+            config.sample_format()
+        ));
+    }
+
+    let peak = Arc::new(AtomicU32::new(0));
+    let peak_for_stream = Arc::clone(&peak);
+    let stream = device.build_input_stream(
+        &config.clone().into(),
+        move |data: &[f32], _: &_| {
+            let local = data.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+            // AtomicU32 has no fetch_max for floats; scale into a fixed-point
+            // integer so concurrent updates from the audio callback can use
+            // `fetch_max` instead of a mutex.
+            peak_for_stream.fetch_max((local * 10_000.0) as u32, Ordering::Relaxed);
+        },
+        |err| eprintln!("[audio-recorder] Probe error: {err}"),
+        None,
+    )?;
+
+    stream.play()?;
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    drop(stream);
+
+    let value = f64::from(peak.load(Ordering::Relaxed)) / 10_000.0;
+    eprintln!("[audio-recorder] Loopback peak over 3s: {value:.4}");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -815,5 +1016,89 @@ mod tests {
         assert_eq!(buffer[0], MSG_TYPE_AUDIO);
         let length = u32::from_le_bytes([buffer[1], buffer[2], buffer[3], buffer[4]]);
         assert_eq!(length, 100);
+    }
+}
+
+#[cfg(test)]
+mod audio_source_tests {
+    use super::*;
+
+    #[test]
+    fn audio_source_defaults_to_microphone() {
+        let parsed: AudioSource = serde_json::from_str("\"microphone\"").unwrap();
+        assert_eq!(parsed, AudioSource::Microphone);
+        assert_eq!(AudioSource::default(), AudioSource::Microphone);
+    }
+
+    #[test]
+    fn audio_source_parses_every_variant() {
+        assert_eq!(
+            serde_json::from_str::<AudioSource>("\"system\"").unwrap(),
+            AudioSource::System
+        );
+        assert_eq!(
+            serde_json::from_str::<AudioSource>("\"both\"").unwrap(),
+            AudioSource::Both
+        );
+    }
+
+    #[test]
+    fn an_unknown_source_falls_back_inside_the_command_itself() {
+        // `main`'s stdin loop silently drops any line that fails to deserialize
+        // as a whole `Command`: without a field-level fallback, an unknown
+        // source wouldn't just degrade to the microphone, it would lose the
+        // entire `start` command. Hence `deserialize_with` on the field rather
+        // than a plain `unwrap_or_default()` at the call site.
+        let cmd: Command =
+            serde_json::from_str(r#"{"command":"start","audio_source":"quadraphonic"}"#).unwrap();
+        match cmd {
+            Command::Start { audio_source, .. } => {
+                assert_eq!(audio_source, AudioSource::Microphone);
+            }
+            other => panic!("expected Command::Start, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_source_is_the_microphone() {
+        let cmd: Command = serde_json::from_str(r#"{"command":"start"}"#).unwrap();
+        match cmd {
+            Command::Start { audio_source, .. } => {
+                assert_eq!(audio_source, AudioSource::Microphone);
+            }
+            other => panic!("expected Command::Start, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_fast_path_key_includes_the_source() {
+        // Without the source in the key, a Meeting-mode dictation would reuse
+        // the microphone stream prepared at startup and record silence.
+        assert!(!can_reuse_stream(
+            Some("default"),
+            AudioSource::Microphone,
+            Some("default"),
+            AudioSource::Both,
+        ));
+        assert!(can_reuse_stream(
+            Some("default"),
+            AudioSource::Microphone,
+            Some("default"),
+            AudioSource::Microphone,
+        ));
+    }
+
+    #[test]
+    fn system_capture_needs_an_output_device() {
+        assert!(AudioSource::System.needs_output_device());
+        assert!(AudioSource::Both.needs_output_device());
+        assert!(!AudioSource::Microphone.needs_output_device());
+    }
+
+    #[test]
+    fn only_both_needs_the_mixer() {
+        assert!(AudioSource::Both.needs_mixer());
+        assert!(!AudioSource::System.needs_mixer());
+        assert!(!AudioSource::Microphone.needs_mixer());
     }
 }
