@@ -10,12 +10,20 @@ export type ModeLanguage = 'fr' | 'en' | 'es' | 'auto'
 export const MODE_LANGUAGES: {
   key: ModeLanguage
   label: string
-  flag: string
+  /**
+   * Code ISO 3166-1 alpha-2 du drapeau à dessiner, ou `null` quand la langue
+   * n'a pas de pays (`auto`).
+   *
+   * C'était un emoji drapeau, remplacé par un code : Windows ne rend aucun
+   * emoji de drapeau — il affiche les deux lettres de l'indicateur régional à
+   * la place. Le dessin est donc fait en SVG côté interface.
+   */
+  country: string | null
 }[] = [
-  { key: 'fr', label: 'French', flag: '🇫🇷' },
-  { key: 'en', label: 'English', flag: '🇬🇧' },
-  { key: 'es', label: 'Spanish', flag: '🇪🇸' },
-  { key: 'auto', label: 'Automatic', flag: '🌐' },
+  { key: 'fr', label: 'French', country: 'FR' },
+  { key: 'en', label: 'English', country: 'GB' },
+  { key: 'es', label: 'Spanish', country: 'ES' },
+  { key: 'auto', label: 'Automatic', country: null },
 ]
 
 export const DEFAULT_MODE_LANGUAGE: ModeLanguage = 'fr'

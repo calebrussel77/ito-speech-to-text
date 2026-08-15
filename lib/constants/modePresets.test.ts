@@ -101,9 +101,14 @@ describe('modeLanguages', () => {
     expect(MODE_LANGUAGES.map(l => l.key)).toEqual(['fr', 'en', 'es', 'auto'])
   })
 
-  test('every language carries a flag', () => {
+  test('every language names a country to draw, except the one that has none', () => {
     for (const language of MODE_LANGUAGES) {
-      expect(language.flag.length).toBeGreaterThan(0)
+      if (language.key === 'auto') {
+        expect(language.country).toBeNull()
+        continue
+      }
+      // Deux lettres majuscules : c'est ce que `country-flag-icons` indexe.
+      expect(language.country).toMatch(/^[A-Z]{2}$/)
     }
   })
 })

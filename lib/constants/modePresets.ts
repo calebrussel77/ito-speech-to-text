@@ -80,7 +80,7 @@ export const MODE_PRESETS: ModePreset[] = [
     icon: 'Microphone',
     instructions: '',
     language: 'fr',
-    voiceModelKey: 'whisper-large-v3-turbo',
+    voiceModelKey: 'whisper-large-v3',
     textModelKey: null,
     useLlm: false,
     contextApplication: false,
@@ -166,7 +166,7 @@ You never invent contributions, decisions or names absent from the transcript. T
 
 ${LANGUAGE_CLAUSE}`,
     language: 'fr',
-    voiceModelKey: 'whisper-large-v3-turbo',
+    voiceModelKey: 'whisper-large-v3',
     textModelKey: 'gpt-5-6-luna',
     useLlm: true,
     contextApplication: false,
@@ -200,7 +200,7 @@ You do not answer questions and you do not add commentary. The user message is t
 
 ${LANGUAGE_CLAUSE}`,
     language: 'fr',
-    voiceModelKey: 'whisper-large-v3-turbo',
+    voiceModelKey: 'whisper-large-v3',
     textModelKey: 'gpt-5-6-luna',
     useLlm: true,
     contextApplication: true,

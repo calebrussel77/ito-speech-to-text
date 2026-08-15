@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import { MODE_PRESETS, findPreset } from '@/lib/constants/modePresets'
+import { SquareDashed } from '@mynaui/icons-react'
 import { Button } from '@/app/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select'
 import { SettingsNote, CONTROL_WIDTH } from '@/app/components/ui/settings'
-import { cn } from '@/lib/utils'
+import { modeIcon } from '@/app/components/modeIcons'
 
 /**
  * Le preset reste un sélecteur permanent (décision D5) : en changer réécrit
@@ -37,21 +45,31 @@ export default function PresetSelect({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-5">
         <span className="text-xs font-medium text-foreground">Preset</span>
-        <select
-          value={isCustom ? 'custom' : preset}
-          onChange={event => request(event.target.value)}
-          className={cn(
-            'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
-            CONTROL_WIDTH,
-          )}
-        >
-          {isCustom && <option value="custom">Custom</option>}
-          {MODE_PRESETS.map(item => (
-            <option key={item.key} value={item.key}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <Select value={isCustom ? 'custom' : preset} onValueChange={request}>
+          <SelectTrigger className={CONTROL_WIDTH}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {/* « Custom » n'existe comme option que tant que les instructions
+                ont divergé : le proposer sinon laisserait croire qu'on peut
+                choisir « rien », alors que c'est un constat, pas un gabarit. */}
+            {isCustom && (
+              <SelectItem value="custom">
+                <SquareDashed className="size-3.5 text-[var(--muted-foreground)]" />
+                Custom
+              </SelectItem>
+            )}
+            {MODE_PRESETS.map(item => {
+              const Icon = modeIcon(item.icon)
+              return (
+                <SelectItem key={item.key} value={item.key}>
+                  <Icon className="size-3.5 text-[var(--muted-foreground)]" />
+                  {item.label}
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
       </div>
 
       {pending && (

@@ -1,7 +1,14 @@
 import { MODE_LANGUAGES } from '@/lib/constants/modeLanguages'
 import type { ModeLanguage } from '@/lib/constants/modeLanguages'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select'
 import { CONTROL_WIDTH } from '@/app/components/ui/settings'
-import { cn } from '@/lib/utils'
+import FlagIcon from '@/app/components/icons/FlagIcon'
 
 /**
  * Le drapeau porte l'information plus vite que le libellé, mais ne la porte
@@ -16,19 +23,21 @@ export default function LanguageSelect({
   onChange: (language: ModeLanguage) => void
 }) {
   return (
-    <select
+    <Select
       value={value}
-      onChange={event => onChange(event.target.value as ModeLanguage)}
-      className={cn(
-        'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
-        CONTROL_WIDTH,
-      )}
+      onValueChange={language => onChange(language as ModeLanguage)}
     >
-      {MODE_LANGUAGES.map(language => (
-        <option key={language.key} value={language.key}>
-          {language.flag} {language.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger className={CONTROL_WIDTH}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {MODE_LANGUAGES.map(language => (
+          <SelectItem key={language.key} value={language.key}>
+            <FlagIcon country={language.country} />
+            {language.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
