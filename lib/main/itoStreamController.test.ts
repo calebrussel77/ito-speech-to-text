@@ -243,6 +243,7 @@ const mockLocalAudioProcessor = {
     sampleRate: 16000,
     durationMs: 500,
   })),
+  getWavDurationMs: mock((): number | null => null),
 }
 mock.module('./transcription/LocalAudioProcessor', () => ({
   localAudioProcessor: mockLocalAudioProcessor,
@@ -456,11 +457,13 @@ describe('ItoStreamController (local)', () => {
     })
     mockPendingDictationStore.save.mockReturnValue('C:/pending/dictation-1.wav')
     mockPendingDictationStore.list.mockReturnValue([])
+    mockPendingDictationStore.read.mockReturnValue(Buffer.from('wav'))
     mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
       wavAudio: Buffer.from('wav'),
       sampleRate: 16000,
       durationMs: 500,
     })
+    mockLocalAudioProcessor.getWavDurationMs.mockReturnValue(null)
     mockGetAdvancedSettings.mockReturnValue(baseAdvancedSettings())
   })
 
@@ -1080,6 +1083,84 @@ describe('ItoStreamController (local)', () => {
       expect(
         mockInteractionManager.createRecoveredInteraction,
       ).not.toHaveBeenCalled()
+    })
+
+    // Regression coverage for the gap: `flushPendingDictations` used to pass
+    // `durationMs: 0` for every recovered WAV, so a recording long enough to
+    // trip FILE_PATH_THRESHOLD_MS but still small enough for Groq's byte
+    // ceiling was silently sent to Groq forever — exactly the transport the
+    // router says not to trust with audio that long.
+    test('routes a recovered WAV whose duration crosses the threshold to Deepgram even though its bytes fit under Groq (the duration-triggered case)', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/long.wav'])
+      // Bytes stay small (default mock read: Buffer.from('wav')), well under
+      // the Groq ceiling — only the recovered duration should trigger the
+      // file path here.
+      mockLocalAudioProcessor.getWavDurationMs.mockReturnValue(
+        FILE_PATH_THRESHOLD_MS,
+      )
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        deepgramApiKey: 'dg-test',
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+    })
+
+    test('a short recovered WAV still routes to Groq', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/short.wav'])
+      mockLocalAudioProcessor.getWavDurationMs.mockReturnValue(5_000)
+      // A Deepgram key is present so this pins that a short recovered WAV
+      // stays on Groq because of its duration, not merely because no key
+      // was configured.
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        deepgramApiKey: 'dg-test',
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).toHaveBeenCalledTimes(1)
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+    })
+
+    test('a truncated/unparseable recovered WAV does not throw and does not abort the remaining pending files', async () => {
+      mockPendingDictationStore.list.mockReturnValue([
+        'C:/pending/corrupt.wav',
+        'C:/pending/normal.wav',
+      ])
+      // getWavDurationMs returns null for an unparseable header (its
+      // contract — see LocalAudioProcessor.test.ts) rather than throwing;
+      // this pins that the flush loop treats that the same as "unknown
+      // duration" and keeps going instead of aborting on the next file.
+      mockLocalAudioProcessor.getWavDurationMs
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce(5_000)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(2)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).toHaveBeenCalledTimes(2)
+      expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
     })
   })
 })

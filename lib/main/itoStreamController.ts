@@ -557,14 +557,23 @@ export class ItoStreamController {
         try {
           const wavAudio = pendingDictationStore.read(filePath)
 
-          // La durée d'origine n'a pas survécu au disque — seule la taille
-          // du WAV est connue ici. Ça suffit : un WAV n'atteint `path: null`
-          // qu'en dépassant le plafond Groq (25 Mo), et c'est exactement ce
-          // que la taille seule permet de revérifier, sans avoir besoin de la
-          // durée.
+          // La durée d'origine n'a pas survécu à la persistance sur disque
+          // (seul le WAV est écrit) — mais un WAV porte sa propre durée dans
+          // son en-tête, donc pas besoin de deviner. La recalculer est
+          // nécessaire : repasser 0 comme avant fait lire un enregistrement
+          // long comme s'il était court, ce qui l'envoie silencieusement vers
+          // Groq alors que le routeur l'aurait réservé au chemin fichier
+          // (Deepgram) — et cet échec ne se corrige jamais tout seul, à
+          // chaque passe de flush. Un en-tête illisible (fichier
+          // tronqué/corrompu) ne doit pas faire échouer tout le flush : on
+          // retombe alors sur 0, le comportement d'avant, pour ce seul
+          // fichier.
+          const recoveredDurationMs =
+            localAudioProcessor.getWavDurationMs(wavAudio) ?? 0
+
           const decision = chooseTranscriptionPath({
             voiceModelProvider: voiceModel.provider,
-            durationMs: 0,
+            durationMs: recoveredDurationMs,
             wavBytes: wavAudio.length,
             identifySpeakers: mode.identifySpeakers,
             hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),

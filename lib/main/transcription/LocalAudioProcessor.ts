@@ -150,6 +150,61 @@ export class LocalAudioProcessor {
   }
 
   /**
+   * Recovers a WAV's duration straight from its own header instead of
+   * requiring a caller to have kept it around separately. A recording
+   * persisted to `pendingDictationStore` survives on disk as just the WAV —
+   * its original `durationMs` is never written alongside it — yet the
+   * router's file-path decision (`chooseTranscriptionPath`) depends on that
+   * duration. Reading it back from the header (sample rate, channel count
+   * and bit depth from `fmt `, byte count from `data`) is what lets the
+   * recovery pass in `flushPendingDictations` reproduce the original
+   * decision instead of guessing 0, which silently downgrades a long
+   * recording that should go to Deepgram onto Groq forever.
+   *
+   * Every WAV this reads was built by `createWavHeader` above — a fixed
+   * 44-byte header with `fmt ` immediately followed by `data` — so this only
+   * has to understand that exact layout, not arbitrary WAV files. Files
+   * recovered from disk can be truncated or corrupt, so this never throws:
+   * it returns null and lets the caller fall back to the old behaviour for
+   * that one file rather than aborting the whole recovery pass.
+   */
+  getWavDurationMs(wavAudio: Buffer): number | null {
+    try {
+      if (!wavAudio || wavAudio.length < 44) return null
+      if (
+        wavAudio.toString('ascii', 0, 4) !== 'RIFF' ||
+        wavAudio.toString('ascii', 8, 12) !== 'WAVE' ||
+        wavAudio.toString('ascii', 12, 16) !== 'fmt ' ||
+        wavAudio.toString('ascii', 36, 40) !== 'data'
+      ) {
+        return null
+      }
+
+      const channelCount = wavAudio.readUInt16LE(22)
+      const sampleRate = wavAudio.readUInt32LE(24)
+      const bitDepth = wavAudio.readUInt16LE(34)
+      const declaredDataLength = wavAudio.readUInt32LE(40)
+
+      const blockAlign = channelCount * (bitDepth / 8)
+      if (!sampleRate || !blockAlign) return null
+
+      // A truncated file's declared `data` length can outrun what is
+      // actually on disk — trust the bytes that are really there instead.
+      const dataLength = Math.min(declaredDataLength, wavAudio.length - 44)
+      if (dataLength <= 0) return null
+
+      const totalSamples = dataLength / blockAlign
+      return Math.floor((totalSamples / sampleRate) * 1000)
+    } catch (error) {
+      console.warn(
+        '[LocalAudioProcessor] Could not read WAV duration from header:',
+        error,
+      )
+      return null
+    }
+  }
+
+  /**
    * Validates and converts raw PCM to a WAV buffer suitable for Groq.
    * Returns both the WAV buffer and calculated metadata.
    */
