@@ -311,26 +311,39 @@ export default function ModeEditor({
           <SettingsGroup title="Recording">
             <SettingsRow
               title="Audio source"
-              description={
-                platform === 'win32'
-                  ? 'System audio captures what your speakers play — a Meet or Teams call. Both mixes it with your microphone.'
-                  : 'Capturing system audio is Windows-only for now.'
-              }
+              description="System audio captures what your speakers play — a Meet or Teams call. Both mixes it with your microphone."
             >
               <select
                 value={mode.audioSource}
-                disabled={platform !== 'win32'}
                 onChange={event => set({ audioSource: event.target.value })}
                 className={cn(
-                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground disabled:opacity-40',
+                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
                   CONTROL_WIDTH,
                 )}
               >
                 <option value="microphone">Microphone</option>
-                <option value="system">System audio</option>
-                <option value="both">Both</option>
+                {/* Disabled, not removed: a mode synced from Windows (or the
+                    seeded Meeting preset) can already hold 'system'/'both' on
+                    a platform that can't capture them. The option must still
+                    render so the select shows what the mode is actually set
+                    to, and the user must still be able to reach
+                    'microphone' from here — disabling the whole control
+                    would trap them with no way back. */}
+                <option value="system" disabled={platform !== 'win32'}>
+                  System audio
+                </option>
+                <option value="both" disabled={platform !== 'win32'}>
+                  Both
+                </option>
               </select>
             </SettingsRow>
+
+            {platform !== undefined && platform !== 'win32' && (
+              <SettingsNote>
+                Capturing system audio is Windows-only for now — switch to
+                Microphone if this mode needs to work here.
+              </SettingsNote>
+            )}
 
             <SettingsRow
               title="Playback when recording"

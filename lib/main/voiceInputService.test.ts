@@ -217,6 +217,30 @@ describe('VoiceInputService', () => {
       expect(mockMuteSystemAudio).toHaveBeenCalled()
     })
 
+    // The contradictory combination the whole feature exists to prevent:
+    // capturing system audio while also muting it would record silence.
+    // `shouldMuteForMode` must refuse to mute here even though the mode's
+    // own `playbackWhenRecording` says 'mute'.
+    test('a system-audio mode never mutes, even if its own policy says mute', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: false })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'system', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).not.toHaveBeenCalled()
+    })
+
+    test('a both-source mode never mutes, even if its own policy says mute', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: false })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'both', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).not.toHaveBeenCalled()
+    })
+
     test('the audio source reaches the recorder without dropping the chosen microphone', async () => {
       mockStore.get.mockReturnValue({ microphoneDeviceId: 'usb-mic-2' })
 

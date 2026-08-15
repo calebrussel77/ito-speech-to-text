@@ -60,8 +60,11 @@ export class VoiceInputService {
 
     // `deviceId` keeps flowing regardless of `mode.audioSource`: the chosen
     // microphone is a global setting (Settings → Audio & Mic), not something
-    // a mode's source overrides — `system`/`both` still need it as the
-    // primary/master-clock device (see the Rust `CaptureKind` doc comment).
+    // a mode's source overrides. For `both` it is the primary/master-clock
+    // device (see the Rust `CaptureKind` doc comment) — but pure `system`
+    // capture ignores `device_name` entirely and lets the Rust side pick the
+    // default output device, so `deviceId` is harmless dead weight there,
+    // not something it relies on.
     console.log(
       '[VoiceInputService] Starting audio recorder with device:',
       deviceId,

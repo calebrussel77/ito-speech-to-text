@@ -28,6 +28,17 @@ export default function ModeRow({
   // from the preset catalogue instead, falling back to the raw value for a
   // custom preset that has none.
   const presetLabel = findPreset(mode.preset)?.label ?? mode.preset
+  // The list is where the user picks the active mode, and picking wrong
+  // means an unrepeatable meeting recorded from the wrong source — so a mode
+  // that grabs the call must say so here, not only in the editor. Distinct
+  // wording for 'system' vs 'both': the latter still has the microphone in
+  // the mix, the former doesn't.
+  const audioSourceLabel =
+    mode.audioSource === 'both'
+      ? 'mic + system audio'
+      : mode.audioSource === 'system'
+        ? 'system audio'
+        : null
 
   return (
     <div
@@ -61,6 +72,7 @@ export default function ModeRow({
         </span>
         <span className="block truncate text-[11px] leading-snug text-[var(--subtle-foreground)]">
           {mode.useLlm ? presetLabel : 'Raw transcript'}
+          {audioSourceLabel && ` · ${audioSourceLabel}`}
         </span>
       </button>
 
