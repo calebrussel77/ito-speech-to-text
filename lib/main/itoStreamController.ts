@@ -11,12 +11,16 @@ import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import {
   DEFAULT_SHORT_VOICE_KEY,
   resolveModel,
-  type CatalogModel,
 } from '../constants/modelCatalog'
 import { asrLanguageHint } from '../constants/modeLanguages'
 import type { Mode } from './sqlite/models'
 import { resolveActiveMode } from './modes/activeMode'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
+import {
+  deepgramTranscriptionService,
+  type SpeakerSegment,
+} from './transcription/DeepgramTranscriptionService'
+import { chooseTranscriptionPath } from './transcription/transcriptionRouter'
 import {
   clearOpenRouterFailure,
   failureNotice,
@@ -83,6 +87,12 @@ export interface LocalTranscriptionResult {
   // 'openai/gpt-transcribe') — shown as a badge in the history.
   asrEngine: string
   asrFallback?: AsrFallback
+  /**
+   * Segments de locuteurs rendus par Deepgram quand le mode demande la
+   * diarisation. Tableau vide sur les deux autres chemins, qui ne la
+   * fournissent pas.
+   */
+  speakerSegments: SpeakerSegment[]
   /** Le mode qui a produit ce transcript, figé pour l'historique. */
   modeId: string
   modeName: string
@@ -238,13 +248,55 @@ export class ItoStreamController {
       customPrompt: mode.asrPrompt,
     }
 
+    // Décide une fois, avant toute tentative réseau, quel transport prend
+    // l'audio — pas de sondage inline comme avant : la durée, la taille et la
+    // diarisation demandée sont déjà connues.
+    const decision = chooseTranscriptionPath({
+      voiceModelProvider: voiceModel.provider,
+      durationMs,
+      wavBytes: wavAudio.length,
+      identifySpeakers: mode.identifySpeakers,
+      hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
+      hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+    })
+
+    if (decision.path === null) {
+      // Ni transport court ni Deepgram : le WAV reste sur disque (voir le
+      // catch plus bas) et l'utilisateur sait pourquoi, plutôt que de perdre
+      // la dictée en silence.
+      throw new LocalTranscriptionError(decision.reason, 'MODEL_ERROR')
+    }
+
     let transcript: string
-    // Groq is the default attribution; overwritten when OpenRouter answers.
+    // Groq is the default attribution; overwritten when Deepgram or
+    // OpenRouter answers.
     let asrEngine = groqModel.slug
     let asrFallback: AsrFallback | undefined
+    let speakerSegments: SpeakerSegment[] = []
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
-        if (this.shouldUseOpenRouter(mode, voiceModel, advancedSettings)) {
+        if (decision.path === 'deepgram') {
+          try {
+            const result = await this.withRetry(
+              `Deepgram (${voiceModel.slug})`,
+              OPENROUTER_RETRY,
+              () =>
+                deepgramTranscriptionService.transcribeAudio(wavAudio, {
+                  apiKey: advancedSettings.deepgramApiKey || '',
+                  model: 'nova-3',
+                  language: languageHint,
+                  diarize: mode.identifySpeakers,
+                }),
+            )
+            asrEngine = 'deepgram/nova-3'
+            speakerSegments = result.segments
+            return result.text
+          } catch (error: any) {
+            // Same guarantee as OpenRouter below: a failed precise engine
+            // falls through to Groq rather than losing the dictation.
+            asrFallback = this.recordProviderFallback(error, 'deepgram/nova-3')
+          }
+        } else if (decision.path === 'openrouter') {
           const apiKey = advancedSettings.openRouterApiKey || ''
           const openRouterModel = voiceModel.slug
           const rejected = getRejectedKeyFailure(apiKey)
@@ -351,6 +403,7 @@ export class ItoStreamController {
       durationMs,
       asrEngine,
       asrFallback,
+      speakerSegments,
       modeId: mode.id,
       modeName: mode.name,
       rawTranscript,
@@ -381,24 +434,25 @@ export class ItoStreamController {
   }
 
   /**
-   * OpenRouter sert le modèle vocal du mode quand c'est lui qui l'héberge.
-   * Sans clé, tout retombe sur Groq — un modèle injoignable ne doit jamais
-   * coûter une dictée.
+   * Deepgram failure, logged and surfaced the same way an OpenRouter one is.
+   * Doesn't persist the failure to settings yet — that skip-the-retry
+   * optimisation is OpenRouter-only until `openRouterHealth` generalizes into
+   * a per-provider record (task 3.3bis).
    */
-  private shouldUseOpenRouter(
-    mode: Mode,
-    voiceModel: CatalogModel,
-    advancedSettings: ReturnType<typeof getAdvancedSettings>,
-  ): boolean {
-    if (voiceModel.provider !== 'openrouter') return false
+  private recordProviderFallback(error: any, model: string): AsrFallback {
+    const code = error?.code || 'UNKNOWN'
+    const message = error?.message || 'Deepgram request failed'
 
-    if (!advancedSettings.openRouterApiKey?.trim()) {
-      console.warn(
-        `[ItoStreamController] Mode "${mode.name}" wants ${voiceModel.slug} but no OpenRouter key is configured, using Groq`,
-      )
-      return false
-    }
-    return true
+    console.warn(
+      `[ItoStreamController] ${model} failed (${code}), falling back to Groq:`,
+      message,
+    )
+    showNotification(
+      'Ito — repli sur Groq',
+      'La transcription Deepgram a échoué ; la dictée est transcrite par Groq.',
+    )
+
+    return { from: model, code, message }
   }
 
   /**

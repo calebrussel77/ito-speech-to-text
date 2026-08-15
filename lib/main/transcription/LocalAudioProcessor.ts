@@ -21,7 +21,12 @@ export class LocalAudioProcessor {
   private readonly defaultChannels = 1
   private readonly defaultBitDepth = 16
   private readonly minDurationMs = 100
-  private readonly groqMaxBytes = 25 * 1024 * 1024 // 25 MB
+  /**
+   * Plafond de sécurité, pas une limite de transport : c'est le routeur qui
+   * sait quel transport supporte quoi. Une heure d'audio 16 kHz mono pèse
+   * ~115 Mo ; au-delà de 512 Mo on est face à un bug, pas à une réunion.
+   */
+  private readonly maxBytes = 512 * 1024 * 1024
 
   concatenateAudioChunks(chunks: Buffer[]): Buffer {
     if (!chunks.length) return Buffer.alloc(0)
@@ -155,14 +160,14 @@ export class LocalAudioProcessor {
     const sampleRate = options.sampleRate || this.defaultSampleRate
     const channels = options.channels || this.defaultChannels
     const bitDepth = options.bitDepth || this.defaultBitDepth
-    const maxBytes = options.maxBytes || this.groqMaxBytes
+    const maxBytes = options.maxBytes || this.maxBytes
 
     if (!audioPcm || audioPcm.length === 0) {
       throw new Error('No audio data provided')
     }
 
     if (audioPcm.length > maxBytes) {
-      throw new Error('Audio exceeds Groq 25MB limit')
+      throw new Error('Audio exceeds the 512MB safety limit')
     }
 
     const bytesPerSample = bitDepth / 8

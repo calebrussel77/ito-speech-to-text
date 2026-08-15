@@ -1,4 +1,8 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
+import {
+  FILE_PATH_THRESHOLD_MS,
+  GROQ_MAX_BYTES,
+} from './transcription/transcriptionRouter'
 
 const mockAudioStreamManager = {
   isCurrentlyStreaming: mock(() => false),
@@ -87,7 +91,17 @@ const mockLocalTranscriptionService = {
 }
 mock.module('./transcription/LocalTranscriptionService', () => ({
   localTranscriptionService: mockLocalTranscriptionService,
-  LocalTranscriptionError: class extends Error {},
+  // A real LocalTranscriptionError carries `code` from its constructor (the
+  // router's `decision.path === null` throw relies on that); other tests in
+  // this file build one with a single arg then attach `code` via
+  // Object.assign, which still works since the field is just overwritten.
+  LocalTranscriptionError: class extends Error {
+    code?: string
+    constructor(message: string, code?: string) {
+      super(message)
+      this.code = code
+    }
+  },
 }))
 
 const mockTranscriptAdjuster = {
@@ -112,6 +126,16 @@ const mockOpenRouterHealth = {
   failureNotice: mock(() => 'notice'),
 }
 mock.module('./transcription/openRouterHealth', () => mockOpenRouterHealth)
+
+const mockDeepgramService = {
+  transcribeAudio: mock(
+    (): Promise<{ text: string; segments: any[] }> =>
+      Promise.resolve({ text: 'deepgram transcript', segments: [] }),
+  ),
+}
+mock.module('./transcription/DeepgramTranscriptionService', () => ({
+  deepgramTranscriptionService: mockDeepgramService,
+}))
 
 const baseAdvancedSettings = () => ({
   llm: {
@@ -201,6 +225,7 @@ describe('ItoStreamController (local)', () => {
 
     Object.values(mockOpenRouterService).forEach(fn => fn.mockClear())
     Object.values(mockOpenRouterHealth).forEach(fn => fn.mockClear())
+    Object.values(mockDeepgramService).forEach(fn => fn.mockClear())
     mockOpenRouterHealth.getRejectedKeyFailure.mockReturnValue(null)
     mockGetAdvancedSettings.mockClear()
 
@@ -211,6 +236,10 @@ describe('ItoStreamController (local)', () => {
     mockOpenRouterService.transcribeAudio.mockResolvedValue(
       'openrouter transcript',
     )
+    mockDeepgramService.transcribeAudio.mockResolvedValue({
+      text: 'deepgram transcript',
+      segments: [],
+    })
     mockPendingDictationStore.save.mockReturnValue('C:/pending/dictation-1.wav')
     mockPendingDictationStore.list.mockReturnValue([])
     mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
@@ -342,12 +371,31 @@ describe('ItoStreamController (local)', () => {
     expect(mockPendingDictationStore.delete).toHaveBeenCalledTimes(2)
   })
 
-  describe('engine routing (the mode names the provider)', () => {
+  describe('engine routing (the mode and the recording decide the transport)', () => {
+    // Well under FILE_PATH_THRESHOLD_MS (8 min): stays on the short-body
+    // transports (Groq/OpenRouter), never on Deepgram's file path.
     const longAudio = () =>
       mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
         wavAudio: Buffer.from('wav'),
         sampleRate: 16000,
         durationMs: 120_000,
+      })
+
+    // At/past FILE_PATH_THRESHOLD_MS: only the Deepgram file path accepts it.
+    const veryLongAudio = () =>
+      mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
+        wavAudio: Buffer.from('wav'),
+        sampleRate: 16000,
+        durationMs: FILE_PATH_THRESHOLD_MS,
+      })
+
+    // Past the file-path threshold and too big for Groq's 25 MB ceiling too:
+    // nothing short of Deepgram can carry it.
+    const tooBigForGroqAudio = () =>
+      mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
+        wavAudio: Buffer.alloc(GROQ_MAX_BYTES + 1),
+        sampleRate: 16000,
+        durationMs: FILE_PATH_THRESHOLD_MS,
       })
 
     const openRouterMode = (overrides: Record<string, unknown> = {}) =>
@@ -357,6 +405,13 @@ describe('ItoStreamController (local)', () => {
       mockGetAdvancedSettings.mockReturnValue({
         ...baseAdvancedSettings(),
         openRouterApiKey: 'sk-or-test',
+        ...overrides,
+      } as any)
+
+    const withDeepgram = (overrides: Record<string, unknown> = {}) =>
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        deepgramApiKey: 'dg-test',
         ...overrides,
       } as any)
 
@@ -396,7 +451,7 @@ describe('ItoStreamController (local)', () => {
       expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
     })
 
-    test('the voice model of the mode decides the provider, whatever the duration', async () => {
+    test('under the file-path threshold, the voice model of the mode decides the provider', async () => {
       withOpenRouter()
 
       const { ItoStreamController } = await import('./itoStreamController')
@@ -409,6 +464,117 @@ describe('ItoStreamController (local)', () => {
       expect(
         mockLocalTranscriptionService.transcribeAudio,
       ).not.toHaveBeenCalled()
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+    })
+
+    test('past the file-path threshold, an OpenRouter voice model routes to Deepgram instead', async () => {
+      veryLongAudio()
+      withOpenRouter()
+      withDeepgram({ openRouterApiKey: 'sk-or-test' })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(openRouterMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ apiKey: 'dg-test', model: 'nova-3' }),
+      )
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      expect(result.asrEngine).toBe('deepgram/nova-3')
+      expect(result.transcript).toBe('adjusted transcript')
+    })
+
+    test('a mode that identifies speakers routes to Deepgram even on a short recording', async () => {
+      withDeepgram()
+      mockDeepgramService.transcribeAudio.mockResolvedValue({
+        text: 'deepgram transcript',
+        segments: [
+          {
+            speaker: 0,
+            label: 'Speaker 1',
+            startMs: 0,
+            endMs: 100,
+            text: 'hi',
+          },
+        ],
+      })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode({ identifySpeakers: true }))
+      const result = await controller.processLocalTranscription()
+
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ diarize: true }),
+      )
+      expect(result.speakerSegments).toHaveLength(1)
+    })
+
+    test('a Deepgram failure falls back to Groq and records why', async () => {
+      veryLongAudio()
+      withDeepgram()
+      mockDeepgramService.transcribeAudio.mockRejectedValue(
+        Object.assign(new Error('Deepgram rejected the API key'), {
+          code: 'INVALID_API_KEY',
+        }),
+      )
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+      expect(result.asrFallback).toEqual({
+        from: 'deepgram/nova-3',
+        code: 'INVALID_API_KEY',
+        message: 'Deepgram rejected the API key',
+      })
+      expect(mockPendingDictationStore.delete).toHaveBeenCalled()
+    })
+
+    test('a long recording without a Deepgram key still reaches Groq, not OpenRouter', async () => {
+      veryLongAudio()
+      withOpenRouter()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(openRouterMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+      expect(result.transcript).toBe('adjusted transcript')
+    })
+
+    test('a recording too big for Groq with no Deepgram key is refused by name, WAV kept', async () => {
+      tooBigForGroqAudio()
+      withOpenRouter()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(openRouterMode())
+
+      await expect(
+        controller.processLocalTranscription(),
+      ).rejects.toMatchObject({ code: 'MODEL_ERROR' })
+
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      // Named error, but the dictation is never lost: it stays on disk.
+      expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
     })
 
     test('falls back to Groq when the OpenRouter call fails', async () => {
