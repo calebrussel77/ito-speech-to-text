@@ -313,7 +313,11 @@ export default function HomeContent({
     return `${Math.floor(days / 30)} months`
   }
 
-  const loadInteractions = useCallback(async () => {
+  // Retourne si le refetch a réussi : SpeakersView s'en sert pour ne fermer
+  // son panneau de renommage qu'une fois la liste vraiment à jour (sinon un
+  // refetch qui échoue laisserait les anciens libellés à l'écran sans le
+  // signaler, cf. `onRenamed` plus bas).
+  const loadInteractions = useCallback(async (): Promise<boolean> => {
     try {
       const allInteractions = await window.api.interactions.getAll()
 
@@ -327,8 +331,10 @@ export default function HomeContent({
       // Calculate and set statistics
       const calculatedStats = calculateStats(sortedInteractions)
       setStats(calculatedStats)
+      return true
     } catch (error) {
       console.error('Failed to load interactions:', error)
+      return false
     } finally {
       setLoading(false)
     }
@@ -920,8 +926,13 @@ export default function HomeContent({
                           {view === 'speakers' ? (
                             <SpeakersView
                               interactionId={interaction.id}
-                              segments={interaction.asr_output.speakers}
-                              onRenamed={() => void loadInteractions()}
+                              // `?? []` : cette vue n'est atteignable que si
+                              // `availableViews` a déjà vu `asr_output.speakers`
+                              // non vide (control flow), mais rien ici ne
+                              // garantit que cet invariant survive à un futur
+                              // changement — l'accès doit se défendre seul.
+                              segments={interaction.asr_output?.speakers ?? []}
+                              onRenamed={loadInteractions}
                             />
                           ) : (
                             <>

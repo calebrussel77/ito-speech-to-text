@@ -32,12 +32,19 @@ export default function SpeakersView({
 }: {
   interactionId: string
   segments: SpeakerSegment[]
-  onRenamed: () => void
+  // Résout à `true` si le refetch qui suit un renommage a bien remis
+  // `interactions` à jour, `false` sinon — `save()` en a besoin pour décider
+  // s'il peut fermer le panneau sans mentir à l'utilisateur.
+  onRenamed: () => Promise<boolean>
 }) {
   const [renaming, setRenaming] = useState(false)
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState(false)
+  // `'write'` : l'écriture elle-même a échoué (exception, ou `false` résolu).
+  // `'refresh'` : l'écriture a pris mais le refetch qui devait la refléter à
+  // l'écran a échoué — un message différent car dans ce cas les données sont
+  // bien enregistrées, seul l'affichage est en retard.
+  const [saveError, setSaveError] = useState<'write' | 'refresh' | null>(null)
   const [copied, setCopied] = useState(false)
 
   const speakers = useMemo(() => uniqueSpeakers(segments), [segments])
@@ -54,22 +61,50 @@ export default function SpeakersView({
 
   const startRenaming = () => {
     setDrafts(Object.fromEntries(speakers.map(s => [s.speaker, s.label])))
-    setSaveError(false)
+    setSaveError(null)
     setRenaming(true)
   }
 
   const save = async () => {
     setSaving(true)
-    setSaveError(false)
+    setSaveError(null)
     try {
-      await window.api.interactions.renameSpeakers(interactionId, drafts)
+      const renamed = await window.api.interactions.renameSpeakers(
+        interactionId,
+        drafts,
+      )
+      // `renameSpeakers` résout `false` — sans lever — quand l'id ne
+      // correspond plus à une ligne stockée, ou que la ligne n'a pas de
+      // segments (voir le commentaire sur le type dans index.d.ts). Un
+      // `false` résolu est un échec au même titre qu'une exception : le
+      // traiter comme un succès fermerait le panneau et ferait croire à
+      // l'utilisateur que son renommage a pris alors qu'il est perdu. C'est
+      // exactement le piège contre lequel le type `Promise<boolean>` existe
+      // — facile à re-casser si quelqu'un se contente d'un `await` sans
+      // regarder ce qu'il retourne.
+      if (!renamed) {
+        setSaveError('write')
+        return
+      }
+
+      // On attend le refetch avant de fermer le panneau : le fermer dès
+      // l'écriture faite laisse la liste en dessous afficher les anciens
+      // libellés jusqu'à ce que `interactions` se mette à jour (un flash
+      // visible), et si ce refetch échoue, ce flash devient permanent sans
+      // que rien ne le signale — l'écran mentirait alors sur ce qui est
+      // vraiment stocké.
+      const refreshed = await onRenamed()
+      if (!refreshed) {
+        setSaveError('refresh')
+        return
+      }
+
       setRenaming(false)
-      onRenamed()
     } catch (error) {
       console.error('Failed to rename speakers:', error)
       // Le panneau reste ouvert avec ce que l'utilisateur a saisi : le
       // refermer sur un échec ferait croire, à tort, que le renommage a pris.
-      setSaveError(true)
+      setSaveError('write')
     } finally {
       setSaving(false)
     }
@@ -121,9 +156,14 @@ export default function SpeakersView({
             <Button size="sm" onClick={save} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </Button>
-            {saveError && (
+            {saveError === 'write' && (
               <SettingsNote tone="error">
                 Couldn&rsquo;t save. Try again.
+              </SettingsNote>
+            )}
+            {saveError === 'refresh' && (
+              <SettingsNote tone="error">
+                Saved, but the list failed to refresh. Reload to see it.
               </SettingsNote>
             )}
           </div>
