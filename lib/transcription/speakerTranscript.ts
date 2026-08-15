@@ -4,6 +4,11 @@ import type { SpeakerSegment } from '@/lib/main/transcription/DeepgramTranscript
 // endroit (Deepgram, via InteractionManager), qu'ils soient issus d'une
 // réunion enregistrée en direct ou d'un fichier importé. Redéclarer le type
 // ici créerait une deuxième forme que rien ne garantit de garder alignée.
+//
+// Ces fonctions vivaient sous `app/components/…/history/` ; elles sont
+// remontées dans `lib/` le jour où le processus principal en a eu besoin —
+// l'import de fichier compose le même transcript nommé. Deux implémentations
+// du même format auraient divergé au premier changement.
 export type { SpeakerSegment }
 
 /**

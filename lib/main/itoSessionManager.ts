@@ -1,4 +1,4 @@
-import { clipboard, Notification } from 'electron'
+import { clipboard } from 'electron'
 import { voiceInputService } from './voiceInputService'
 import { recordingStateNotifier } from './recordingStateNotifier'
 import {
@@ -17,18 +17,9 @@ import { LocalTranscriptionError } from './transcription/LocalTranscriptionServi
 import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import { STORE_KEYS } from '../constants/store-keys'
 import { playInteractionCompletionSound } from './soundFeedback'
+import { showNotification } from './notifications'
 import { resolveMode, resolveActiveMode } from './modes/activeMode'
 import type { Mode } from './sqlite/models'
-
-function showNotification(title: string, body: string) {
-  try {
-    if (Notification?.isSupported?.()) {
-      new Notification({ title, body }).show()
-    }
-  } catch (error) {
-    console.warn('[itoSessionManager] Failed to show notification:', error)
-  }
-}
 
 export type SessionState = 'idle' | 'starting' | 'recording' | 'processing'
 
@@ -147,13 +138,19 @@ export class ItoSessionManager {
     }
   }
 
-  public async setMode(modeId: string) {
+  /** `modeId` absent = le mode actif, comme pour `startSession`. */
+  public async setMode(modeId?: string) {
     if (this.state !== 'starting' && this.state !== 'recording') {
       console.log(`[itoSessionManager] Ignoring setMode while ${this.state}`)
       return
     }
     try {
-      const mode = await resolveMode(modeId)
+      // Pas `resolveMode(modeId)` seul : sans id, il replie sur le PREMIER
+      // mode, pas sur le mode actif. Basculer sur le raccourci par défaut en
+      // cours de dictée aurait donc changé de mode sans prévenir.
+      const mode = modeId
+        ? await resolveMode(modeId)
+        : await resolveActiveMode()
       this.currentMode = mode
       itoStreamController.setMode(mode)
       recordingStateNotifier.notifyRecordingStarted(mode)

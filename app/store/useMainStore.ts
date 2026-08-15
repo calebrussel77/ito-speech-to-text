@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { STORE_KEYS } from '../../lib/constants/store-keys'
+import { IPC_EVENTS } from '@/lib/types/ipc'
 
 type PageType =
   | 'home'
@@ -74,3 +75,12 @@ export const useMainStore = create<MainStore>(set => {
     },
   }
 })
+
+// Le processus principal ouvre la fenêtre sur une page quand un travail long
+// se termine ailleurs — le clic sur la notification d'une transcription de
+// fichier, qui doit mener au résultat et pas seulement réveiller la fenêtre.
+if (typeof window !== 'undefined' && window.api?.on) {
+  window.api.on(IPC_EVENTS.OPEN_PAGE, (page: PageType) => {
+    useMainStore.getState().setCurrentPage(page)
+  })
+}

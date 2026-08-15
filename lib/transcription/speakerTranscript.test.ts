@@ -4,7 +4,7 @@ import {
   uniqueSpeakers,
   formatSpeakerTranscript,
   type SpeakerSegment,
-} from './speakersFormat'
+} from './speakerTranscript'
 
 const segment = (overrides: Partial<SpeakerSegment>): SpeakerSegment => ({
   speaker: 0,

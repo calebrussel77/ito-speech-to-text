@@ -7,7 +7,7 @@ import {
   formatSpeakerTranscript,
   uniqueSpeakers,
   type SpeakerSegment,
-} from './speakersFormat'
+} from '@/lib/transcription/speakerTranscript'
 
 export type { SpeakerSegment }
 
