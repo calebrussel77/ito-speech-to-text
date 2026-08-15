@@ -31,6 +31,7 @@ import EngineBadge from '@/app/components/home/EngineBadge'
 import { ProUpgradeDialog } from '../ProUpgradeDialog'
 import useBillingState from '@/app/hooks/useBillingState'
 import AddAsExampleDialog from './history/AddAsExampleDialog'
+import SpeakersView from './history/SpeakersView'
 
 // Interface for interaction statistics
 interface InteractionStats {
@@ -42,6 +43,8 @@ interface InteractionStats {
 // Ce que "Add as example" a besoin de connaître d'une ligne d'historique :
 // le brut et le résultat affiché (déjà résolus par getDisplayText), pas
 // l'Interaction entière — le dialogue n'a rien d'autre à en faire.
+type HistoryView = 'result' | 'original' | 'speakers'
+
 interface ExampleDraft {
   /** The source interaction's id — used as the dialog's React key so its
    *  internal state can't survive from one history row to another. */
@@ -103,7 +106,10 @@ export default function HomeContent({
   const [isRetryingPending, setIsRetryingPending] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
-  const [showingRaw, setShowingRaw] = useState<Set<string>>(new Set())
+  // Trois vues possibles par ligne — le résultat (par défaut), le brut avant
+  // réécriture, et le découpage par locuteur. Un simple Set à deux états ne
+  // suffisait plus une fois Speakers ajoutée à côté d'Original.
+  const [views, setViews] = useState<Record<string, HistoryView>>({})
   const [exampleFor, setExampleFor] = useState<ExampleDraft | null>(null)
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
@@ -534,16 +540,19 @@ export default function HomeContent({
     })
   }
 
-  const toggleRaw = (id: string) =>
-    setShowingRaw(previous => {
-      const next = new Set(previous)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+  const viewOf = (interaction: Interaction): HistoryView =>
+    views[interaction.id] ?? 'result'
+
+  // Original n'existe que si la réécriture a changé quelque chose du brut
+  // (InteractionManager met rawTranscript à null sinon) ; Speakers n'existe
+  // que si Deepgram a diarisé l'audio. La très grande majorité des dictées —
+  // du texte simple, sans réunion — n'a ni l'un ni l'autre.
+  const availableViews = (interaction: Interaction): HistoryView[] => {
+    const list: HistoryView[] = ['result']
+    if (interaction.asr_output?.rawTranscript) list.push('original')
+    if (interaction.asr_output?.speakers?.length) list.push('speakers')
+    return list
+  }
 
   const handleDeleteInteraction = async (interactionId: string) => {
     try {
@@ -808,8 +817,10 @@ export default function HomeContent({
                 <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
+                    const view = viewOf(interaction)
+                    const rowViews = availableViews(interaction)
                     const shownText =
-                      showingRaw.has(interaction.id) &&
+                      view === 'original' &&
                       interaction.asr_output?.rawTranscript
                         ? interaction.asr_output.rawTranscript
                         : displayInfo.text
@@ -820,8 +831,12 @@ export default function HomeContent({
                     // Clampability must follow shownText, not displayInfo.text:
                     // the rendered element shows shownText, so the "Show more"
                     // affordance has to match whichever variant is on screen.
+                    // Speakers has its own scroll container, so the clamp/expand
+                    // affordance doesn't apply there.
                     const showToggle =
-                      !displayInfo.isError && isClampable(shownText)
+                      view !== 'speakers' &&
+                      !displayInfo.isError &&
+                      isClampable(shownText)
 
                     return (
                       <div
@@ -842,17 +857,30 @@ export default function HomeContent({
                                 {interaction.asr_output.modeName}
                               </span>
                             )}
-                            {interaction.asr_output?.rawTranscript && (
-                              <button
-                                type="button"
-                                onClick={() => toggleRaw(interaction.id)}
-                                className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
-                              >
-                                {showingRaw.has(interaction.id)
-                                  ? 'Show result'
-                                  : 'Show original'}
-                              </button>
-                            )}
+                            {rowViews.length > 1 &&
+                              rowViews.map(candidateView => (
+                                <button
+                                  key={candidateView}
+                                  type="button"
+                                  onClick={() =>
+                                    setViews(previous => ({
+                                      ...previous,
+                                      [interaction.id]: candidateView,
+                                    }))
+                                  }
+                                  className={`text-[11px] underline-offset-2 hover:underline ${
+                                    view === candidateView
+                                      ? 'text-foreground'
+                                      : 'text-muted-foreground/70 hover:text-foreground'
+                                  }`}
+                                >
+                                  {candidateView === 'result'
+                                    ? 'Result'
+                                    : candidateView === 'original'
+                                      ? 'Original'
+                                      : 'Speakers'}
+                                </button>
+                              ))}
                             {interaction.asr_output?.rawTranscript && (
                               <button
                                 type="button"
@@ -889,34 +917,45 @@ export default function HomeContent({
                             )}
                           </div>
 
-                          <div
-                            className={`${
-                              displayInfo.tone === 'pending'
-                                ? 'text-[var(--subtle-foreground)] italic'
-                                : displayInfo.isError
-                                  ? 'text-destructive'
-                                  : 'text-foreground'
-                            } text-sm leading-relaxed whitespace-pre-wrap ${
-                              isExpanded ? '' : 'line-clamp-3'
-                            }`}
-                          >
-                            {shownText}
-                          </div>
+                          {view === 'speakers' ? (
+                            <SpeakersView
+                              interactionId={interaction.id}
+                              segments={interaction.asr_output.speakers}
+                              onRenamed={() => void loadInteractions()}
+                            />
+                          ) : (
+                            <>
+                              <div
+                                className={`${
+                                  displayInfo.tone === 'pending'
+                                    ? 'text-[var(--subtle-foreground)] italic'
+                                    : displayInfo.isError
+                                      ? 'text-destructive'
+                                      : 'text-foreground'
+                                } text-sm leading-relaxed whitespace-pre-wrap ${
+                                  isExpanded ? '' : 'line-clamp-3'
+                                }`}
+                              >
+                                {shownText}
+                              </div>
 
-                          {showToggle && (
-                            <button
-                              className="mt-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                              onClick={() => toggleExpanded(interaction.id)}
-                            >
-                              {isExpanded ? 'Show less' : 'Show more'}
-                            </button>
+                              {showToggle && (
+                                <button
+                                  className="mt-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                                  onClick={() => toggleExpanded(interaction.id)}
+                                >
+                                  {isExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
 
                         {/* Copy, Download, and Play buttons - only show on hover or when playing */}
                         <div className="flex items-center gap-2 pt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          {/* Copy button */}
-                          {!displayInfo.isError && (
+                          {/* Copy button — Speakers has its own Copy, tied to
+                              the named transcript rather than shownText. */}
+                          {view !== 'speakers' && !displayInfo.isError && (
                             <Tooltip
                               open={openTooltipKey === `copy:${interaction.id}`}
                               onOpenChange={open => {
