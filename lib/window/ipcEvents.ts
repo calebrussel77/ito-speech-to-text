@@ -870,6 +870,17 @@ export function registerIPC() {
     }
   })
 
+  handleIPC('test-deepgram-api-key', async (_e, apiKey: string) => {
+    const { deepgramTranscriptionService } = await import(
+      '../main/transcription/DeepgramTranscriptionService'
+    )
+    try {
+      return await deepgramTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
   handleIPC('test-openrouter-api-key', async (_e, apiKey: string) => {
     const { openRouterTranscriptionService } = await import(
       '../main/transcription/OpenRouterTranscriptionService'

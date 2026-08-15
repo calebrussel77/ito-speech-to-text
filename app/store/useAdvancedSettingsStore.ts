@@ -18,6 +18,7 @@ interface AdvancedSettingsState {
   macosAccessibilityContextEnabled: boolean
   groqApiKey: string
   openRouterApiKey: string
+  deepgramApiKey: string
   /** Défaut des modes créés ensuite. Le modèle utilisé est celui du mode. */
   textModelKey: string
   setLlmSettings: (settings: Partial<LlmSettings>) => void
@@ -25,6 +26,7 @@ interface AdvancedSettingsState {
   setMacosAccessibilityContextEnabled: (enabled: boolean) => void
   setGroqApiKey: (apiKey: string) => void
   setOpenRouterApiKey: (apiKey: string) => void
+  setDeepgramApiKey: (apiKey: string) => void
   setTextModelKey: (key: string) => void
 }
 
@@ -64,6 +66,7 @@ const getInitialState = () => {
       storedAdvancedSettings.macosAccessibilityContextEnabled ?? false,
     groqApiKey: storedAdvancedSettings.groqApiKey || '',
     openRouterApiKey: storedAdvancedSettings.openRouterApiKey || '',
+    deepgramApiKey: storedAdvancedSettings.deepgramApiKey || '',
     textModelKey: storedAdvancedSettings.textModelKey ?? DEFAULT_TEXT_KEY,
   }
 }
@@ -121,6 +124,13 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>(set => {
     setOpenRouterApiKey: (apiKey: string) => {
       set(() => {
         const partialState = { openRouterApiKey: apiKey }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setDeepgramApiKey: (apiKey: string) => {
+      set(() => {
+        const partialState = { deepgramApiKey: apiKey }
         syncToStore(partialState)
         return partialState
       })

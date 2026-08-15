@@ -24,7 +24,7 @@ const formatWhen = (iso: string) => {
 }
 
 type ProviderKeyRowProps = {
-  provider: 'groq' | 'openrouter'
+  provider: 'groq' | 'openrouter' | 'deepgram'
   name: string
   hint: string
   placeholder: string

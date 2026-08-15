@@ -69,6 +69,7 @@ export interface IpcApi {
   }
   testGroqApiKey: (apiKey: string) => Promise<ApiTestResult>
   testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
+  testDeepgramApiKey: (apiKey: string) => Promise<ApiTestResult>
   /** Null unless the record describes the key currently stored. */
   getOpenRouterFailure: () => Promise<OpenRouterFailureRecord | null>
   modes: {

@@ -18,7 +18,11 @@ const safeStorageApi: any = (electron as any).safeStorage
 
 // API keys stored inside advancedSettings that are encrypted at rest via
 // safeStorage (persisted as `<field>Encrypted`, decrypted back on load).
-const ENCRYPTED_API_KEY_FIELDS = ['groqApiKey', 'openRouterApiKey'] as const
+export const ENCRYPTED_API_KEY_FIELDS = [
+  'groqApiKey',
+  'openRouterApiKey',
+  'deepgramApiKey',
+] as const
 
 export interface KeyboardShortcutConfig {
   id: string
@@ -96,6 +100,7 @@ export interface AdvancedSettings {
   macosAccessibilityContextEnabled: boolean
   groqApiKey?: string
   openRouterApiKey?: string
+  deepgramApiKey?: string
   /**
    * Modèle texte par défaut des modes créés ensuite. Le modèle réellement
    * utilisé est celui du mode ; celui-ci ne sert qu'à préremplir.
@@ -195,6 +200,7 @@ export const defaultValues: AppStore = {
     },
     groqApiKey: '',
     openRouterApiKey: '',
+    deepgramApiKey: '',
     textModelKey: DEFAULT_TEXT_KEY,
   },
   openMic: false,

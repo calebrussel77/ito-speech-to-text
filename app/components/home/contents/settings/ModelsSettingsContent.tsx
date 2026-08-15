@@ -15,8 +15,10 @@ export default function ModelsSettingsContent() {
   const {
     groqApiKey,
     openRouterApiKey,
+    deepgramApiKey,
     setGroqApiKey,
     setOpenRouterApiKey,
+    setDeepgramApiKey,
     textModelKey,
     setTextModelKey,
   } = useAdvancedSettingsStore()
@@ -76,6 +78,22 @@ export default function ModelsSettingsContent() {
           }
           onSave={setOpenRouterApiKey}
           onTest={key => window.api.testOpenRouterApiKey(key)}
+        />
+        <ProviderKeyRow
+          provider="deepgram"
+          name="Deepgram"
+          hint="Long recordings and speaker separation — used by the Meeting mode"
+          placeholder="Token…"
+          consoleUrl="https://console.deepgram.com/"
+          storedKey={deepgramApiKey}
+          expanded={expandedProvider === 'deepgram'}
+          onToggle={() =>
+            setExpandedProvider(
+              expandedProvider === 'deepgram' ? null : 'deepgram',
+            )
+          }
+          onSave={setDeepgramApiKey}
+          onTest={key => window.api.testDeepgramApiKey(key)}
         />
       </SettingsGroup>
 
