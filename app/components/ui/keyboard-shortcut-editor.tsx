@@ -1,7 +1,13 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { Button } from '@/app/components/ui/button'
 import KeyboardKey from '@/app/components/ui/keyboard-key'
-import { KeyState, isReservedCombination } from '@/app/utils/keyboard'
+import { Kbd } from '@/app/components/ui/kbd'
+import {
+  KeyState,
+  formatChord,
+  formatChordDetailed,
+  isReservedCombination,
+} from '@/app/utils/keyboard'
 import { keyNameMap } from '@/lib/types/keyboard'
 import { useAudioStore } from '@/app/store/useAudioStore'
 import { KeyboardShortcutConfig } from './multi-shortcut-editor'
@@ -15,6 +21,13 @@ interface KeyboardShortcutEditorProps {
   hideTitle?: boolean
   className?: string
   keySize?: number
+  /**
+   * `tiles` : les grosses touches SVG des écrans d'accueil, où le raccourci
+   * est la vedette. `kbd` : la pastille d'accord unique (« Ctrl + ⊞ ») que
+   * tout le reste de l'app utilise — c'est la forme des pages de réglages,
+   * où trois étages de texte par touche ne font que de l'encombrement.
+   */
+  variant?: 'tiles' | 'kbd'
   editButtonText?: string
   confirmButtonText?: string
   showConfirmButton?: boolean
@@ -34,6 +47,7 @@ export default function KeyboardShortcutEditor({
   hideTitle = false,
   className = '',
   keySize = 60,
+  variant = 'tiles',
   editButtonText = 'Change Shortcut',
   confirmButtonText = 'Yes',
   showConfirmButton = false,
@@ -214,6 +228,82 @@ export default function KeyboardShortcutEditor({
 
   function isDisplayKeyPressed(displayKey: string, pressed: string[]): boolean {
     return pressed.includes(displayKey.toLowerCase())
+  }
+
+  if (variant === 'kbd') {
+    return (
+      <div className={className}>
+        {isEditing ? (
+          <div className="flex flex-col items-end gap-1.5">
+            {/* Un champ de saisie, pas une vitrine : l'accord se construit
+                sous les yeux dans la même pastille que celle qui l'affichera
+                ensuite — ce qu'on voit pendant l'édition EST le résultat. */}
+            <div className="flex h-8 min-w-[190px] items-center justify-center rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-3">
+              {newShortcut.length ? (
+                <Kbd
+                  className="h-5 px-1.5 text-[11px] text-foreground"
+                  title={formatChordDetailed(newShortcut, platform)}
+                >
+                  {formatChord(newShortcut, platform)}
+                </Kbd>
+              ) : (
+                <span className="text-[11px] text-[var(--subtle-foreground)]">
+                  Press the keys — press one again to remove it
+                </span>
+              )}
+            </div>
+            {(validationError || temporaryError) && (
+              <div className="text-right text-[10px] text-destructive">
+                {temporaryError || validationError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={handleCancel}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                onClick={handleSave}
+                disabled={newShortcut.length === 0 || !!validationError}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end gap-2.5">
+            {shortcutKeys.length ? (
+              <Kbd
+                className="h-6 px-2 text-[11px] text-foreground"
+                title={formatChordDetailed(shortcutKeys, platform)}
+              >
+                {formatChord(shortcutKeys, platform)}
+              </Kbd>
+            ) : (
+              <span className="text-[11px] text-[var(--subtle-foreground)]">
+                No shortcut set
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={handleStartEditing}
+              className={editButtonClassName}
+              disabled={activeEditor !== null && activeEditor !== editorKey}
+            >
+              {editButtonText}
+            </Button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (

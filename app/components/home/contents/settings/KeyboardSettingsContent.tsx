@@ -78,12 +78,10 @@ export default function KeyboardSettingsContent() {
         <SettingsRow
           title="Dictate in the active mode"
           description={`Starts a dictation in whichever mode is active — ${activeModeName} right now. Change the mode in Modes, without touching this shortcut.`}
-          align="start"
         >
           <KeyboardShortcutEditor
             hideTitle
-            keySize={40}
-            minHeight={48}
+            variant="kbd"
             shortcut={{
               id: activeModeShortcut?.id ?? ACTIVE_MODE_SHORTCUT_ID,
               keys: activeModeShortcut?.keys ?? [],
@@ -110,12 +108,10 @@ export default function KeyboardSettingsContent() {
         <SettingsRow
           title="Change the active mode"
           description="Walks through the modes without opening this window. It never starts a dictation."
-          align="start"
         >
           <KeyboardShortcutEditor
             hideTitle
-            keySize={40}
-            minHeight={48}
+            variant="kbd"
             shortcut={{
               id: 'cycle-mode',
               keys: cycleModeShortcut,
