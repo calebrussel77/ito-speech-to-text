@@ -30,12 +30,22 @@ import { usePlatform } from '@/app/hooks/usePlatform'
 import EngineBadge from '@/app/components/home/EngineBadge'
 import { ProUpgradeDialog } from '../ProUpgradeDialog'
 import useBillingState from '@/app/hooks/useBillingState'
+import AddAsExampleDialog from './history/AddAsExampleDialog'
 
 // Interface for interaction statistics
 interface InteractionStats {
   streakDays: number
   totalWords: number
   averageWPM: number
+}
+
+// Ce que "Add as example" a besoin de connaître d'une ligne d'historique :
+// le brut et le résultat affiché (déjà résolus par getDisplayText), pas
+// l'Interaction entière — le dialogue n'a rien d'autre à en faire.
+interface ExampleDraft {
+  rawTranscript: string
+  currentResult: string
+  modeId: string | null
 }
 
 const StatCard = ({
@@ -91,6 +101,7 @@ export default function HomeContent({
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [showingRaw, setShowingRaw] = useState<Set<string>>(new Set())
+  const [exampleFor, setExampleFor] = useState<ExampleDraft | null>(null)
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
     streakDays: 0,
@@ -839,6 +850,24 @@ export default function HomeContent({
                                   : 'Show original'}
                               </button>
                             )}
+                            {interaction.asr_output?.rawTranscript && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExampleFor({
+                                    rawTranscript:
+                                      interaction.asr_output?.rawTranscript ??
+                                      '',
+                                    currentResult: displayInfo.text,
+                                    modeId:
+                                      interaction.asr_output?.modeId ?? null,
+                                  })
+                                }
+                                className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+                              >
+                                Add as example
+                              </button>
+                            )}
                             {durationLabel && (
                               <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                                 {durationLabel}
@@ -994,6 +1023,15 @@ export default function HomeContent({
 
       {/* Pro Upgrade Dialog */}
       <ProUpgradeDialog open={showProDialog} onOpenChange={setShowProDialog} />
+
+      {exampleFor && (
+        <AddAsExampleDialog
+          rawTranscript={exampleFor.rawTranscript}
+          currentResult={exampleFor.currentResult}
+          defaultModeId={exampleFor.modeId}
+          onClose={() => setExampleFor(null)}
+        />
+      )}
     </div>
   )
 }
