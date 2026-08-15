@@ -71,6 +71,18 @@ export default function MultiShortcutEditor({
     onError?.(error)
   }, [error, onError])
 
+  const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
+
+  // beginEditExisting's lock-contention error has no natural end: it never
+  // starts an edit session, so stopEdit() — the only other place `error` is
+  // cleared — never runs for it. Once the other editor releases the lock,
+  // the message no longer describes reality and must clear on its own
+  // instead of sticking around (and with it, the mirrored SettingsNote in
+  // ModeEditor) until this editor happens to be used again.
+  useEffect(() => {
+    if (!isLockedByOther) setError('')
+  }, [isLockedByOther])
+
   const beginEditExisting = (row: KeyboardShortcutConfig) => {
     if (!start(editorKey)) {
       setError('Finish editing the other shortcut set first.')
@@ -216,8 +228,6 @@ export default function MultiShortcutEditor({
   const base =
     'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ' +
     'text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-3)] hover:text-foreground'
-
-  const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
 
   return (
     <div className={cx('w-[220px]', className)}>

@@ -17,6 +17,7 @@ import {
   isReservedCombination,
 } from '../utils/keyboard'
 import { KeyName } from '@/lib/types/keyboard'
+import { IPC_EVENTS } from '@/lib/types/ipc'
 
 interface SettingsState {
   shareAnalytics: boolean
@@ -354,6 +355,23 @@ if (typeof window !== 'undefined' && window.api?.loginItem?.getSettings) {
         error,
       )
     })
+}
+
+// `keyboardShortcuts` is read once at module load (getInitialState) and
+// otherwise only ever changes through this store's own setters — it has no
+// way to learn about a main-side write, such as a mode delete pruning that
+// mode's shortcut from the store on disk. Left unhandled, the next
+// create/update/remove here merges this stale in-memory array back over the
+// main process's filtered one and resurrects the deleted shortcut. Refetch
+// straight from the (synchronous) electron-store on this signal rather than
+// trusting a payload, so this can never itself drift from what's on disk.
+if (typeof window !== 'undefined' && window.api?.on) {
+  window.api.on(IPC_EVENTS.KEYBOARD_SHORTCUTS_UPDATE, () => {
+    const storedSettings = window.electron.store.get(STORE_KEYS.SETTINGS)
+    useSettingsStore.setState({
+      keyboardShortcuts: storedSettings?.keyboardShortcuts ?? [],
+    })
+  })
 }
 
 if (typeof window !== 'undefined' && window.api?.dock?.getVisibility) {

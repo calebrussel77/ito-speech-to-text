@@ -9,6 +9,7 @@ import { findPreset, MODE_PRESETS } from '../constants/modePresets'
 import store, { getCurrentUserId } from '../main/store'
 import { STORE_KEYS } from '../constants/store-keys'
 import { recordingStateNotifier } from '../main/recordingStateNotifier'
+import { registerAllHotkeys } from '../media/keyboard'
 import type { Mode } from '../main/sqlite/models'
 
 /**
@@ -61,8 +62,22 @@ export function registerModeIpc() {
     },
   )
 
-  ipcMain.handle('modes:update', (_e, id: string, patch: Partial<Mode>) =>
-    ModesTable.update(id, patch),
+  ipcMain.handle(
+    'modes:update',
+    async (_e, id: string, patch: Partial<Mode>) => {
+      await ModesTable.update(id, patch)
+
+      // Renaming (or re-iconing) the active mode must reach the pill: it
+      // renders the mode name from this broadcast's payload, not a live
+      // query, and `modes:update` itself was silent until now — the pill
+      // kept showing the old name until restart. Scoped to name/icon so the
+      // other, much more frequent field patches (toggles, selects) don't
+      // fire a broadcast nothing needs.
+      if (('name' in patch || 'icon' in patch) && getActiveModeId() === id) {
+        const mode = await ModesTable.findById(id)
+        if (mode) recordingStateNotifier.notifyActiveModeChanged(mode)
+      }
+    },
   )
 
   ipcMain.handle('modes:delete', async (_e, id: string) => {
@@ -87,6 +102,18 @@ export function registerModeIpc() {
       )
       if (keyboardShortcuts.length !== settings.keyboardShortcuts.length) {
         store.set(STORE_KEYS.SETTINGS, { ...settings, keyboardShortcuts })
+
+        // Renderer stores read `keyboardShortcuts` once at module load and
+        // never see this main-side write on their own — without this, the
+        // next create/update/remove in the renderer merges its own stale
+        // in-memory array back over this filtered one, resurrecting the
+        // deleted mode's shortcut.
+        recordingStateNotifier.notifyKeyboardShortcutsChanged()
+
+        // The native key listener only re-registers when asked to; without
+        // this it keeps the deleted mode's chord live until some unrelated
+        // renderer action happens to call registerHotkeys() next.
+        registerAllHotkeys()
       }
     }
 

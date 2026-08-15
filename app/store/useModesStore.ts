@@ -88,6 +88,17 @@ export const useModesStore = create<ModesStore>((set, get) => ({
 // l'ancien mode jusqu'au redémarrage.
 if (typeof window !== 'undefined' && window.api?.on) {
   window.api.on('active-mode-update', (payload: ActiveModePayload) => {
-    useModesStore.setState({ activeModeId: payload.modeId })
+    useModesStore.setState(state => ({
+      activeModeId: payload.modeId,
+      // The pill reads a mode's name via `modes.find(activeModeId)`, not
+      // from this payload — without patching the cached copy here, a rename
+      // broadcast updated only `activeModeId` and the pill kept showing the
+      // old name until the next full `load()` (i.e. a restart).
+      modes: state.modes.map(mode =>
+        mode.id === payload.modeId
+          ? { ...mode, name: payload.modeName, icon: payload.modeIcon }
+          : mode,
+      ),
+    }))
   })
 }

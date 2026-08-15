@@ -10,6 +10,7 @@ export const IPC_EVENTS = {
   USER_AUTH_UPDATE: 'user-auth-update',
   PENDING_DICTATIONS_UPDATE: 'pending-dictations-update',
   ACTIVE_MODE_UPDATE: 'active-mode-update',
+  KEYBOARD_SHORTCUTS_UPDATE: 'keyboard-shortcuts-update',
 } as const
 
 // IPC Payload Types

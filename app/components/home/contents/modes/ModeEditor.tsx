@@ -39,7 +39,15 @@ export default function ModeEditor({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [shortcutError, setShortcutError] = useState('')
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // One timer per field (name / instructions / asrPrompt) — a single shared
+  // timer meant editing field A then field B inside the debounce window only
+  // ever persisted B, silently reverting A on the next load.
+  const debounceTimersRef = useRef<
+    Partial<Record<string, ReturnType<typeof setTimeout>>>
+  >({})
+  // The write each timer is waiting to perform, keyed the same way, so it can
+  // be flushed instead of dropped (unmount) or raced (applyPreset).
+  const pendingWritesRef = useRef<Partial<Record<string, () => void>>>({})
 
   // Passed to MultiShortcutEditor so a rejected shortcut (duplicate or
   // reserved) shows up as a SettingsNote here, not just in the editor's own
@@ -53,7 +61,18 @@ export default function ModeEditor({
 
   useEffect(() => {
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      // Flush, don't drop: type into a field then click back within the
+      // debounce window used to lose the edit outright, since the timer was
+      // only ever cleared here, never fired. Refs (not `mode`, which this
+      // effect closes over once) so the flush always sees the latest patch.
+      for (const timer of Object.values(debounceTimersRef.current)) {
+        if (timer) clearTimeout(timer)
+      }
+      for (const flush of Object.values(pendingWritesRef.current)) {
+        flush?.()
+      }
+      debounceTimersRef.current = {}
+      pendingWritesRef.current = {}
     }
   }, [])
 
@@ -77,18 +96,38 @@ export default function ModeEditor({
   // SQLite UPDATE per character (up to 3500 of them for instructions) is
   // wasteful. Mirrors AdvancedSettingsContent's 1000 ms debounce: the local
   // store still updates immediately so typing stays responsive, only the
-  // persist is delayed.
-  const setDebounced = (patch: Record<string, unknown>) => {
+  // persist is delayed. `field` keys the timer so name/instructions/asrPrompt
+  // debounce independently — see debounceTimersRef.
+  const setDebounced = (field: string, patch: Record<string, unknown>) => {
     updateLocal(mode.id, patch)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
+    const existing = debounceTimersRef.current[field]
+    if (existing) clearTimeout(existing)
+    pendingWritesRef.current[field] = () => {
+      delete debounceTimersRef.current[field]
+      delete pendingWritesRef.current[field]
       void update(mode.id, patch)
+    }
+    debounceTimersRef.current[field] = setTimeout(() => {
+      pendingWritesRef.current[field]?.()
     }, 1000)
+  }
+
+  // Resolve every pending debounced write immediately, in the order they were
+  // scheduled. Called before any immediate write (applyPreset) so a trailing
+  // debounced patch can never land after it and silently undo it.
+  const flushDebounced = () => {
+    for (const timer of Object.values(debounceTimersRef.current)) {
+      if (timer) clearTimeout(timer)
+    }
+    for (const flush of Object.values(pendingWritesRef.current)) {
+      flush?.()
+    }
   }
 
   const applyPreset = (presetKey: string) => {
     const preset = findPreset(presetKey)
     if (!preset) return
+    flushDebounced()
     set({
       preset: preset.key,
       icon: preset.icon,
@@ -118,7 +157,7 @@ export default function ModeEditor({
         <Icon className="size-4 text-[var(--subtle-foreground)]" />
         <Input
           value={mode.name}
-          onChange={event => setDebounced({ name: event.target.value })}
+          onChange={event => setDebounced('name', { name: event.target.value })}
           className="h-7 max-w-[240px] text-xs"
         />
       </div>
@@ -160,7 +199,9 @@ export default function ModeEditor({
               rows={10}
               placeholder="## Role&#10;You are a text formatting AI…"
               onChange={event =>
-                setDebounced({ instructions: event.target.value })
+                setDebounced('instructions', {
+                  instructions: event.target.value,
+                })
               }
             />
           </SettingsCard>
@@ -277,7 +318,7 @@ export default function ModeEditor({
               maxLength={ASR_PROMPT_LIMIT}
               rows={3}
               onChange={event =>
-                setDebounced({ asrPrompt: event.target.value })
+                setDebounced('asrPrompt', { asrPrompt: event.target.value })
               }
             />
           </SettingsCard>
