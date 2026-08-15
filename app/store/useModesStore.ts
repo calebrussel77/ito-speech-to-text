@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ModeDto } from '../index'
+import type { ActiveModePayload } from '@/lib/types/ipc'
 
 interface ModesStore {
   modes: ModeDto[]
@@ -8,6 +9,10 @@ interface ModesStore {
   load: () => Promise<void>
   create: (preset: string, name: string) => Promise<ModeDto>
   update: (id: string, patch: Partial<ModeDto>) => Promise<void>
+  /** Optimistic-only half of `update`, for callers that debounce the persist
+   *  themselves (the mode editor's free-text fields) but still want every
+   *  keystroke to show up immediately. */
+  updateLocal: (id: string, patch: Partial<ModeDto>) => void
   remove: (id: string) => Promise<{ ok: boolean; error?: string }>
   duplicate: (id: string) => Promise<void>
   setActive: (id: string) => Promise<void>
@@ -40,7 +45,24 @@ export const useModesStore = create<ModesStore>((set, get) => ({
         mode.id === id ? { ...mode, ...patch } : mode,
       ),
     }))
-    await window.api.modes.update(id, patch)
+    try {
+      await window.api.modes.update(id, patch)
+    } catch (error) {
+      // The optimistic set above already lied to the editor. Reload from the
+      // main process — the source of truth — so it stops showing a value
+      // that was never actually written, instead of leaving an unhandled
+      // rejection and a stale UI.
+      console.error('Failed to persist mode update:', error)
+      await get().load()
+    }
+  },
+
+  updateLocal: (id, patch) => {
+    set(state => ({
+      modes: state.modes.map(mode =>
+        mode.id === id ? { ...mode, ...patch } : mode,
+      ),
+    }))
   },
 
   remove: async id => {
@@ -59,3 +81,13 @@ export const useModesStore = create<ModesStore>((set, get) => ({
     await window.api.modes.setActive(id)
   },
 }))
+
+// Le processus principal diffuse ce changement quand le mode actif bouge par
+// un chemin que ce store n'initie pas — l'accord global de défilement. Sans
+// cet abonnement, la pastille active de la page Modes et la pill restent sur
+// l'ancien mode jusqu'au redémarrage.
+if (typeof window !== 'undefined' && window.api?.on) {
+  window.api.on('active-mode-update', (payload: ActiveModePayload) => {
+    useModesStore.setState({ activeModeId: payload.modeId })
+  })
+}

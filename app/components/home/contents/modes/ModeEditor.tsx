@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModesStore } from '@/app/store/useModesStore'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { findPreset } from '@/lib/constants/modePresets'
@@ -31,12 +31,19 @@ export default function ModeEditor({
   modeId: string
   onBack: () => void
 }) {
-  const { modes, update, remove, duplicate } = useModesStore()
+  const { modes, update, updateLocal, remove, duplicate } = useModesStore()
   const { groqApiKey, openRouterApiKey } = useAdvancedSettingsStore()
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const mode = modes.find(item => item.id === modeId)
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
 
   const availableProviders = useMemo(() => {
     const providers = new Set<string>()
@@ -53,6 +60,19 @@ export default function ModeEditor({
 
   const Icon = modeIcon(mode.icon)
   const set = (patch: Record<string, unknown>) => void update(mode.id, patch)
+
+  // Free-text fields fire on every keystroke; an IPC round trip plus a
+  // SQLite UPDATE per character (up to 3500 of them for instructions) is
+  // wasteful. Mirrors AdvancedSettingsContent's 1000 ms debounce: the local
+  // store still updates immediately so typing stays responsive, only the
+  // persist is delayed.
+  const setDebounced = (patch: Record<string, unknown>) => {
+    updateLocal(mode.id, patch)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      void update(mode.id, patch)
+    }, 1000)
+  }
 
   const applyPreset = (presetKey: string) => {
     const preset = findPreset(presetKey)
@@ -86,7 +106,7 @@ export default function ModeEditor({
         <Icon className="size-4 text-[var(--subtle-foreground)]" />
         <Input
           value={mode.name}
-          onChange={event => set({ name: event.target.value })}
+          onChange={event => setDebounced({ name: event.target.value })}
           className="h-7 max-w-[240px] text-xs"
         />
       </div>
@@ -127,7 +147,9 @@ export default function ModeEditor({
               maxLength={INSTRUCTIONS_LIMIT}
               rows={10}
               placeholder="## Role&#10;You are a text formatting AI…"
-              onChange={event => set({ instructions: event.target.value })}
+              onChange={event =>
+                setDebounced({ instructions: event.target.value })
+              }
             />
           </SettingsCard>
 
@@ -224,7 +246,9 @@ export default function ModeEditor({
               value={mode.asrPrompt}
               maxLength={ASR_PROMPT_LIMIT}
               rows={3}
-              onChange={event => set({ asrPrompt: event.target.value })}
+              onChange={event =>
+                setDebounced({ asrPrompt: event.target.value })
+              }
             />
           </SettingsCard>
 

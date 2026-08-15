@@ -1,5 +1,6 @@
 import { usePlatform } from '@/app/hooks/usePlatform'
 import { SettingsNote } from '@/app/components/ui/settings'
+import { Switch } from '@/app/components/ui/switch'
 import type { ModeDto } from '@/app/index'
 
 /**
@@ -49,11 +50,10 @@ export default function ContextToggles({
             className="flex cursor-pointer items-start gap-2"
             title={item.hint}
           >
-            <input
-              type="checkbox"
+            <Switch
               checked={item.value}
-              onChange={event => onChange({ [item.key]: event.target.checked })}
-              className="mt-0.5 size-3.5 accent-[var(--foreground)]"
+              onCheckedChange={checked => onChange({ [item.key]: checked })}
+              className="mt-0.5"
             />
             <span className="text-[11px] leading-snug text-foreground">
               {item.label}

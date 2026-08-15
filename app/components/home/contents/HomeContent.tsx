@@ -43,6 +43,9 @@ interface InteractionStats {
 // le brut et le résultat affiché (déjà résolus par getDisplayText), pas
 // l'Interaction entière — le dialogue n'a rien d'autre à en faire.
 interface ExampleDraft {
+  /** The source interaction's id — used as the dialog's React key so its
+   *  internal state can't survive from one history row to another. */
+  id: string
   rawTranscript: string
   currentResult: string
   modeId: string | null
@@ -855,6 +858,7 @@ export default function HomeContent({
                                 type="button"
                                 onClick={() =>
                                   setExampleFor({
+                                    id: interaction.id,
                                     rawTranscript:
                                       interaction.asr_output?.rawTranscript ??
                                       '',
@@ -1026,6 +1030,7 @@ export default function HomeContent({
 
       {exampleFor && (
         <AddAsExampleDialog
+          key={exampleFor.id}
           rawTranscript={exampleFor.rawTranscript}
           currentResult={exampleFor.currentResult}
           defaultModeId={exampleFor.modeId}

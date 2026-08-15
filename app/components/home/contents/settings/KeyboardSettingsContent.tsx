@@ -2,14 +2,14 @@ import { useEffect } from 'react'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { useModesStore } from '@/app/store/useModesStore'
 import { usePlatform } from '@/app/hooks/usePlatform'
-import { getKeyDisplay } from '@/app/utils/keyboard'
+import { getKeyDisplay, normalizeChord } from '@/app/utils/keyboard'
 import {
   SettingsGroup,
   SettingsRow,
   SettingsNote,
 } from '@/app/components/ui/settings'
 import KeyboardShortcutEditor from '@/app/components/ui/keyboard-shortcut-editor'
-import type { KeyName } from '@/lib/types/keyboard'
+import { normalizeLegacyKey, type KeyName } from '@/lib/types/keyboard'
 
 /**
  * Les raccourcis de dictée s'éditent dans leur mode. Ils sont listés ici en
@@ -34,10 +34,18 @@ export default function KeyboardSettingsContent() {
       )
       .join(' + ')
 
+  // The runtime matcher (lib/media/keyboard.ts) normalizes legacy key names
+  // — 'control' becomes 'control-left', etc. — before comparing shortcuts, so
+  // 'control' and 'control-left' collide there even though they are
+  // different strings here. Comparing raw keys would miss exactly the
+  // conflict this panel exists to catch, so the same normalization runs
+  // first, matching isDuplicateShortcut's approach in app/utils/keyboard.ts.
   const byCombo = new Map<string, string[]>()
   for (const shortcut of keyboardShortcuts) {
     if (!shortcut.keys.length) continue
-    const combo = [...shortcut.keys].sort().join('+')
+    const combo = normalizeChord(
+      shortcut.keys.map(key => normalizeLegacyKey(key)),
+    ).join('+')
     const name =
       modes.find(mode => mode.id === shortcut.modeId)?.name ?? shortcut.modeId
     byCombo.set(combo, [...(byCombo.get(combo) ?? []), name])

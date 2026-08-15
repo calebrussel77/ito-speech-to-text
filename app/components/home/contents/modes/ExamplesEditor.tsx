@@ -53,11 +53,16 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
     setError('')
     try {
       await window.api.modes.examples.add(modeId, '', '')
-      await load()
     } catch (err) {
       console.error('Failed to add an example', err)
       setError('Could not add the example.')
+      return
     }
+    // load() reports its own failure independently (it sets its own error
+    // message and never throws) — folding it into the try above would name
+    // a reload hiccup "Could not add the example", pushing the user to
+    // retry and insert the same example twice.
+    await load()
   }
 
   const save = async (id: string) => {
@@ -76,11 +81,12 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
     setError('')
     try {
       await window.api.modes.examples.delete(id)
-      await load()
     } catch (err) {
       console.error('Failed to remove an example', err)
       setError('Could not remove the example.')
+      return
     }
+    await load()
   }
 
   return (

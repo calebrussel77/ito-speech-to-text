@@ -1,5 +1,6 @@
 import { modeIcon } from './modeIcons'
 import { cn } from '@/lib/utils'
+import { findPreset } from '@/lib/constants/modePresets'
 import type { ModeDto } from '@/app/index'
 
 /**
@@ -23,6 +24,10 @@ export default function ModeRow({
   onActivate: () => void
 }) {
   const Icon = modeIcon(mode.icon)
+  // `mode.preset` is a raw key like 'voice-to-text' — show the human label
+  // from the preset catalogue instead, falling back to the raw value for a
+  // custom preset that has none.
+  const presetLabel = findPreset(mode.preset)?.label ?? mode.preset
 
   return (
     <div
@@ -55,8 +60,7 @@ export default function ModeRow({
           {mode.name}
         </span>
         <span className="block truncate text-[11px] leading-snug text-[var(--subtle-foreground)]">
-          {mode.useLlm ? mode.preset : 'Raw transcript'}
-          {mode.audioSource !== 'microphone' && ' · system audio'}
+          {mode.useLlm ? presetLabel : 'Raw transcript'}
         </span>
       </button>
 

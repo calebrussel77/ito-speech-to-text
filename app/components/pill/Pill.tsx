@@ -10,6 +10,7 @@ import { AudioBars } from './contents/AudioBars'
 import { PreviewAudioBars } from './contents/PreviewAudioBars'
 import { ProcessingBars } from './contents/ProcessingBars'
 import { useAudioStore } from '@/app/store/useAudioStore'
+import { useModesStore } from '@/app/store/useModesStore'
 import { analytics, ANALYTICS_EVENTS } from '../analytics'
 import { IPC_EVENTS } from '@/lib/types/ipc'
 import type {
@@ -111,13 +112,21 @@ const Pill = () => {
     state => state.onboardingCompleted,
   )
   const { startRecording, stopRecording, cancelRecording } = useAudioStore()
+  // Modes ne sont chargés et tenus à jour qu'ici, dans le store — la pill
+  // avait sa propre copie via `modes.getActive()` / `getAll()`, une deuxième
+  // source qui pouvait diverger de la page Modes.
+  const {
+    modes,
+    activeModeId,
+    loaded: modesLoaded,
+    load: loadModes,
+  } = useModesStore()
 
   const [isRecording, setIsRecording] = useState(false)
   const [isManualRecording, setIsManualRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [recordingModeName, setRecordingModeName] = useState<string>('')
-  const [activeModeName, setActiveModeName] = useState('')
   const isManualRecordingRef = useRef(false)
   const [showItoBarAlways, setShowItoBarAlways] = useState(
     initialShowItoBarAlways,
@@ -133,15 +142,11 @@ const Pill = () => {
   const [lastVolumeUpdate, setLastVolumeUpdate] = useState(0)
 
   useEffect(() => {
-    void window.api.modes.getActive().then(async id => {
-      const modes = await window.api.modes.getAll()
-      setActiveModeName(modes.find(mode => mode.id === id)?.name ?? '')
-    })
+    if (!modesLoaded) void loadModes()
+  }, [modesLoaded, loadModes])
 
-    return window.api.on('active-mode-update', (payload: any) =>
-      setActiveModeName(payload.modeName ?? ''),
-    )
-  }, [])
+  const activeModeName =
+    modes.find(mode => mode.id === activeModeId)?.name ?? ''
 
   useEffect(() => {
     // Listen for recording state changes from the main process
@@ -252,7 +257,9 @@ const Pill = () => {
   // Compact dimensions — small and subtle, Wispr Flow style
   const idleWidth = 28
   const idleHeight = 6
-  const hoveredWidth = 68
+  // Same bars as the recording state, now also carrying the active mode
+  // label at rest — widened to match so the label isn't clipped to nothing.
+  const hoveredWidth = 76
   const hoveredHeight = 22
   const recordingWidth = 76
   const recordingHeight = 24
@@ -546,7 +553,19 @@ const Pill = () => {
     }
 
     if (isHovered) {
-      return <PreviewAudioBars />
+      return (
+        <>
+          <PreviewAudioBars />
+          {/* Le commentaire sur modeLabel promettait déjà ce libellé au repos
+              ; il n'était rendu que dans la branche anyRecording, où
+              recordingModeName masque toujours activeModeName. */}
+          {modeLabel && (
+            <span className="ml-2 truncate text-[10px] tracking-tight text-[rgba(251,250,249,0.6)]">
+              {modeLabel}
+            </span>
+          )}
+        </>
+      )
     }
 
     return null
