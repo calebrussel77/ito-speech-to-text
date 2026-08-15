@@ -30,6 +30,13 @@ export interface ActiveModePayload {
   modeName: string
   modeIcon: string
   modeColor?: string | null
+  /**
+   * Le changement vient d'un raccourci, sans aucune fenêtre sous les yeux :
+   * la pill doit se montrer un instant pour dire où le cycle est arrivé.
+   * Absent quand le changement vient d'un clic dans la page Modes — l'action
+   * et son résultat y sont déjà visibles.
+   */
+  reveal?: boolean
 }
 
 export interface ProcessingStatePayload {

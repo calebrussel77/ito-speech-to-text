@@ -29,18 +29,22 @@ export class RecordingStateNotifier {
     })
   }
 
-  public notifyActiveModeChanged(mode: {
-    id: string
-    name: string
-    icon: string
-    color?: string | null
-  }) {
+  public notifyActiveModeChanged(
+    mode: {
+      id: string
+      name: string
+      icon: string
+      color?: string | null
+    },
+    options?: { reveal?: boolean },
+  ) {
     console.log(`[RecordingStateNotifier] Active mode: ${mode.name}`)
     this.sendToWindows(IPC_EVENTS.ACTIVE_MODE_UPDATE, {
       modeId: mode.id,
       modeName: mode.name,
       modeIcon: mode.icon,
       modeColor: mode.color ?? null,
+      reveal: options?.reveal ?? false,
     })
   }
 

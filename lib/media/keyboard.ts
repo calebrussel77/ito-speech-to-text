@@ -231,7 +231,10 @@ async function handleKeyEventInMain(event: KeyEvent) {
   ) {
     try {
       const mode = await cycleActiveMode()
-      recordingStateNotifier.notifyActiveModeChanged(mode)
+      // `reveal` : le cycle vient du clavier, souvent sans aucune fenêtre Ito
+      // à l'écran — sans ce signal, le seul retour serait de lancer une
+      // dictée pour voir où le cycle est arrivé.
+      recordingStateNotifier.notifyActiveModeChanged(mode, { reveal: true })
     } catch (error) {
       console.warn('[keyboard] Could not cycle the active mode:', error)
     }

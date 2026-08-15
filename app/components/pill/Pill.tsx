@@ -21,6 +21,7 @@ import type {
   InteractionSoundPlayPayload,
   RecordingStatePayload,
   ProcessingStatePayload,
+  ActiveModePayload,
 } from '@/lib/types/ipc'
 import { playInteractionSoundPayload } from '@/app/utils/interactionSoundPlayer'
 
@@ -139,6 +140,16 @@ const MODE_ICON_STROKE = 1.75
 const MODE_ICON_COLOR = 'rgba(251, 250, 249, 0.82)'
 
 /**
+ * Durée d'affichage de l'aperçu après un cycle de mode au raccourci : le temps
+ * de lire un nom court, pas plus — et réarmée à chaque pression, pour qu'une
+ * rafale de cycles reste lisible jusqu'au mode où elle s'arrête.
+ */
+const PEEK_DURATION_MS = 1600
+
+/** Au-delà, le nom du mode s'abrège — la pill ne doit pas traverser l'écran. */
+const PEEK_NAME_MAX_WIDTH = 140
+
+/**
  * La pastille du mode : 6 px, la seule couleur autorisée par la charte.
  *
  * C'est elle qui dit quel mode enregistre, avant même qu'on regarde l'icône.
@@ -214,6 +225,11 @@ const Pill = () => {
   // vient de la lire en base — vide quand ce mode n'en a pas, et la couleur
   // est alors dérivée de son id comme partout ailleurs.
   const [recordingModeColor, setRecordingModeColor] = useState<string>('')
+  // Aperçu du mode qui vient d'être activé au raccourci de cycle. Servi depuis
+  // la diffusion, pas depuis le store : les deux écoutent le même événement et
+  // l'aperçu ne doit pas dépendre de l'ordre dans lequel ils l'ont reçu.
+  const [peekMode, setPeekMode] = useState<ActiveModePayload | null>(null)
+  const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isManualRecordingRef = useRef(false)
   const [showItoBarAlways, setShowItoBarAlways] = useState(
     initialShowItoBarAlways,
@@ -246,6 +262,29 @@ const Pill = () => {
   useEffect(() => {
     if (!modesLoaded) void loadModes()
   }, [modesLoaded, loadModes])
+
+  // À part du grand effet plus bas : celui-ci se réabonne à chaque variation
+  // de volume, et son nettoyage aurait éteint l'aperçu en pleine dictée.
+  useEffect(() => {
+    const unsubActiveMode = window.api.on(
+      IPC_EVENTS.ACTIVE_MODE_UPDATE,
+      (payload: ActiveModePayload) => {
+        // Seul le cycle au raccourci se montre : un clic dans la page Modes a
+        // déjà son retour visuel sous le curseur.
+        if (!payload.reveal) return
+        setPeekMode(payload)
+        if (peekTimerRef.current) clearTimeout(peekTimerRef.current)
+        peekTimerRef.current = setTimeout(
+          () => setPeekMode(null),
+          PEEK_DURATION_MS,
+        )
+      },
+    )
+    return () => {
+      unsubActiveMode()
+      if (peekTimerRef.current) clearTimeout(peekTimerRef.current)
+    }
+  }, [])
 
   const activeMode = modes.find(mode => mode.id === activeModeId)
 
@@ -417,10 +456,14 @@ const Pill = () => {
 
   // Determine current state
   const anyRecording = isRecording || isManualRecording
+  // Une dictée ou son traitement passent devant l'aperçu : cycler pendant
+  // qu'on dicte ne change pas le mode qui enregistre, la pill n'a donc rien
+  // de nouveau à montrer.
+  const peeking = peekMode !== null && !anyRecording && !isProcessing
   const shouldShow =
     (onboardingCategory === ONBOARDING_CATEGORIES.TRY_IT ||
       onboardingCompleted) &&
-    (anyRecording || isProcessing || showItoBarAlways || isHovered)
+    (anyRecording || isProcessing || showItoBarAlways || isHovered || peeking)
 
   // Calculate dimensions and styling based on state
   let currentWidth = idleWidth
@@ -469,7 +512,7 @@ const Pill = () => {
     borderColor = THEME.border.processing
     boxShadow = THEME.glow.processing
     animationName = 'subtleBreathe 2s ease-in-out infinite'
-  } else if (isHovered) {
+  } else if (peeking || isHovered) {
     currentWidth = expandedWidth
     currentHeight = hoveredHeight
     backgroundColor = THEME.background.elevated
@@ -707,6 +750,34 @@ const Pill = () => {
           {modeDotColor && <ModeDot color={modeDotColor} />}
           <ProcessingBars color={AUDIO_BAR_COLOR} />
           {modeGlyph && <ModeGlyph icon={modeGlyph} />}
+        </>
+      )
+    }
+
+    if (peeking && peekMode) {
+      // L'aperçu écrit le NOM du mode : contrairement à la dictée, où l'icône
+      // suffit parce qu'on vient de choisir le mode soi-même, le cycle au
+      // raccourci atterrit sur un mode qu'on ne connaît pas encore.
+      const peekDotColor =
+        peekMode.modeColor ?? modeColor(peekMode.modeId, modes)
+      return (
+        <>
+          {peekDotColor && <ModeDot color={peekDotColor} />}
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 500,
+              lineHeight: 1,
+              color: THEME.accent.foreground,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: `${PEEK_NAME_MAX_WIDTH}px`,
+            }}
+          >
+            {peekMode.modeName}
+          </span>
+          {peekMode.modeIcon && <ModeGlyph icon={peekMode.modeIcon} />}
         </>
       )
     }
