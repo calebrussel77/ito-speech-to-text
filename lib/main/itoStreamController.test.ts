@@ -4,6 +4,218 @@ import {
   GROQ_MAX_BYTES,
 } from './transcription/transcriptionRouter'
 
+// The base electron mock (lib/__tests__/setup.ts) never marks Notification
+// as supported, so `showNotification` silently no-ops there — none of the
+// French copy it produces is ever observable from a test. Re-registering the
+// 'electron' mock here (same shape, Notification swapped for a spy) lets the
+// tests below confirm not just that a code path was taken, but the exact
+// message the user would see. `import { Notification } from 'electron'` is a
+// live binding onto the exports object Bun hands back from this factory —
+// not writable from outside — so the spy has to be baked in at registration
+// time rather than assigned onto the imported binding afterwards.
+type NotificationCall = { title: string; body: string }
+let notificationCalls: NotificationCall[] = []
+
+class SpyNotification {
+  static isSupported() {
+    return true
+  }
+  private opts: NotificationCall
+  constructor(opts: NotificationCall) {
+    this.opts = opts
+  }
+  show() {
+    notificationCalls.push(this.opts)
+  }
+}
+
+mock.module('electron', () => {
+  let userDataPath = '/tmp/test-ito-app'
+  let appName = 'Ito'
+  return {
+    app: {
+      getPath: (type: string) => {
+        if (type === 'userData') return userDataPath
+        return '/tmp/test-path'
+      },
+      setPath: (type: string, newPath: string) => {
+        if (type === 'userData') userDataPath = newPath
+      },
+      quit: () => {},
+      on: () => {},
+      getName: () => appName,
+      setName: (name: string) => {
+        appName = name
+      },
+      getVersion: () => '1.0.0',
+      whenReady: () => Promise.resolve(),
+      isReady: () => true,
+      isPackaged: false,
+      dock: {
+        hide: () => {},
+        show: () => {},
+      },
+    },
+    BrowserWindow: class MockBrowserWindow {
+      webContents: any
+
+      constructor() {
+        this.webContents = {
+          send: () => {},
+          on: () => {},
+          openDevTools: () => {},
+        }
+      }
+
+      static getAllWindows() {
+        return []
+      }
+      loadURL() {}
+      loadFile() {}
+      on() {}
+      once() {}
+      show() {}
+      hide() {}
+      close() {}
+      destroy() {}
+      minimize() {}
+      maximize() {}
+      restore() {}
+      focus() {}
+      blur() {}
+      isFocused() {
+        return true
+      }
+      isVisible() {
+        return true
+      }
+      isMinimized() {
+        return false
+      }
+      isMaximized() {
+        return false
+      }
+      setTitle() {}
+      getTitle() {
+        return 'Test Window'
+      }
+    },
+    shell: {
+      openExternal: () => {},
+      showItemInFolder: () => {},
+      openPath: () => {},
+    },
+    screen: {
+      getPrimaryDisplay: () => ({
+        workAreaSize: { width: 1920, height: 1080 },
+        size: { width: 1920, height: 1080 },
+      }),
+      getAllDisplays: () => [],
+      getCursorScreenPoint: () => ({ x: 0, y: 0 }),
+    },
+    protocol: {
+      registerSchemesAsPrivileged: () => {},
+      registerFileProtocol: () => {},
+      registerHttpProtocol: () => {},
+      registerBufferProtocol: () => {},
+      registerStringProtocol: () => {},
+      unregisterProtocol: () => {},
+    },
+    net: {
+      request: () => {},
+    },
+    ipcMain: {
+      on: () => {},
+      once: () => {},
+      handle: () => {},
+      handleOnce: () => {},
+      removeAllListeners: () => {},
+      removeHandler: () => {},
+    },
+    ipcRenderer: {
+      invoke: () => {},
+      send: () => {},
+      on: () => {},
+      once: () => {},
+      removeAllListeners: () => {},
+      removeListener: () => {},
+      sendSync: (channel: string) => {
+        if (channel === 'electron-store-get-data') {
+          return {
+            encryptionKey: null,
+            migrations: {},
+            projectVersion: '1.0.0',
+            projectSuffix: 'test',
+            defaults: {},
+            name: 'config',
+            builtinMigrations: false,
+            clearInvalidConfig: false,
+            serialize: null,
+            deserialize: null,
+            appVersion: '1.0.0',
+            path: '/tmp/test-config.json',
+          }
+        }
+        return null
+      },
+    },
+    contextBridge: {
+      exposeInMainWorld: () => {},
+    },
+    systemPreferences: {
+      askForMediaAccess: () => {},
+      getMediaAccessStatus: () => 'granted',
+      getAnimationSettings: () => ({ shouldRenderRichAnimation: true }),
+    },
+    powerSaveBlocker: {
+      start: () => 1,
+      stop: () => {},
+      isStarted: () => false,
+    },
+    Menu: class MockMenu {},
+    MenuItem: class MockMenuItem {},
+    Tray: class MockTray {},
+    Notification: SpyNotification,
+    dialog: {
+      showOpenDialog: () => {},
+      showSaveDialog: () => {},
+      showMessageBox: () => {},
+      showErrorBox: () => {},
+    },
+    clipboard: {
+      writeText: () => {},
+      readText: () => '',
+    },
+    nativeTheme: {
+      shouldUseDarkColors: false,
+      on: () => {},
+    },
+    IpcRendererEvent: class MockIpcRendererEvent {},
+    IpcMainEvent: class MockIpcMainEvent {},
+    autoUpdater: {
+      quitAndInstall: () => {},
+    },
+    powerMonitor: {
+      on: () => {},
+      getSystemIdleState: () => 'active',
+      getSystemIdleTime: () => 0,
+    },
+    crashReporter: {
+      start: () => {},
+      getLastCrashReport: () => null,
+      getUploadedReports: () => [],
+      getUploadToServer: () => true,
+      setUploadToServer: () => {},
+    },
+    nativeImage: {
+      createEmpty: () => ({}),
+      createFromPath: () => ({}),
+      createFromBuffer: () => ({}),
+      createFromDataURL: () => ({}),
+    },
+  }
+})
+
 const mockAudioStreamManager = {
   isCurrentlyStreaming: mock(() => false),
   initialize: mock(),
@@ -216,6 +428,8 @@ mock.module('./store', () => ({
 
 describe('ItoStreamController (local)', () => {
   beforeEach(() => {
+    notificationCalls = []
+
     Object.values(mockAudioStreamManager).forEach(fn => fn.mockClear())
     Object.values(mockLocalAudioProcessor).forEach(fn => fn.mockClear())
     Object.values(mockContextGrabber).forEach(fn => fn.mockClear())
@@ -609,9 +823,14 @@ describe('ItoStreamController (local)', () => {
       const controller = new ItoStreamController()
       await controller.initialize(openRouterMode())
 
-      await expect(
-        controller.processLocalTranscription(),
-      ).rejects.toMatchObject({ code: 'MODEL_ERROR' })
+      let caught: any
+      try {
+        await controller.processLocalTranscription()
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toMatchObject({ code: 'MODEL_ERROR' })
 
       expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
       expect(mockOpenRouterService.transcribeAudio).not.toHaveBeenCalled()
@@ -620,6 +839,18 @@ describe('ItoStreamController (local)', () => {
       ).not.toHaveBeenCalled()
       // Named error, but the dictation is never lost: it stays on disk.
       expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
+
+      // This refusal must get the exact same treatment as every other
+      // recoverable failure in the file: the WAV linked, the duration
+      // carried, and the user told — otherwise the history row reads as an
+      // unexplained "Failed dictation" instead of one awaiting retry, and
+      // `findPendingInteraction` has nothing to reconcile later.
+      expect(caught.pendingDictationPath).toBe('C:/pending/dictation-1.wav')
+      expect(caught.audioDurationMs).toBe(FILE_PATH_THRESHOLD_MS)
+      expect(notificationCalls).toContainEqual({
+        title: 'Ito — dictée sauvegardée',
+        body: 'La transcription a échoué. Votre dictée sera récupérée automatiquement dans l’historique.',
+      })
     })
 
     test('falls back to Groq when the OpenRouter call fails', async () => {
@@ -783,5 +1014,72 @@ describe('ItoStreamController (local)', () => {
     expect(
       mockInteractionManager.createRecoveredInteraction,
     ).not.toHaveBeenCalled()
+  })
+
+  describe('flushPendingDictations routing (the recovery pass must reach the file path too)', () => {
+    // Too big for Groq's 25 MB ceiling: the only way `chooseTranscriptionPath`
+    // accepts this WAV is through Deepgram's file path.
+    const tooBigForGroqWav = () =>
+      mockPendingDictationStore.read.mockReturnValue(
+        Buffer.alloc(GROQ_MAX_BYTES + 1),
+      )
+
+    test('routes a recovered WAV that needs the file path through Deepgram once a key exists', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/big.wav'])
+      tooBigForGroqWav()
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        deepgramApiKey: 'dg-test',
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(mockDeepgramService.transcribeAudio).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ apiKey: 'dg-test', model: 'nova-3' }),
+      )
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      expect(
+        mockInteractionManager.createRecoveredInteraction,
+      ).toHaveBeenCalledWith(
+        'deepgram transcript',
+        16000,
+        'C:/pending/big.wav',
+        undefined,
+        'deepgram/nova-3',
+      )
+      expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
+        'C:/pending/big.wav',
+      )
+    })
+
+    test('leaves a WAV that still needs the file path in place when no Deepgram key exists', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/big.wav'])
+      tooBigForGroqWav()
+      // baseAdvancedSettings() carries no Deepgram key.
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(0)
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      // Not lost, not looped on: still on disk for the next pass.
+      expect(mockPendingDictationStore.delete).not.toHaveBeenCalled()
+      expect(
+        mockInteractionManager.createRecoveredInteraction,
+      ).not.toHaveBeenCalled()
+    })
   })
 })

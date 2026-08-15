@@ -261,13 +261,6 @@ export class ItoStreamController {
       hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
     })
 
-    if (decision.path === null) {
-      // Ni transport court ni Deepgram : le WAV reste sur disque (voir le
-      // catch plus bas) et l'utilisateur sait pourquoi, plutôt que de perdre
-      // la dictée en silence.
-      throw new LocalTranscriptionError(decision.reason, 'MODEL_ERROR')
-    }
-
     let transcript: string
     // Groq is the default attribution; overwritten when Deepgram or
     // OpenRouter answers.
@@ -275,6 +268,18 @@ export class ItoStreamController {
     let asrFallback: AsrFallback | undefined
     let speakerSegments: SpeakerSegment[] = []
     try {
+      // This throw must stay inside the try: the catch right below is what
+      // links the WAV (`error.pendingDictationPath`), carries the duration
+      // (`error.audioDurationMs`) and shows the "dictée sauvegardée"
+      // notification. Thrown ahead of the try (as it once was), none of that
+      // bookkeeping runs — the WAV survives on disk but with no notification,
+      // no link back to it, and no duration, so it can never be reconciled by
+      // `findPendingInteraction` even after `flushPendingDictations` learns
+      // to route through the file path. Second time this exact ordering has
+      // bitten this function — keep it here.
+      if (decision.path === null) {
+        throw new LocalTranscriptionError(decision.reason, 'MODEL_ERROR')
+      }
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
         if (decision.path === 'deepgram') {
           const apiKey = advancedSettings.deepgramApiKey || ''
@@ -531,16 +536,19 @@ export class ItoStreamController {
 
       // Une dictée en attente n'a plus son mode : le WAV a survécu, pas le
       // contexte. Le mode actif est la meilleure approximation disponible, et
-      // il ne sert ici qu'à la langue et à l'amorce de style.
+      // il ne sert ici qu'à la langue, à l'amorce de style et — nouveau — à
+      // la décision de routage.
       const mode = await resolveActiveMode()
-      const groqModel = resolveModel(
+      const voiceModel = resolveModel(
         mode.voiceModelKey ?? undefined,
         DEFAULT_SHORT_VOICE_KEY,
       )
-      const asrModel =
-        groqModel.provider === 'groq'
-          ? groqModel.slug
-          : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY).slug
+      // Le repli Groq garde un modèle Groq, comme dans processLocalTranscription.
+      const groqModel =
+        voiceModel.provider === 'groq'
+          ? voiceModel
+          : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
+      const asrModel = groqModel.slug
 
       for (const filePath of pending) {
         // A live recording takes priority over recovery work.
@@ -548,23 +556,65 @@ export class ItoStreamController {
 
         try {
           const wavAudio = pendingDictationStore.read(filePath)
-          const transcript = await localTranscriptionService.transcribeAudio(
-            wavAudio,
-            {
-              asrModel,
-              noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-              fileType: 'wav',
-              language: asrLanguageHint(mode.language),
-              customPrompt: mode.asrPrompt,
-            },
-          )
+
+          // La durée d'origine n'a pas survécu au disque — seule la taille
+          // du WAV est connue ici. Ça suffit : un WAV n'atteint `path: null`
+          // qu'en dépassant le plafond Groq (25 Mo), et c'est exactement ce
+          // que la taille seule permet de revérifier, sans avoir besoin de la
+          // durée.
+          const decision = chooseTranscriptionPath({
+            voiceModelProvider: voiceModel.provider,
+            durationMs: 0,
+            wavBytes: wavAudio.length,
+            identifySpeakers: mode.identifySpeakers,
+            hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
+            hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+          })
+
+          if (decision.path === null) {
+            // Toujours rien pour le transporter (pas de clé Deepgram) : on
+            // laisse le WAV sur disque pour la prochaine passe, sans le
+            // supprimer ni boucler dessus.
+            continue
+          }
+
+          let transcript: string
+          let engineUsed = asrModel
+          if (decision.path === 'deepgram') {
+            const result = await deepgramTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                apiKey: advancedSettings.deepgramApiKey || '',
+                model: 'nova-3',
+                language: asrLanguageHint(mode.language),
+                diarize: mode.identifySpeakers,
+              },
+            )
+            transcript = result.text
+            engineUsed = 'deepgram/nova-3'
+          } else {
+            // 'groq' or 'openrouter': unchanged from before this fix — only
+            // the file-path (Deepgram) case needed new routing, since that
+            // is the one Groq alone could never carry.
+            transcript = await localTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                asrModel,
+                noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+                fileType: 'wav',
+                language: asrLanguageHint(mode.language),
+                customPrompt: mode.asrPrompt,
+              },
+            )
+          }
+
           if (transcript) {
             await interactionManager.createRecoveredInteraction(
               transcript,
               16000,
               filePath,
               undefined,
-              asrModel,
+              engineUsed,
             )
             recovered++
           }
