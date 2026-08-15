@@ -2,17 +2,9 @@ import fs from 'fs'
 import { deepgramTranscriptionService } from './DeepgramTranscriptionService'
 import { transcriptAdjuster } from './TranscriptAdjuster'
 import { interactionManager } from '../interactions/InteractionManager'
-import { resolveMode } from '../modes/activeMode'
+import { resolveMode, resolveActiveMode } from '../modes/activeMode'
 import { getAdvancedSettings } from '../store'
 import { asrLanguageHint } from '../../constants/modeLanguages'
-import {
-  resolveModel,
-  DEFAULT_SHORT_VOICE_KEY,
-} from '../../constants/modelCatalog'
-import {
-  chooseTranscriptionPath,
-  FILE_PATH_THRESHOLD_MS,
-} from './transcriptionRouter'
 
 const CONTENT_TYPES: Record<string, string> = {
   wav: 'audio/wav',
@@ -38,13 +30,15 @@ function contentTypeFor(filePath: string): string {
  * touché — on le lit, on l'envoie tel quel à Deepgram avec le bon type MIME,
  * et on ne le déplace ni ne le supprime.
  *
- * Le choix du transport passe par `chooseTranscriptionPath`, la même
- * décision que pour une dictée en direct, plutôt que de la redécider ici. La
- * durée réelle d'un conteneur compressé n'est pas connue sans le décoder, et
- * les chemins courts (Groq/OpenRouter) n'ont de toute façon pas de sens pour
- * un fichier qui n'a pas été enregistré par Ito : pas de WAV, pas de filet de
- * récupération. On force donc les paramètres du routeur pour qu'il ne rende
- * que deux issues possibles — Deepgram, ou l'erreur qui demande une clé.
+ * Un fichier importé n'a pas été enregistré par Ito : pas de WAV, pas de
+ * filet de récupération, donc pas de sens à emprunter les chemins courts
+ * (Groq/OpenRouter) qu'utilise `chooseTranscriptionPath` pour une dictée en
+ * direct. On l'exigeait déjà en pratique en forçant ses paramètres pour
+ * qu'il ne rende que "Deepgram" ou un refus — mais ce refus recyclait le
+ * message du routeur ("trop long"), qui mentait pour un mémo de dix
+ * secondes : le vrai motif n'a jamais été la durée, faute de la connaître
+ * sans décoder le fichier. On l'exprime donc directement ici : ce chemin
+ * exige toujours une clé Deepgram, un point c'est tout.
  */
 export async function transcribeExistingFile(
   filePath: string,
@@ -55,46 +49,26 @@ export async function transcribeExistingFile(
   }
 
   const advancedSettings = getAdvancedSettings()
-  const mode = await resolveMode(modeId)
-  const voiceModel = resolveModel(
-    mode.voiceModelKey ?? undefined,
-    DEFAULT_SHORT_VOICE_KEY,
-  )
+  // Sans modeId explicite — le seul appelant aujourd'hui, le bouton "Transcribe
+  // a file" — c'est le mode actif qui doit transcrire, pas le premier de la
+  // liste : resolveMode(undefined) replie sur l'ordre de tri (ModesTable.findAll),
+  // pas sur ce que l'utilisateur a choisi comme actif.
+  const mode = modeId ? await resolveMode(modeId) : await resolveActiveMode()
 
-  const decision = chooseTranscriptionPath({
-    voiceModelProvider:
-      voiceModel.provider === 'openrouter' ? 'openrouter' : 'groq',
-    // Un fichier importé est toujours traité comme long : on ne connaît pas
-    // sa durée réelle sans le décoder.
-    durationMs: FILE_PATH_THRESHOLD_MS,
-    // … et les plafonds WAV du chemin court ne veulent rien dire pour un
-    // conteneur arbitraire : les exclure garantit que le routeur ne tente
-    // jamais un repli Groq/OpenRouter qu'on n'implémente pas ici.
-    wavBytes: Number.POSITIVE_INFINITY,
-    identifySpeakers: mode.identifySpeakers,
-    hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
-    hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
-  })
-
-  if (decision.path === null) {
-    return { ok: false, error: decision.reason }
-  }
-  if (decision.path !== 'deepgram') {
-    // Ne devrait jamais arriver : les paramètres forcés ci-dessus excluent
-    // groq/openrouter. Filet de sécurité si le routeur change un jour.
+  const deepgramApiKey = advancedSettings.deepgramApiKey?.trim()
+  if (!deepgramApiKey) {
     return {
       ok: false,
-      error: 'Transcribing a file needs a Deepgram API key. Add one in Models.',
+      error:
+        'Transcribing an imported file needs a Deepgram API key. Add one in Models.',
     }
   }
-
-  const apiKey = advancedSettings.deepgramApiKey!.trim()
 
   try {
     const audio = fs.readFileSync(filePath)
     const { text, segments } =
       await deepgramTranscriptionService.transcribeAudio(audio, {
-        apiKey,
+        apiKey: deepgramApiKey,
         model: 'nova-3',
         language: asrLanguageHint(mode.language),
         diarize: mode.identifySpeakers,
@@ -133,6 +107,22 @@ export async function transcribeExistingFile(
         speakers: segments,
       },
     )
+
+    // `createRecoveredInteraction` avale ses propres erreurs de base de
+    // données et rend `undefined` plutôt que de lever (comportement
+    // pré-existant, à ne pas changer ici) : un identifiant manquant EST
+    // l'échec — sans quoi une écriture ratée après une transcription de
+    // plusieurs minutes se rapporterait comme un succès, et rien
+    // n'apparaîtrait dans l'historique.
+    if (!interactionId) {
+      console.error(
+        `[fileTranscription] Transcribed ${filePath} but failed to save it to history`,
+      )
+      return {
+        ok: false,
+        error: 'Transcribed the file, but saving it to history failed.',
+      }
+    }
 
     console.log(
       `[fileTranscription] Transcribed ${filePath} in mode "${mode.name}"`,

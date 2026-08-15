@@ -19,6 +19,11 @@ export default function ModesContent() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [fileError, setFileError] = useState('')
+  // Un fichier importé peut être long à transcrire (plusieurs minutes) : sans
+  // ce garde-fou, un second clic pendant l'attente rouvrait le sélecteur et
+  // lançait une seconde transcription concurrente — deux imports, deux lignes
+  // d'historique, aucune exclusion mutuelle nulle part.
+  const [transcribingFile, setTranscribingFile] = useState(false)
 
   useEffect(() => {
     if (!loaded) void load()
@@ -54,12 +59,19 @@ export default function ModesContent() {
           <Button
             variant="outline"
             size="sm"
+            disabled={transcribingFile}
             onClick={async () => {
-              const result = await window.api.transcribeFile()
-              if (result.error) setFileError(result.error)
+              setFileError('')
+              setTranscribingFile(true)
+              try {
+                const result = await window.api.transcribeFile()
+                if (result.error) setFileError(result.error)
+              } finally {
+                setTranscribingFile(false)
+              }
             }}
           >
-            Transcribe a file
+            {transcribingFile ? 'Transcribing…' : 'Transcribe a file'}
           </Button>
           <Button size="sm" onClick={() => setCreating(true)}>
             Create mode

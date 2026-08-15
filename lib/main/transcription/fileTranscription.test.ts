@@ -5,26 +5,42 @@ mock.module('./DeepgramTranscriptionService', () => ({
   deepgramTranscriptionService: { transcribeAudio: mockDeepgram },
 }))
 
-const mockCreateRecovered = mock(async () => {})
+const mockCreateRecovered = mock(async () => 'interaction-1')
 mock.module('../interactions/InteractionManager', () => ({
   interactionManager: { createRecoveredInteraction: mockCreateRecovered },
 }))
 
+const mockResolveMode = mock(async (modeId: string) => ({
+  id: modeId,
+  name: 'Meeting',
+  language: 'fr',
+  identifySpeakers: true,
+  useLlm: false,
+  voiceModelKey: 'nova-3',
+  textModelKey: null,
+  instructions: '',
+  contextApplication: false,
+  contextClipboard: false,
+  contextSelection: false,
+}))
+// Un mode distinct de celui rendu par `resolveMode`, pour distinguer sans
+// ambiguïté lequel des deux a réellement été consulté par le code sous test.
+const mockResolveActiveMode = mock(async () => ({
+  id: 'voice-to-text',
+  name: 'Voice to text',
+  language: 'en',
+  identifySpeakers: false,
+  useLlm: false,
+  voiceModelKey: 'nova-3',
+  textModelKey: null,
+  instructions: '',
+  contextApplication: false,
+  contextClipboard: false,
+  contextSelection: false,
+}))
 mock.module('../modes/activeMode', () => ({
-  resolveMode: async () => ({
-    id: 'meeting',
-    name: 'Meeting',
-    language: 'fr',
-    identifySpeakers: true,
-    useLlm: false,
-    voiceModelKey: 'nova-3',
-    textModelKey: null,
-    instructions: '',
-    contextApplication: false,
-    contextClipboard: false,
-    contextSelection: false,
-  }),
-  resolveActiveMode: async () => ({ id: 'meeting', name: 'Meeting' }),
+  resolveMode: mockResolveMode,
+  resolveActiveMode: mockResolveActiveMode,
 }))
 
 const fileBytes = Buffer.from('RIFF....WAVEfmt ')
@@ -56,6 +72,8 @@ describe('transcribeExistingFile', () => {
   beforeEach(() => {
     mockDeepgram.mockClear()
     mockCreateRecovered.mockClear()
+    mockResolveMode.mockClear()
+    mockResolveActiveMode.mockClear()
     deepgramApiKey = 'dg-test'
   })
 
@@ -65,6 +83,10 @@ describe('transcribeExistingFile', () => {
     expect(result.ok).toBe(true)
     expect(mockDeepgram).toHaveBeenCalledTimes(1)
     expect(mockCreateRecovered).toHaveBeenCalledTimes(1)
+    expect(mockResolveMode).toHaveBeenCalledTimes(1)
+    expect(mockResolveActiveMode).not.toHaveBeenCalled()
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.modeName).toBe('Meeting')
   })
 
   test('refuses without a Deepgram key rather than silently doing nothing', async () => {
@@ -73,5 +95,32 @@ describe('transcribeExistingFile', () => {
     const result = await transcribeExistingFile('C:/meeting.wav', 'meeting')
     expect(result.ok).toBe(false)
     expect(result.error).toContain('Deepgram')
+  })
+
+  // Finding 2: createRecoveredInteraction swallows its own DB errors and
+  // resolves undefined instead of throwing — a missing id IS the failure,
+  // not a success with no interactionId.
+  test('reports failure when the history write silently fails', async () => {
+    mockCreateRecovered.mockResolvedValueOnce(undefined as any)
+
+    const result = await transcribeExistingFile('C:/meeting.wav', 'meeting')
+
+    expect(result.ok).toBe(false)
+    expect(result.interactionId).toBeUndefined()
+    expect(result.error).toBeTruthy()
+  })
+
+  // Finding 1: the only real caller (the "Transcribe a file" button) never
+  // supplies a modeId, so this path is the one that matters in production —
+  // it must consult the *active* mode, not resolveMode(undefined)'s fallback
+  // to the first row by sort_order.
+  test('with no modeId, resolves the active mode rather than the first mode', async () => {
+    const result = await transcribeExistingFile('C:/memo.wav')
+
+    expect(result.ok).toBe(true)
+    expect(mockResolveActiveMode).toHaveBeenCalledTimes(1)
+    expect(mockResolveMode).not.toHaveBeenCalled()
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.modeName).toBe('Voice to text')
   })
 })
