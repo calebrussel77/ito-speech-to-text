@@ -832,6 +832,12 @@ export function registerIPC() {
     return InteractionsTable.softDeleteAllVisible(user_id)
   })
 
+  handleIPC(
+    'interactions:rename-speakers',
+    async (_e, id: string, labels: Record<number, string>) =>
+      InteractionsTable.updateSpeakerLabels(id, labels),
+  )
+
   // Pending dictations (failed transcriptions waiting for the network)
   handleIPC('pending-dictations:count', () => {
     return pendingDictationStore.list().length

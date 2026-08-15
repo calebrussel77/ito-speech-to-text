@@ -197,6 +197,37 @@ export class InteractionsTable {
 
     await run(query, params)
   }
+
+  /**
+   * Renomme des locuteurs dans une interaction.
+   *
+   * Les segments portent un index (stable dans l'enregistrement) et un
+   * libellé (affiché). Renommer réécrit le libellé de **tous** les segments
+   * du locuteur : c'est ce qui transforme un transcript en « Speaker 2 »
+   * partout en un compte-rendu nommé.
+   */
+  static async updateSpeakerLabels(
+    id: string,
+    labels: Record<number, string>,
+  ): Promise<void> {
+    const interaction = await InteractionsTable.findById(id)
+    const speakers = interaction?.asr_output?.speakers
+    if (!Array.isArray(speakers)) return
+
+    const renamed = speakers.map((segment: any) => ({
+      ...segment,
+      label: labels[segment.speaker]?.trim() || segment.label,
+    }))
+
+    await run(
+      'UPDATE interactions SET asr_output = ?, updated_at = ? WHERE id = ?',
+      [
+        JSON.stringify({ ...interaction!.asr_output, speakers: renamed }),
+        new Date().toISOString(),
+        id,
+      ],
+    )
+  }
 }
 
 // =================================================================

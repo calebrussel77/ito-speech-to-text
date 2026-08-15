@@ -62,6 +62,10 @@ export interface IpcApi {
     getById: (id: string) => Promise<any>
     delete: (id: string) => Promise<void>
     clearAll: () => Promise<void>
+    renameSpeakers: (
+      id: string,
+      labels: Record<number, string>,
+    ) => Promise<void>
   }
   pendingDictations: {
     count: () => Promise<number>

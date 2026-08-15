@@ -287,6 +287,7 @@ export class ItoSessionManager {
           modeId: result.modeId,
           modeName: result.modeName,
           rawTranscript: result.rawTranscript,
+          speakers: result.speakerSegments,
         },
       )
       this.playInteractionCompletionSoundIfEnabled()

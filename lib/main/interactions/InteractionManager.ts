@@ -46,6 +46,7 @@ export class InteractionManager {
       modeId?: string
       modeName?: string
       rawTranscript?: string
+      speakers?: SpeakerSegment[]
     },
   ) {
     if (!this.currentInteractionId) {
@@ -94,6 +95,10 @@ export class InteractionManager {
           asr?.rawTranscript && asr.rawTranscript.trim() !== transcript.trim()
             ? asr.rawTranscript
             : null,
+        // Même convention que le chemin fichier (createRecoveredInteraction) :
+        // un tableau vide n'apprend rien de plus qu'un null, et casserait la
+        // détection « cette interaction a des locuteurs » côté historique.
+        speakers: asr?.speakers?.length ? asr.speakers : null,
       }
 
       // Generate a meaningful title from the transcript

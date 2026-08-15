@@ -133,6 +133,8 @@ const api = {
 
     delete: (id: string) => ipcRenderer.invoke('interactions:delete', id),
     clearAll: () => ipcRenderer.invoke('interactions:clear-all'),
+    renameSpeakers: (id: string, labels: Record<number, string>) =>
+      ipcRenderer.invoke('interactions:rename-speakers', id, labels),
   },
   pendingDictations: {
     count: (): Promise<number> =>
