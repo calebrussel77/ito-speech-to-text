@@ -18,18 +18,27 @@ export const centerFalloff = (index: number): number => {
   return 1 - Math.pow(distanceFromCenter / maxDistance, 2) * 0.25
 }
 
+/**
+ * Le conteneur des barres ne se comprime jamais (`flexShrink: 0`).
+ *
+ * Il le faisait par défaut, et un libellé de mode posé à côté suffisait à le
+ * rétrécir sous sa largeur naturelle : les barres débordaient alors de leur
+ * conteneur et l'`overflow: hidden` de la pill les rognait aux deux bouts.
+ * La marge intérieure est également retirée — l'écart avec ce qui l'entoure
+ * est désormais tenu par le `gap` de la pill, en un seul endroit.
+ */
 export const barsContainerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  height: '100%',
   gap: `${BAR_GAP}px`,
-  padding: '0 4px',
+  flexShrink: 0,
 }
 
 export const AudioBarsBase = ({ heights, barColor }: AudioBarsBaseProps) => {
   const barStyle = (height: number, index: number): React.CSSProperties => ({
     width: `${BAR_WIDTH}px`,
+    flexShrink: 0,
     backgroundColor: barColor,
     borderRadius: `${BAR_WIDTH}px`,
     height: `${height}px`,

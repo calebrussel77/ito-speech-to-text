@@ -15,6 +15,7 @@ export class RecordingStateNotifier {
     id: string
     name: string
     icon: string
+    color?: string | null
   }) {
     console.log('[RecordingStateNotifier] Notifying recording started:', {
       mode: mode.name,
@@ -24,6 +25,7 @@ export class RecordingStateNotifier {
       modeId: mode.id,
       modeName: mode.name,
       modeIcon: mode.icon,
+      modeColor: mode.color ?? null,
     })
   }
 
@@ -31,12 +33,14 @@ export class RecordingStateNotifier {
     id: string
     name: string
     icon: string
+    color?: string | null
   }) {
     console.log(`[RecordingStateNotifier] Active mode: ${mode.name}`)
     this.sendToWindows(IPC_EVENTS.ACTIVE_MODE_UPDATE, {
       modeId: mode.id,
       modeName: mode.name,
       modeIcon: mode.icon,
+      modeColor: mode.color ?? null,
     })
   }
 

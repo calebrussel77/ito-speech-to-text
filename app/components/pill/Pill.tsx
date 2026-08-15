@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useSettingsStore } from '../../store/useSettingsStore'
 import {
   useOnboardingStore,
@@ -7,10 +7,14 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip'
 import { X, StopSquare } from '@mynaui/icons-react'
 import { AudioBars } from './contents/AudioBars'
+import { BAR_COUNT, BAR_WIDTH, BAR_GAP } from './contents/AudioBarsBase'
 import { PreviewAudioBars } from './contents/PreviewAudioBars'
 import { ProcessingBars } from './contents/ProcessingBars'
 import { useAudioStore } from '@/app/store/useAudioStore'
 import { useModesStore } from '@/app/store/useModesStore'
+import { modeColor } from '@/lib/constants/modeColors'
+import { modeIcon } from '@/app/components/modeIcons'
+import { pillMode } from './pillMode'
 import { analytics, ANALYTICS_EVENTS } from '../analytics'
 import { IPC_EVENTS } from '@/lib/types/ipc'
 import type {
@@ -95,10 +99,85 @@ const BAR_UPDATE_INTERVAL = 64
 
 /**
  * Les barres sont blanches, quel que soit le mode : le blanc est la seule
- * couleur primaire de l'app. Le mode se lit à son nom, affiché à côté des
- * barres, pas à une teinte ni à une nuance de bordure.
+ * couleur primaire de l'app. Le mode se lit à son nom et à la pastille de 6 px
+ * posée devant les barres — jamais à des barres teintées, ni à une nuance de
+ * bordure.
  */
 const AUDIO_BAR_COLOR = THEME.accent.foreground
+
+/**
+ * Marge intérieure horizontale de la pill.
+ *
+ * Elle doit rester supérieure au retrait que le rayon de 100 px creuse sur les
+ * flancs, sans quoi le contenu passe sous l'arrondi et `overflow: hidden` le
+ * coupe — c'est ce qui rognait les barres.
+ */
+const PILL_PADDING_X = 10
+
+/** Écart entre la pastille, les barres et l'icône. */
+const PILL_GAP = 6
+
+/**
+ * Largeur maximale de la pill. La fenêtre qui l'héberge fait 220 px de large
+ * (`PILL_MAX_WIDTH` dans lib/main/app.ts) : au-delà, ce n'est plus l'arrondi
+ * qui coupe le contenu, c'est la fenêtre elle-même.
+ */
+const PILL_LIMIT_WIDTH = 206
+
+/**
+ * Taille et matière de l'icône du mode.
+ *
+ * Elle remplace le nom écrit : à 10 px, un libellé de mode tenait rarement sans
+ * être abrégé, et il élargissait la pill de tout son texte. L'icône dit la même
+ * chose en 14 px — et c'est la même icône que celle de la page Modes.
+ *
+ * `strokeWidth` est monté à 1,75 : le trait par défaut de Myna, pensé pour du
+ * 16-24 px sur fond clair, disparaît à cette taille sur du near-black.
+ */
+const MODE_ICON_SIZE = 14
+const MODE_ICON_STROKE = 1.75
+const MODE_ICON_COLOR = 'rgba(251, 250, 249, 0.82)'
+
+/**
+ * La pastille du mode : 6 px, la seule couleur autorisée par la charte.
+ *
+ * C'est elle qui dit quel mode enregistre, avant même qu'on regarde l'icône.
+ * Les barres, elles, restent blanches.
+ */
+const ModeDot = ({ color }: { color: string }) => (
+  <span
+    style={{
+      width: '6px',
+      height: '6px',
+      borderRadius: '50%',
+      backgroundColor: color,
+      boxShadow: `0 0 6px ${color}66`,
+      flexShrink: 0,
+    }}
+  />
+)
+
+/**
+ * L'icône du mode.
+ *
+ * Dimensionnée et colorée par props, jamais par classes : la fenêtre de la pill
+ * ne charge pas `app.css` (cf. renderer.tsx), une classe utilitaire n'y définit
+ * rien — c'est exactement ce qui rendait l'ancien libellé noir et surdimensionné.
+ * `display: block` supprime l'espace de ligne de base que le SVG traînerait,
+ * qui décalait l'icône d'un pixel vers le bas par rapport aux barres.
+ */
+const ModeGlyph = ({ icon }: { icon: string }) => {
+  const Icon = modeIcon(icon)
+  return (
+    <Icon
+      width={MODE_ICON_SIZE}
+      height={MODE_ICON_SIZE}
+      color={MODE_ICON_COLOR}
+      strokeWidth={MODE_ICON_STROKE}
+      style={{ display: 'block', flexShrink: 0 }}
+    />
+  )
+}
 
 const Pill = () => {
   // Get initial values from store using separate selectors to avoid infinite re-renders
@@ -126,7 +205,15 @@ const Pill = () => {
   const [isManualRecording, setIsManualRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  const [recordingModeName, setRecordingModeName] = useState<string>('')
+  // Le mode qui enregistre : son id pour la teinte, son icône pour le glyphe.
+  // Les deux viennent de la diffusion plutôt que du store, parce qu'un
+  // raccourci dédié peut dicter dans un mode qui n'est pas le mode actif.
+  const [recordingModeId, setRecordingModeId] = useState<string>('')
+  const [recordingModeIcon, setRecordingModeIcon] = useState<string>('')
+  // Teinte choisie du mode qui enregistre, telle que le processus principal
+  // vient de la lire en base — vide quand ce mode n'en a pas, et la couleur
+  // est alors dérivée de son id comme partout ailleurs.
+  const [recordingModeColor, setRecordingModeColor] = useState<string>('')
   const isManualRecordingRef = useRef(false)
   const [showItoBarAlways, setShowItoBarAlways] = useState(
     initialShowItoBarAlways,
@@ -140,13 +227,51 @@ const Pill = () => {
   // Fixed size array of volume values to be used for the audio bars, size is 21
   const [volumeHistory, setVolumeHistory] = useState<number[]>([])
   const [lastVolumeUpdate, setLastVolumeUpdate] = useState(0)
+  // Largeur naturelle du contenu, mesurée. La pill se dimensionne dessus au
+  // lieu de tenir sur des largeurs écrites à la main, qui ne pouvaient pas
+  // anticiper la longueur d'un nom de mode.
+  const contentRef = useRef<HTMLDivElement>(null)
+  // Amorcée sur la largeur d'un état déployé — pastille, barres, icône — pour
+  // que la toute première ouverture parte déjà à la bonne échelle, avant que
+  // la mesure ne la corrige.
+  const [contentWidth, setContentWidth] = useState(
+    6 +
+      PILL_GAP +
+      BAR_COUNT * BAR_WIDTH +
+      (BAR_COUNT - 1) * BAR_GAP +
+      PILL_GAP +
+      MODE_ICON_SIZE,
+  )
 
   useEffect(() => {
     if (!modesLoaded) void loadModes()
   }, [modesLoaded, loadModes])
 
-  const activeModeName =
-    modes.find(mode => mode.id === activeModeId)?.name ?? ''
+  const activeMode = modes.find(mode => mode.id === activeModeId)
+
+  /**
+   * Le contenu est mesuré, jamais deviné : un `ResizeObserver` plutôt qu'un
+   * effet à dépendances, parce que Geist arrive après le premier rendu et que
+   * le libellé s'élargit à ce moment-là, sans qu'aucun état ne change.
+   */
+  useLayoutEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+
+    const measure = () => {
+      const width = Math.ceil(element.getBoundingClientRect().width)
+      // Un contenu vide (état de repos) ne remet pas la mesure à zéro : la
+      // largeur de repos est fixe, et garder la dernière mesure évite que la
+      // réouverture parte de rien puis s'élargisse d'un coup.
+      if (width === 0) return
+      setContentWidth(previous => (previous === width ? previous : width))
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     // Listen for recording state changes from the main process
@@ -155,7 +280,18 @@ const Pill = () => {
       (state: RecordingStatePayload) => {
         // Update recording state - this is for global hotkey triggered recording
         setIsRecording(state.isRecording)
-        setRecordingModeName(state.modeName ?? recordingModeName)
+        // Rien n'est effacé à l'arrêt, et c'est délibéré : le traitement suit
+        // immédiatement (`notifyRecordingStopped` puis `notifyProcessingStarted`,
+        // deux diffusions distinctes) et doit rester sur le mode qui vient de
+        // dicter. Vider ici faisait retomber la pill sur le mode actif pour
+        // toute la durée de la transcription. Ces valeurs ne sont donc lues que
+        // pendant une dictée ou son traitement, et réécrites au démarrage de la
+        // suivante — voir `dictating` plus bas.
+        if (state.isRecording) {
+          setRecordingModeId(state.modeId ?? '')
+          setRecordingModeIcon(state.modeIcon ?? '')
+          setRecordingModeColor(state.modeColor ?? '')
+        }
 
         // Only track general recording analytics if it's not a manual recording
         if (!isManualRecordingRef.current) {
@@ -252,21 +388,32 @@ const Pill = () => {
       unsubUserAuth()
       unsubInteractionSound()
     }
-  }, [volumeHistory, lastVolumeUpdate, recordingModeName])
+  }, [volumeHistory, lastVolumeUpdate])
 
   // Compact dimensions — small and subtle, Wispr Flow style
   const idleWidth = 28
   const idleHeight = 6
-  // Same bars as the recording state, now also carrying the active mode
-  // label at rest — widened to match so the label isn't clipped to nothing.
-  const hoveredWidth = 76
-  const hoveredHeight = 22
-  const recordingWidth = 76
+  // Même hauteur au survol qu'en dictée : le contenu y est le même — pastille,
+  // barres, icône — et une pill qui grandit d'un pixel au démarrage de la
+  // dictée se lisait comme un sursaut plutôt que comme une transition.
+  const hoveredHeight = 24
   const recordingHeight = 24
-  const manualRecordingWidth = 148
   const manualRecordingHeight = 32
-  const processingWidth = 76
   const processingHeight = 24
+
+  /**
+   * La largeur suit le contenu mesuré, jamais l'inverse.
+   *
+   * Les états déployés tenaient sur des constantes (76 px) plus étroites que
+   * leur propre contenu dès qu'un nom de mode s'y ajoutait : le conteneur des
+   * barres se comprimait, et `overflow: hidden` rognait les barres des deux
+   * côtés. Le contenu ne se comprime plus (`flexShrink: 0`), c'est la pill qui
+   * s'ajuste — et le nom, lui, s'abrège en points de suspension.
+   */
+  const expandedWidth = Math.min(
+    PILL_LIMIT_WIDTH,
+    contentWidth + PILL_PADDING_X * 2,
+  )
 
   // Determine current state
   const anyRecording = isRecording || isManualRecording
@@ -286,30 +433,44 @@ const Pill = () => {
   // Un libellé lisible dit ce qu'une nuance de bordure ne pouvait que
   // suggérer : la bordure d'enregistrement est donc uniforme.
   const recordingBorder = THEME.border.recording
-  // Pendant une dictée, le mode qui l'a démarrée ; au repos, le mode actif.
-  const modeLabel = recordingModeName || activeModeName || null
+  // Quel mode la pill montre, et d'où elle le tient : la règle, ses raisons et
+  // ses tests vivent dans pillMode.ts.
+  const shown = pillMode({
+    recording: anyRecording,
+    processing: isProcessing,
+    broadcast: {
+      id: recordingModeId,
+      icon: recordingModeIcon,
+      color: recordingModeColor,
+    },
+    active: { id: activeModeId, icon: activeMode?.icon },
+  })
+  const modeGlyph = shown.icon
+  // Une teinte choisie est servie telle quelle ; sinon elle se dérive de l'id,
+  // sur la liste complète, comme partout ailleurs dans l'app.
+  const modeDotColor = shown.color ?? modeColor(shown.id, modes)
 
   if (isManualRecording) {
-    currentWidth = manualRecordingWidth
+    currentWidth = expandedWidth
     currentHeight = manualRecordingHeight
     backgroundColor = THEME.background.primary
     borderColor = recordingBorder
     boxShadow = THEME.glow.recording
   } else if (anyRecording) {
-    currentWidth = recordingWidth
+    currentWidth = expandedWidth
     currentHeight = recordingHeight
     backgroundColor = THEME.background.primary
     borderColor = recordingBorder
     boxShadow = THEME.glow.recording
   } else if (isProcessing) {
-    currentWidth = processingWidth
+    currentWidth = expandedWidth
     currentHeight = processingHeight
     backgroundColor = THEME.background.primary
     borderColor = THEME.border.processing
     boxShadow = THEME.glow.processing
     animationName = 'subtleBreathe 2s ease-in-out infinite'
   } else if (isHovered) {
-    currentWidth = hoveredWidth
+    currentWidth = expandedWidth
     currentHeight = hoveredHeight
     backgroundColor = THEME.background.elevated
     borderColor = THEME.border.hover
@@ -326,6 +487,7 @@ const Pill = () => {
     // Dynamic styles that change based on the state
     width: `${currentWidth}px`,
     height: `${currentHeight}px`,
+    padding: `0 ${PILL_PADDING_X}px`,
     backgroundColor,
     border: `1px solid ${borderColor}`,
     boxShadow,
@@ -435,16 +597,8 @@ const Pill = () => {
   const renderContent = () => {
     if (isManualRecording) {
       return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            width: '100%',
-            justifyContent: 'space-between',
-            padding: '0 8px',
-            gap: '8px',
-          }}
-        >
+        <>
+          {modeDotColor && <ModeDot color={modeDotColor} />}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -489,6 +643,8 @@ const Pill = () => {
 
           <AudioBars volumeHistory={volumeHistory} barColor={AUDIO_BAR_COLOR} />
 
+          {modeGlyph && <ModeGlyph icon={modeGlyph} />}
+
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -531,39 +687,39 @@ const Pill = () => {
               Stop and paste
             </TooltipContent>
           </Tooltip>
-        </div>
+        </>
       )
     }
 
     if (anyRecording) {
       return (
         <>
+          {modeDotColor && <ModeDot color={modeDotColor} />}
           <AudioBars volumeHistory={volumeHistory} barColor={AUDIO_BAR_COLOR} />
-          {modeLabel && (
-            <span className="ml-2 truncate text-[10px] tracking-tight text-[rgba(251,250,249,0.6)]">
-              {modeLabel}
-            </span>
-          )}
+          {modeGlyph && <ModeGlyph icon={modeGlyph} />}
         </>
       )
     }
 
     if (isProcessing) {
-      return <ProcessingBars color={AUDIO_BAR_COLOR} />
+      return (
+        <>
+          {modeDotColor && <ModeDot color={modeDotColor} />}
+          <ProcessingBars color={AUDIO_BAR_COLOR} />
+          {modeGlyph && <ModeGlyph icon={modeGlyph} />}
+        </>
+      )
     }
 
     if (isHovered) {
       return (
         <>
+          {/* Le mode se lit au repos comme pendant la dictée : même pastille,
+              même icône, même largeur — la pill ne change pas de forme entre
+              les deux, elle ne fait qu'animer ses barres. */}
+          {modeDotColor && <ModeDot color={modeDotColor} />}
           <PreviewAudioBars />
-          {/* Le commentaire sur modeLabel promettait déjà ce libellé au repos
-              ; il n'était rendu que dans la branche anyRecording, où
-              recordingModeName masque toujours activeModeName. */}
-          {modeLabel && (
-            <span className="ml-2 truncate text-[10px] tracking-tight text-[rgba(251,250,249,0.6)]">
-              {modeLabel}
-            </span>
-          )}
+          {modeGlyph && <ModeGlyph icon={modeGlyph} />}
         </>
       )
     }
@@ -582,7 +738,20 @@ const Pill = () => {
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            {renderContent()}
+            {/* Le contenu garde sa largeur naturelle (`max-content`, jamais
+                comprimé) : c'est lui qu'on mesure, et la pill qui s'y adapte. */}
+            <div
+              ref={contentRef}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: `${PILL_GAP}px`,
+                width: 'max-content',
+                flexShrink: 0,
+              }}
+            >
+              {renderContent()}
+            </div>
           </div>
         </TooltipTrigger>
         {/* {isHovered && !anyRecording && (

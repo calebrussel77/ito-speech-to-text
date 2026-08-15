@@ -54,6 +54,7 @@ export const ProcessingBars: React.FC<{ color?: string }> = ({
             key={i}
             style={{
               width: `${BAR_WIDTH}px`,
+              flexShrink: 0,
               height: `${MIN_HEIGHT + profile * (MAX_HEIGHT - MIN_HEIGHT)}px`,
               backgroundColor: color,
               borderRadius: `${BAR_WIDTH}px`,
