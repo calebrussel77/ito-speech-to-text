@@ -14,6 +14,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   groq: 'Groq',
   openrouter: 'OpenRouter',
   cerebras: 'Cerebras',
+  google: 'Google',
+  openai: 'OpenAI',
+  deepgram: 'Deepgram',
 }
 
 function LogoWithTooltip({

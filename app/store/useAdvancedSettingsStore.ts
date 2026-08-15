@@ -19,15 +19,22 @@ interface AdvancedSettingsState {
   groqApiKey: string
   openRouterApiKey: string
   deepgramApiKey: string
+  googleApiKey: string
+  openaiApiKey: string
   /** Défaut des modes créés ensuite. Le modèle utilisé est celui du mode. */
   textModelKey: string
+  /** Modèle qui transcrit un fichier importé — ce chemin n'a pas de mode. */
+  fileTranscriptionModelKey: string
   setLlmSettings: (settings: Partial<LlmSettings>) => void
   setGrammarServiceEnabled: (enabled: boolean) => void
   setMacosAccessibilityContextEnabled: (enabled: boolean) => void
   setGroqApiKey: (apiKey: string) => void
   setOpenRouterApiKey: (apiKey: string) => void
   setDeepgramApiKey: (apiKey: string) => void
+  setGoogleApiKey: (apiKey: string) => void
+  setOpenaiApiKey: (apiKey: string) => void
   setTextModelKey: (key: string) => void
+  setFileTranscriptionModelKey: (key: string) => void
 }
 
 // Initialize from electron store
@@ -67,7 +74,12 @@ const getInitialState = () => {
     groqApiKey: storedAdvancedSettings.groqApiKey || '',
     openRouterApiKey: storedAdvancedSettings.openRouterApiKey || '',
     deepgramApiKey: storedAdvancedSettings.deepgramApiKey || '',
+    googleApiKey: storedAdvancedSettings.googleApiKey || '',
+    openaiApiKey: storedAdvancedSettings.openaiApiKey || '',
     textModelKey: storedAdvancedSettings.textModelKey ?? DEFAULT_TEXT_KEY,
+    // Pas de défaut : sans choix, l'import garde le chemin Deepgram d'origine.
+    fileTranscriptionModelKey:
+      storedAdvancedSettings.fileTranscriptionModelKey ?? '',
   }
 }
 
@@ -135,9 +147,30 @@ export const useAdvancedSettingsStore = create<AdvancedSettingsState>(set => {
         return partialState
       })
     },
+    setGoogleApiKey: (apiKey: string) => {
+      set(() => {
+        const partialState = { googleApiKey: apiKey }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setOpenaiApiKey: (apiKey: string) => {
+      set(() => {
+        const partialState = { openaiApiKey: apiKey }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
     setTextModelKey: (key: string) => {
       set(() => {
         const partialState = { textModelKey: key }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    setFileTranscriptionModelKey: (key: string) => {
+      set(() => {
+        const partialState = { fileTranscriptionModelKey: key }
         syncToStore(partialState)
         return partialState
       })

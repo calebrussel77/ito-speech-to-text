@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { SettingsGroup, SettingsRow } from '@/app/components/ui/settings'
-import { TEXT_MODELS, VOICE_MODELS } from '@/lib/constants/modelCatalog'
+import {
+  FILE_TRANSCRIPTION_KEYS,
+  TEXT_MODELS,
+  VOICE_MODELS,
+} from '@/lib/constants/modelCatalog'
 import ModelTable from './models/ModelTable'
 import ProviderKeyRow, { type KeyRejection } from './models/ProviderKeyRow'
 import ModelSelect from '../modes/ModelSelect'
@@ -16,11 +20,17 @@ export default function ModelsSettingsContent() {
     groqApiKey,
     openRouterApiKey,
     deepgramApiKey,
+    googleApiKey,
+    openaiApiKey,
     setGroqApiKey,
     setOpenRouterApiKey,
     setDeepgramApiKey,
+    setGoogleApiKey,
+    setOpenaiApiKey,
     textModelKey,
     setTextModelKey,
+    fileTranscriptionModelKey,
+    setFileTranscriptionModelKey,
   } = useAdvancedSettingsStore()
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
@@ -49,6 +59,9 @@ export default function ModelsSettingsContent() {
   const availableProviders = new Set<string>()
   if (groqApiKey) availableProviders.add('groq')
   if (openRouterApiKey) availableProviders.add('openrouter')
+  if (googleApiKey) availableProviders.add('google')
+  if (openaiApiKey) availableProviders.add('openai')
+  if (deepgramApiKey) availableProviders.add('deepgram')
 
   return (
     <div className="px-1.5">
@@ -104,6 +117,34 @@ export default function ModelsSettingsContent() {
           onSave={setDeepgramApiKey}
           onTest={key => window.api.testDeepgramApiKey(key)}
         />
+        <ProviderKeyRow
+          provider="openai"
+          name="OpenAI"
+          hint="GPT Transcribe and the 4o family — strongest on imported files"
+          placeholder="sk-..."
+          consoleUrl="https://platform.openai.com/api-keys"
+          storedKey={openaiApiKey}
+          expanded={expandedProvider === 'openai'}
+          onToggle={() =>
+            setExpandedProvider(expandedProvider === 'openai' ? null : 'openai')
+          }
+          onSave={setOpenaiApiKey}
+          onTest={key => window.api.testOpenaiApiKey(key)}
+        />
+        <ProviderKeyRow
+          provider="google"
+          name="Google"
+          hint="Gemini reads a whole recording at once — the imported-file path"
+          placeholder="AIza…"
+          consoleUrl="https://aistudio.google.com/apikey"
+          storedKey={googleApiKey}
+          expanded={expandedProvider === 'google'}
+          onToggle={() =>
+            setExpandedProvider(expandedProvider === 'google' ? null : 'google')
+          }
+          onSave={setGoogleApiKey}
+          onTest={key => window.api.testGoogleApiKey(key)}
+        />
       </SettingsGroup>
 
       <SettingsGroup title="Defaults">
@@ -118,6 +159,19 @@ export default function ModelsSettingsContent() {
             onChange={key => setTextModelKey(key ?? '')}
           />
         </SettingsRow>
+
+        <SettingsRow
+          title="Imported file transcription"
+          description="Used by “Transcribe a file”. That path has no mode, so it has its own model. Default sends the file to Deepgram."
+        >
+          <ModelSelect
+            kind="voice"
+            keys={FILE_TRANSCRIPTION_KEYS}
+            value={fileTranscriptionModelKey}
+            availableProviders={availableProviders}
+            onChange={key => setFileTranscriptionModelKey(key ?? '')}
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       <ModelTable
@@ -127,6 +181,7 @@ export default function ModelsSettingsContent() {
         availableProviders={availableProviders}
         onRequestKey={setExpandedProvider}
         showAccuracy
+        markOpenRouter
       />
 
       <ModelTable

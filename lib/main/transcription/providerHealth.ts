@@ -4,10 +4,9 @@ import { STORE_KEYS } from '../../constants/store-keys'
 
 /**
  * A secondary transcription provider that can refuse a key exactly like
- * OpenRouter — currently just the two, but the type keeps the set explicit
- * rather than a bare string.
+ * OpenRouter — the type keeps the set explicit rather than a bare string.
  */
-export type Provider = 'openrouter' | 'deepgram'
+export type Provider = 'openrouter' | 'deepgram' | 'openai' | 'google'
 
 /**
  * Why the last transcription on a given provider failed, kept in the
@@ -31,6 +30,8 @@ export type ProviderFailure = {
 const PROVIDER_LABELS: Record<Provider, string> = {
   openrouter: 'OpenRouter',
   deepgram: 'Deepgram',
+  openai: 'OpenAI',
+  google: 'Google',
 }
 
 const failurePath = (provider: Provider) =>

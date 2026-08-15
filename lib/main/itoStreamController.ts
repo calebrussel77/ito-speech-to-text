@@ -1,4 +1,3 @@
-import { Notification } from 'electron'
 import log from 'electron-log'
 import { AudioStreamManager } from './audio/AudioStreamManager'
 import { localAudioProcessor } from './transcription/LocalAudioProcessor'
@@ -13,9 +12,12 @@ import {
   resolveModel,
 } from '../constants/modelCatalog'
 import { asrLanguageHint } from '../constants/modeLanguages'
+import { showNotification } from './notifications'
 import type { Mode } from './sqlite/models'
 import { resolveActiveMode } from './modes/activeMode'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
+import { openaiTranscriptionService } from './transcription/OpenAITranscriptionService'
+import { googleTranscriptionService } from './transcription/GoogleTranscriptionService'
 import {
   deepgramTranscriptionService,
   type SpeakerSegment,
@@ -56,16 +58,6 @@ const GROQ_RETRY: RetryPolicy = {
 // For the same reason a server-suggested delay of more than a second and a
 // half is declined: falling back is faster than honouring it.
 const OPENROUTER_RETRY: RetryPolicy = { attempts: 2, maxDelayMs: 1500 }
-
-function showNotification(title: string, body: string) {
-  try {
-    if (Notification?.isSupported?.()) {
-      new Notification({ title, body }).show()
-    }
-  } catch (error) {
-    console.warn('[ItoStreamController] Failed to show notification:', error)
-  }
-}
 
 /**
  * Why a dictation that should have gone to the precise engine came back from
@@ -259,6 +251,8 @@ export class ItoStreamController {
       identifySpeakers: mode.identifySpeakers,
       hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
       hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+      hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
+      hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
     })
 
     let transcript: string
@@ -371,6 +365,60 @@ export class ItoStreamController {
                 openRouterModel,
                 apiKey,
                 'openrouter',
+              )
+            }
+          }
+        } else if (decision.path === 'openai' || decision.path === 'google') {
+          // Même contrat que les deux branches au-dessus : le moteur précis
+          // ne perd jamais une dictée — clé refusée connue → saut direct,
+          // échec → repli Groq enregistré et annoncé.
+          const provider = decision.path
+          const apiKey =
+            (provider === 'openai'
+              ? advancedSettings.openaiApiKey
+              : advancedSettings.googleApiKey) || ''
+          const chosenModel = voiceModel.slug
+          const rejected = getRejectedKeyFailure(provider, apiKey)
+
+          if (rejected) {
+            console.warn(
+              `[ItoStreamController] Skipping ${provider}: the stored key was refused on ${rejected.at}`,
+            )
+            asrFallback = {
+              from: chosenModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const result = await this.withRetry(
+                `${provider} (${chosenModel})`,
+                OPENROUTER_RETRY,
+                () =>
+                  provider === 'openai'
+                    ? openaiTranscriptionService.transcribeAudio(wavAudio, {
+                        apiKey,
+                        model: chosenModel,
+                        language: languageHint,
+                        contentType: 'audio/wav',
+                        fileName: 'dictation.wav',
+                      })
+                    : googleTranscriptionService.transcribeAudio(wavAudio, {
+                        apiKey,
+                        model: chosenModel,
+                        language: languageHint,
+                        contentType: 'audio/wav',
+                      }),
+              )
+              asrEngine = chosenModel
+              clearProviderFailure(provider)
+              return result.text
+            } catch (error: any) {
+              asrFallback = this.recordProviderFallback(
+                error,
+                chosenModel,
+                apiKey,
+                provider,
               )
             }
           }
@@ -578,6 +626,8 @@ export class ItoStreamController {
             identifySpeakers: mode.identifySpeakers,
             hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
             hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+            hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
+            hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
           })
 
           if (decision.path === null) {
@@ -602,9 +652,10 @@ export class ItoStreamController {
             transcript = result.text
             engineUsed = 'deepgram/nova-3'
           } else {
-            // 'groq' or 'openrouter': unchanged from before this fix — only
-            // the file-path (Deepgram) case needed new routing, since that
-            // is the one Groq alone could never carry.
+            // Tout autre chemin ('groq', 'openrouter', 'openai', 'google') :
+            // la récupération passe par Groq, comme avant — seul le chemin
+            // fichier (Deepgram) avait besoin d'un routage propre, car Groq
+            // seul ne peut pas le porter.
             transcript = await localTranscriptionService.transcribeAudio(
               wavAudio,
               {

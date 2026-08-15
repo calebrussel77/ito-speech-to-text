@@ -5,6 +5,7 @@ import ChatGPTIcon from './ChatGPTIcon'
 import ClaudeIcon from './ClaudeIcon'
 import DeepgramIcon from './DeepgramIcon'
 import GeminiIcon from './GeminiIcon'
+import GoogleIcon from './GoogleIcon'
 import GroqIcon from './GroqIcon'
 import MistralIcon from './MistralIcon'
 import OpenRouterIcon from './OpenRouterIcon'
@@ -31,12 +32,20 @@ export const MODEL_LAB_ICONS: Record<
   zai: ZaiIcon,
 }
 
+// Google's mark ships with fixed pixel dimensions; the other logos fill their
+// container, so stretch it to match.
+const GoogleProviderIcon = ({ className }: LogoProps) => (
+  <GoogleIcon className={className ?? 'h-full w-full'} />
+)
+
 export const PROVIDER_ICONS: Record<
-  'groq' | 'openrouter' | 'cerebras' | 'deepgram',
+  'groq' | 'openrouter' | 'cerebras' | 'deepgram' | 'google' | 'openai',
   React.ComponentType<LogoProps>
 > = {
   groq: GroqIcon,
   openrouter: OpenRouterIcon,
   cerebras: CerebrasIcon,
   deepgram: DeepgramIcon,
+  google: GoogleProviderIcon,
+  openai: ChatGPTIcon,
 }

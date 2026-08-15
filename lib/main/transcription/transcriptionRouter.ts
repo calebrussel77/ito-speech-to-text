@@ -1,3 +1,5 @@
+import type { CatalogProvider } from '../../constants/modelCatalog'
+
 /**
  * Quel transport prend l'audio.
  *
@@ -17,16 +19,23 @@ export const GROQ_MAX_BYTES = 25 * 1024 * 1024
  */
 export const OPENROUTER_MAX_BYTES = 6 * 1024 * 1024
 
-export type TranscriptionPath = 'groq' | 'openrouter' | 'deepgram'
+export type TranscriptionPath =
+  | 'groq'
+  | 'openrouter'
+  | 'deepgram'
+  | 'openai'
+  | 'google'
 
 export type RouterInput = {
-  voiceModelProvider: 'groq' | 'openrouter'
+  voiceModelProvider: CatalogProvider
   durationMs: number
   wavBytes: number
   /** Le mode demande la séparation des locuteurs. */
   identifySpeakers: boolean
   hasOpenRouterKey: boolean
   hasDeepgramKey: boolean
+  hasOpenAIKey: boolean
+  hasGoogleKey: boolean
 }
 
 export type RouterDecision =
@@ -38,7 +47,7 @@ export type RouterDecision =
  * base64 d'OpenRouter à Groq ramènerait le seuil effectif de 8 min à 3 min 17,
  * et ferait changer de moteur une dictée de 4 min sans que rien ne l'annonce.
  */
-function transportCeiling(provider: 'groq' | 'openrouter'): number {
+function transportCeiling(provider: CatalogProvider): number {
   return provider === 'openrouter' ? OPENROUTER_MAX_BYTES : GROQ_MAX_BYTES
 }
 
@@ -72,6 +81,9 @@ export function chooseTranscriptionPath(input: RouterInput): RouterDecision {
     }
   }
 
+  // Chaque fournisseur du catalogue a son chemin ; sans sa clé, on retombe
+  // sur Groq plutôt que de refuser la dictée — le sélecteur grise déjà ces
+  // modèles, donc y arriver sans clé est un état transitoire, pas un choix.
   if (input.voiceModelProvider === 'openrouter') {
     if (!input.hasOpenRouterKey) {
       console.warn(
@@ -80,6 +92,36 @@ export function chooseTranscriptionPath(input: RouterInput): RouterDecision {
       return { path: 'groq' }
     }
     return { path: 'openrouter' }
+  }
+
+  if (input.voiceModelProvider === 'deepgram') {
+    if (!input.hasDeepgramKey) {
+      console.warn(
+        '[transcriptionRouter] Deepgram model without a key, falling back to Groq',
+      )
+      return { path: 'groq' }
+    }
+    return { path: 'deepgram' }
+  }
+
+  if (input.voiceModelProvider === 'openai') {
+    if (!input.hasOpenAIKey) {
+      console.warn(
+        '[transcriptionRouter] OpenAI model without a key, falling back to Groq',
+      )
+      return { path: 'groq' }
+    }
+    return { path: 'openai' }
+  }
+
+  if (input.voiceModelProvider === 'google') {
+    if (!input.hasGoogleKey) {
+      console.warn(
+        '[transcriptionRouter] Google model without a key, falling back to Groq',
+      )
+      return { path: 'groq' }
+    }
+    return { path: 'google' }
   }
 
   return { path: 'groq' }

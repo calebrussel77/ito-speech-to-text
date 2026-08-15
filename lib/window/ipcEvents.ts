@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain, shell, app, dialog } from 'electron'
 import log from 'electron-log'
 import os from 'os'
+import { basename } from 'path'
 import { exec } from 'child_process'
 import store, { getAdvancedSettings, getCurrentUserId } from '../main/store'
 import { STORE_KEYS } from '../constants/store-keys'
@@ -865,7 +866,34 @@ export function registerIPC() {
     const { transcribeExistingFile } = await import(
       '../main/transcription/fileTranscription'
     )
-    return transcribeExistingFile(filePaths[0])
+    const { showNotification, focusMainWindow } = await import(
+      '../main/notifications'
+    )
+
+    const fileName = basename(filePaths[0])
+    const result = await transcribeExistingFile(filePaths[0])
+
+    // Une transcription de fichier peut durer plusieurs minutes : on n'attend
+    // pas que l'utilisateur soit resté devant la fenêtre pour lui dire que
+    // c'est fini. Le clic ramène la fenêtre sur l'historique, là où le
+    // résultat vient d'être écrit — sinon la notification annonce un résultat
+    // qu'il faut ensuite aller chercher.
+    if (result.ok) {
+      const speakers = result.speakerCount ?? 0
+      showNotification(
+        'Ito — transcription ready',
+        speakers >= 2
+          ? `${fileName} — ${speakers} speakers, split by voice.`
+          : `${fileName} — transcribed.`,
+        { onClick: () => focusMainWindow('home') },
+      )
+    } else if (result.error) {
+      showNotification('Ito — transcription failed', result.error, {
+        onClick: () => focusMainWindow(),
+      })
+    }
+
+    return result
   })
 
   // User Data Deletion
@@ -904,6 +932,28 @@ export function registerIPC() {
     )
     try {
       return await deepgramTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  handleIPC('test-google-api-key', async (_e, apiKey: string) => {
+    const { googleTranscriptionService } = await import(
+      '../main/transcription/GoogleTranscriptionService'
+    )
+    try {
+      return await googleTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  handleIPC('test-openai-api-key', async (_e, apiKey: string) => {
+    const { openaiTranscriptionService } = await import(
+      '../main/transcription/OpenAITranscriptionService'
+    )
+    try {
+      return await openaiTranscriptionService.testConnection(apiKey)
     } catch (error: any) {
       return { ok: false, message: error?.message || 'Unable to test key' }
     }

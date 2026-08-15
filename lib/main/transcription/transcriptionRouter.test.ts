@@ -11,6 +11,8 @@ const input = (overrides: Record<string, unknown> = {}) => ({
   identifySpeakers: false,
   hasOpenRouterKey: true,
   hasDeepgramKey: true,
+  hasOpenAIKey: true,
+  hasGoogleKey: true,
   ...overrides,
 })
 
@@ -25,8 +27,45 @@ describe('chooseTranscriptionPath', () => {
     ).toEqual({ path: 'openrouter' })
   })
 
+  test('a short dictation follows its model provider — one path each', () => {
+    // Nova 3 est servi par Deepgram, les GPT Transcribe par OpenAI, les Gemini
+    // par Google : le fournisseur du modèle choisi EST le chemin, dès lors que
+    // sa clé est là.
+    for (const provider of ['deepgram', 'openai', 'google'] as const) {
+      expect(
+        chooseTranscriptionPath(input({ voiceModelProvider: provider })),
+      ).toEqual({ path: provider })
+    }
+  })
+
+  test('a new-provider model without its key falls back to Groq', () => {
+    // Le sélecteur grise déjà ces modèles sans clé : y arriver quand même est
+    // un état transitoire (clé effacée après coup), pas un choix — la dictée
+    // vaut mieux qu'un refus.
+    expect(
+      chooseTranscriptionPath(
+        input({ voiceModelProvider: 'deepgram', hasDeepgramKey: false }),
+      ),
+    ).toEqual({ path: 'groq' })
+    expect(
+      chooseTranscriptionPath(
+        input({ voiceModelProvider: 'openai', hasOpenAIKey: false }),
+      ),
+    ).toEqual({ path: 'groq' })
+    expect(
+      chooseTranscriptionPath(
+        input({ voiceModelProvider: 'google', hasGoogleKey: false }),
+      ),
+    ).toEqual({ path: 'groq' })
+  })
+
   test('past the threshold, the file path wins whatever the model provider', () => {
-    for (const provider of ['groq', 'openrouter'] as const) {
+    for (const provider of [
+      'groq',
+      'openrouter',
+      'openai',
+      'google',
+    ] as const) {
       expect(
         chooseTranscriptionPath(
           input({

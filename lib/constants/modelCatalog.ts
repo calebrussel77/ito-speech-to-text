@@ -14,7 +14,21 @@
  */
 
 /** Who we actually send the request to. */
-export type CatalogProvider = 'groq' | 'openrouter'
+export type CatalogProvider =
+  | 'groq'
+  | 'openrouter'
+  | 'google'
+  | 'openai'
+  | 'deepgram'
+
+/** Display name of each provider, shared by every screen that names one. */
+export const PROVIDER_LABELS: Record<CatalogProvider, string> = {
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  google: 'Google',
+  openai: 'OpenAI',
+  deepgram: 'Deepgram',
+}
 
 /**
  * Upstream provider pinned inside OpenRouter, via `provider.order`. Without a
@@ -81,6 +95,12 @@ export interface CatalogModel {
   /** Short tag shown under the name. Keep it under ~32 characters: the column
    *  is narrow and anything longer is truncated rather than read. */
   note?: string
+  /**
+   * Ne peut transcrire qu'un FICHIER importé, jamais une dictée en direct : le
+   * modèle lit un enregistrement complet, il ne consomme pas un flux. Ces
+   * modèles sont donc exclus du sélecteur de modèle vocal d'un mode.
+   */
+  fileOnly?: boolean
 }
 
 export const VOICE_MODELS: CatalogModel[] = [
@@ -94,7 +114,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.04 / h',
     speed: 5,
     accuracy: 4,
-    note: 'Default — fastest and safest',
+    note: 'Fastest and cheapest',
   },
   {
     key: 'whisper-large-v3',
@@ -106,7 +126,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.111 / h',
     speed: 4,
     accuracy: 1,
-    note: 'Unreliable past ~40s',
+    note: 'Default — drifts past ~40s',
   },
   {
     key: 'gpt-transcribe',
@@ -178,16 +198,128 @@ export const VOICE_MODELS: CatalogModel[] = [
     accuracy: 2,
     note: 'Cheapest, weaker than Groq’s',
   },
+  // Servi par Deepgram EN DIRECT, plus par OpenRouter : c'est la clé Deepgram
+  // qu'on colle, Deepgram qu'on paie, et son API accepte les octets bruts sans
+  // plafond de corps base64. Le slug garde le préfixe `deepgram/` — c'est la
+  // valeur `asrEngine` que l'historique stocke depuis toujours, et la retoucher
+  // casserait le badge des lignes existantes. Le nom envoyé sur le fil reste
+  // `nova-3`, écrit en dur dans les deux chemins qui l'appellent.
   {
     key: 'nova-3',
     kind: 'voice',
     label: 'Nova 3',
     slug: 'deepgram/nova-3',
-    provider: 'openrouter',
+    provider: 'deepgram',
     lab: 'deepgram',
     price: '$0.26 / h',
     speed: 2,
     accuracy: 2,
+    note: 'Long recordings and speakers',
+  },
+  // Le suffixe `-audio` n'est pas cosmétique : les mêmes Gemini existent déjà
+  // plus bas en modèles TEXTE servis par OpenRouter, et une clé de catalogue
+  // est unique par construction (`BY_KEY`). Deux entrées de même clé feraient
+  // silencieusement disparaître la première.
+  //
+  // Les deux Gemini ne sont pas des moteurs ASR : ce sont des modèles
+  // multimodaux à qui on demande une transcription — d'un fichier importé
+  // comme d'une dictée (le chemin `google` du routeur envoie le WAV complet).
+  // Ils n'ont ni `speed` ni `accuracy` ici — les deux gauges du catalogue sont
+  // MESURÉES sur les enregistrements de référence, et personne ne les a encore
+  // mesurés.
+  {
+    key: 'gemini-3-7-flash-audio',
+    kind: 'voice',
+    label: 'Gemini 3.7 Flash',
+    slug: 'gemini-3.7-flash',
+    provider: 'google',
+    lab: 'google',
+    // Par million de tokens, pas par heure : l'API interactions ne rend pas
+    // de `usage.cost` qui permettrait la mesure en $/h. Tarif officiel Google
+    // (2026-08-15) — promotionnel jusqu'au 31 décembre 2026.
+    price: '$0.75 / $3.75 per M',
+    note: 'Multimodal, not measured',
+  },
+  {
+    key: 'gemini-3-5-flash-lite-audio',
+    kind: 'voice',
+    label: 'Gemini 3.5 Flash Lite',
+    slug: 'gemini-3.5-flash-lite',
+    provider: 'google',
+    lab: 'google',
+    // Tarif officiel Google (2026-08-15). Identique à l'entrée texte servie
+    // par OpenRouter plus bas — même modèle, même prix.
+    price: '$0.30 / $2.50 per M',
+    note: 'Cheaper Gemini, not measured',
+  },
+  // OpenAI en direct — sans passer par OpenRouter. Le suffixe `-openai` des
+  // clés n'est pas cosmétique : gpt-transcribe et gpt-4o-transcribe existent
+  // déjà plus haut servis par OpenRouter, et une clé de catalogue est unique
+  // par construction (`BY_KEY`).
+  //
+  // Utilisables en dictée comme sur un fichier importé : l'API
+  // `/v1/audio/transcriptions` lit un enregistrement complet (25 Mo max), et
+  // une dictée EST un enregistrement complet une fois la touche relâchée.
+  // Seule la variante Diarize reste `fileOnly` — voir son entrée.
+  //
+  // Gauges mesurées le 2026-08-15 dans le banc 020 (mêmes clips, même WER,
+  // même RTF que le run du 2026-08-14). Constat notable : OpenAI en direct
+  // est nettement plus LENT que les mêmes modèles revendus par OpenRouter
+  // (gpt-transcribe : 3,2× temps réel ici contre 7,7× là-bas), à précision
+  // égale — d'où des vitesses à 1 sur une échelle où OpenRouter est à 2.
+  {
+    key: 'gpt-transcribe-openai',
+    kind: 'voice',
+    label: 'GPT Transcribe',
+    slug: 'gpt-transcribe',
+    provider: 'openai',
+    lab: 'openai',
+    price: '$0.27 / h',
+    speed: 1,
+    accuracy: 5,
+    note: 'Most accurate, slow served here',
+  },
+  {
+    // Mesuré sur les m4a ORIGINAUX, pas sur le WAV 16 kHz du banc : ce modèle
+    // ne sert que le fichier importé, qui envoie le fichier tel quel. Sur le
+    // WAV 16 kHz il déraille en traduisant des passages en anglais (58 % de
+    // WER) — c'est ce qui le maintient `fileOnly`, avec sa lenteur (1,5×).
+    key: 'gpt-4o-transcribe-diarize-openai',
+    kind: 'voice',
+    label: 'GPT-4o Transcribe Diarize',
+    slug: 'gpt-4o-transcribe-diarize',
+    provider: 'openai',
+    lab: 'openai',
+    price: '$0.36 / h',
+    speed: 1,
+    accuracy: 2,
+    note: 'Separates speakers — meetings',
+    fileOnly: true,
+  },
+  {
+    key: 'gpt-4o-transcribe-openai',
+    kind: 'voice',
+    label: 'GPT-4o Transcribe',
+    slug: 'gpt-4o-transcribe',
+    provider: 'openai',
+    lab: 'openai',
+    price: '$0.36 / h',
+    speed: 1,
+    accuracy: 4,
+  },
+  {
+    key: 'gpt-4o-mini-transcribe-openai',
+    kind: 'voice',
+    label: 'GPT-4o Mini Transcribe',
+    // Snapshot daté plutôt que l'alias : c'est la révision demandée, et un
+    // alias qui glisse changerait le moteur sans que rien ne l'annonce.
+    slug: 'gpt-4o-mini-transcribe-2025-12-15',
+    provider: 'openai',
+    lab: 'openai',
+    price: '$0.18 / h',
+    speed: 2,
+    accuracy: 5,
+    note: 'Cheapest OpenAI engine',
   },
 ]
 
@@ -363,7 +495,25 @@ export const CATALOG: CatalogModel[] = [...VOICE_MODELS, ...TEXT_MODELS]
 
 const BY_KEY = new Map(CATALOG.map(model => [model.key, model]))
 
-export const DEFAULT_SHORT_VOICE_KEY = 'whisper-large-v3-turbo'
+/**
+ * Les modèles capables de transcrire un FICHIER importé.
+ *
+ * Les chemins Groq et OpenRouter envoient l'audio dans un corps JSON — en
+ * multipart ou en base64 — ce qui les plafonne à quelques minutes. Deepgram
+ * accepte les octets bruts, Gemini lit un fichier entier via son Files API,
+ * et l'endpoint transcription d'OpenAI prend un fichier jusqu'à 25 Mo.
+ */
+export const FILE_TRANSCRIPTION_KEYS = [
+  'nova-3',
+  'gpt-transcribe-openai',
+  'gpt-4o-transcribe-diarize-openai',
+  'gpt-4o-transcribe-openai',
+  'gpt-4o-mini-transcribe-openai',
+  'gemini-3-7-flash-audio',
+  'gemini-3-5-flash-lite-audio',
+] as const
+
+export const DEFAULT_SHORT_VOICE_KEY = 'whisper-large-v3'
 export const DEFAULT_LONG_VOICE_KEY = 'gpt-transcribe'
 export const DEFAULT_TEXT_KEY = 'gpt-oss-20b-groq'
 

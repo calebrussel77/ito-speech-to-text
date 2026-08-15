@@ -82,6 +82,8 @@ export interface IpcApi {
   testGroqApiKey: (apiKey: string) => Promise<ApiTestResult>
   testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
   testDeepgramApiKey: (apiKey: string) => Promise<ApiTestResult>
+  testGoogleApiKey: (apiKey: string) => Promise<ApiTestResult>
+  testOpenaiApiKey: (apiKey: string) => Promise<ApiTestResult>
   /** Null unless the record describes the key currently stored. */
   getProviderFailure: (
     provider: 'openrouter' | 'deepgram',

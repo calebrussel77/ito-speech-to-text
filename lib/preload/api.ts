@@ -145,6 +145,8 @@ const api = {
   transcribeFile: (): Promise<{
     ok: boolean
     interactionId?: string
+    /** Locuteurs trouvés dans le fichier. 1 = monologue, 0 = rien de parlé. */
+    speakerCount?: number
     error?: string
   }> => ipcRenderer.invoke('transcribe-file'),
   trial: {
@@ -243,8 +245,12 @@ const api = {
     ipcRenderer.invoke('test-groq-api-key', apiKey),
   testOpenRouterApiKey: (apiKey: string) =>
     ipcRenderer.invoke('test-openrouter-api-key', apiKey),
+  testGoogleApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-google-api-key', apiKey),
   testDeepgramApiKey: (apiKey: string) =>
     ipcRenderer.invoke('test-deepgram-api-key', apiKey),
+  testOpenaiApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-openai-api-key', apiKey),
   getProviderFailure: (provider: 'openrouter' | 'deepgram') =>
     ipcRenderer.invoke('get-provider-failure', provider),
 
