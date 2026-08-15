@@ -40,8 +40,10 @@ const SEED_ID = '2026-08-14-seed-modes'
  * On rapatrie alors la ligne vers l'utilisateur courant au lieu d'en créer
  * un doublon — voir le commentaire sur `reassignOwner`.
  *
- * `meeting` n'est pas dans `SEEDED_PRESET_KEYS` à ce stade : son modèle vocal
- * n'a de chemin viable qu'au lot 3.
+ * `meeting` est dans `SEEDED_PRESET_KEYS` depuis que son modèle vocal a un
+ * chemin Deepgram viable ; les installations qui ont déjà consommé le
+ * drapeau de ce seed avant son arrivée sont rattrapées séparément par
+ * `seedMeetingMode`, plus bas dans ce fichier.
  *
  * Ne lance jamais : une erreur ici (SQLite, store, ou autre) ne doit jamais
  * empêcher l'application de démarrer. `initializeStore` attend cette
@@ -123,6 +125,85 @@ export async function seedModes(userId: string): Promise<number> {
     return created
   } catch (error) {
     console.error('[modeSeeder] Failed to seed modes:', error)
+    return 0
+  }
+}
+
+const MEETING_SEED_ID = '2026-08-14-seed-meeting'
+
+/**
+ * Sème le mode Meeting, une fois seulement.
+ *
+ * `meeting` figure désormais dans `SEEDED_PRESET_KEYS`, donc une
+ * installation fraîche le reçoit déjà via la boucle de `seedModes`. Cette
+ * fonction existe pour les installations qui ont consommé le drapeau du
+ * premier seed avant que Meeting rejoigne l'ensemble : elles ne relanceront
+ * jamais cette boucle, donc sans un drapeau propre à Meeting elles ne
+ * l'auraient jamais. Un id et un drapeau distincts (`MEETING_SEED_ID`) sont
+ * indispensables pour ça.
+ *
+ * Mêmes garanties que `seedModes` et pour les mêmes raisons : drapeau par
+ * utilisateur (une connexion change `userId`), présence testée via
+ * `findAllIdsIncludingDeleted` pour ne jamais ressusciter un Meeting
+ * supprimé, ré-attribution plutôt que ré-insertion si `meeting` existe déjà
+ * sous un autre utilisateur (`modes.id` est une clé globale), et jamais de
+ * rejet — une erreur ici ne doit pas pouvoir empêcher le démarrage.
+ */
+export async function seedMeetingMode(userId: string): Promise<number> {
+  try {
+    const seedFlag = `${MEETING_SEED_ID}:${userId}`
+    if (hasRunOnce(seedFlag)) return 0
+
+    // Includes soft-deleted rows — see the file header comment on seedModes.
+    const existingIds = new Set(
+      await ModesTable.findAllIdsIncludingDeleted(userId),
+    )
+    if (existingIds.has('meeting')) {
+      markRunOnce(seedFlag)
+      return 0
+    }
+
+    const preset = findPreset('meeting')
+    if (!preset) {
+      markRunOnce(seedFlag)
+      return 0
+    }
+
+    const owner = await ModesTable.findOwner('meeting')
+    if (owner && owner !== userId) {
+      await ModesTable.reassignOwner('meeting', userId)
+      markRunOnce(seedFlag)
+      return 0
+    }
+
+    await ModesTable.insert({
+      id: preset.key,
+      userId,
+      name: preset.label,
+      preset: preset.key,
+      icon: preset.icon,
+      instructions: preset.instructions,
+      language: preset.language,
+      voiceModelKey: preset.voiceModelKey,
+      textModelKey: preset.textModelKey,
+      useLlm: preset.useLlm,
+      contextApplication: preset.contextApplication,
+      contextClipboard: preset.contextClipboard,
+      contextSelection: preset.contextSelection,
+      audioSource: preset.audioSource,
+      playbackWhenRecording: preset.playbackWhenRecording,
+      autoPaste: preset.autoPaste,
+      autocapitalize: preset.autocapitalize,
+      identifySpeakers: preset.identifySpeakers,
+      asrPrompt: preset.asrPrompt,
+      sortOrder: existingIds.size,
+    })
+
+    markRunOnce(seedFlag)
+    console.log('[modeSeeder] Seeded the Meeting mode')
+    return 1
+  } catch (error) {
+    console.error('[modeSeeder] Failed to seed the Meeting mode:', error)
     return 0
   }
 }

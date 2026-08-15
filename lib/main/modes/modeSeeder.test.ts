@@ -43,7 +43,7 @@ mock.module('./ModeRepository', () => ({
   },
 }))
 
-const { seedModes } = await import('./modeSeeder')
+const { seedModes, seedMeetingMode } = await import('./modeSeeder')
 
 describe('seedModes', () => {
   beforeEach(() => {
@@ -56,28 +56,29 @@ describe('seedModes', () => {
     mockStoreSet.mockClear()
   })
 
-  test('creates the five presets on a fresh install, with readable stable ids', async () => {
+  test('creates the six presets on a fresh install, with readable stable ids', async () => {
     const created = await seedModes('self-hosted')
 
-    expect(created).toBe(5)
+    expect(created).toBe(6)
     expect(mockInsert.mock.calls.map(c => c[0].id)).toEqual([
       'voice-to-text',
       'intelligent',
+      'meeting',
       'message',
       'mail',
       'blank',
     ])
   })
 
-  test('Meeting is not seeded here — its engine only exists at lot 3', async () => {
+  test('Meeting is seeded here too, now that its Deepgram engine exists', async () => {
     await seedModes('self-hosted')
-    expect(mockInsert.mock.calls.map(c => c[0].id)).not.toContain('meeting')
+    expect(mockInsert.mock.calls.map(c => c[0].id)).toContain('meeting')
   })
 
   test('sort_order follows the preset order', async () => {
     await seedModes('self-hosted')
     expect(mockInsert.mock.calls.map(c => c[0].sortOrder)).toEqual([
-      0, 1, 2, 3, 4,
+      0, 1, 2, 3, 4, 5,
     ])
   })
 
@@ -97,8 +98,9 @@ describe('seedModes', () => {
 
     const created = await seedModes('self-hosted')
 
-    expect(created).toBe(3)
+    expect(created).toBe(4)
     expect(mockInsert.mock.calls.map(c => c[0].id)).toEqual([
+      'meeting',
       'message',
       'mail',
       'blank',
@@ -125,6 +127,7 @@ describe('seedModes', () => {
     mockFindAllIdsIncludingDeleted.mockImplementationOnce(async () => [
       'voice-to-text',
       'intelligent',
+      'meeting',
       'message',
       'mail',
       'blank',
@@ -150,11 +153,12 @@ describe('seedModes', () => {
     )
     expect(mockInsert.mock.calls.map(c => c[0].id)).toEqual([
       'intelligent',
+      'meeting',
       'message',
       'mail',
       'blank',
     ])
-    expect(created).toBe(4)
+    expect(created).toBe(5)
   })
 
   test('bridges the legacy global flag so an existing single-user install is not re-seeded', async () => {
@@ -206,7 +210,7 @@ describe('seedModes', () => {
     // they get user-a's, re-homed.
     expect(createdForB).toBe(0)
     expect(mockInsert).not.toHaveBeenCalled()
-    expect(mockReassignOwner).toHaveBeenCalledTimes(5)
+    expect(mockReassignOwner).toHaveBeenCalledTimes(6)
     expect(rows.every(r => r.userId === 'user-b')).toBe(true)
     expect(applied).toEqual(
       expect.arrayContaining([
@@ -222,5 +226,89 @@ describe('seedModes', () => {
 
     expect(await seedModes('user-a')).toBe(0)
     expect(mockInsert).not.toHaveBeenCalled()
+  })
+})
+
+describe('seedMeetingMode', () => {
+  beforeEach(() => {
+    applied = []
+    rows = []
+    mockFindAllIdsIncludingDeleted.mockClear()
+    mockFindOwner.mockClear()
+    mockReassignOwner.mockClear()
+    mockInsert.mockClear()
+    mockStoreSet.mockClear()
+  })
+
+  // `meeting` is now part of `SEEDED_PRESET_KEYS`, so a fresh install gets
+  // it straight from `seedModes`. This backfill exists for installs that
+  // consumed the main seed flag before Meeting joined the set — they never
+  // run that loop again, so without a flag of its own they'd never get it.
+  test('an install that already ran the first seed still gets Meeting', async () => {
+    applied = ['2026-08-14-seed-modes:self-hosted']
+    rows.push(
+      ...['voice-to-text', 'intelligent', 'message', 'mail', 'blank'].map(
+        id => ({ id, userId: 'self-hosted' }),
+      ),
+    )
+
+    expect(await seedMeetingMode('self-hosted')).toBe(1)
+    expect(mockInsert.mock.calls[0][0].id).toBe('meeting')
+  })
+
+  test('it does not come back after the user deletes it', async () => {
+    applied = [
+      '2026-08-14-seed-modes:self-hosted',
+      '2026-08-14-seed-meeting:self-hosted',
+    ]
+
+    expect(await seedMeetingMode('self-hosted')).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  test('sees a soft-deleted Meeting row and does not resurrect it', async () => {
+    // Same guarantee as `seedModes`: existence is judged via
+    // `findAllIdsIncludingDeleted`, which sees a soft-deleted row too.
+    mockFindAllIdsIncludingDeleted.mockImplementationOnce(async () => [
+      'meeting',
+    ])
+
+    expect(await seedMeetingMode('self-hosted')).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  test('re-homes Meeting seeded under a different user instead of inserting a duplicate', async () => {
+    rows.push({ id: 'meeting', userId: 'self-hosted' })
+
+    const created = await seedMeetingMode('user-a')
+
+    expect(mockReassignOwner).toHaveBeenCalledWith('meeting', 'user-a')
+    expect(mockInsert).not.toHaveBeenCalled()
+    expect(created).toBe(0)
+  })
+
+  test('is idempotent — a second run creates nothing', async () => {
+    await seedMeetingMode('self-hosted')
+    mockInsert.mockClear()
+
+    expect(await seedMeetingMode('self-hosted')).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  test('the seed flag is keyed per user, like seedModes', async () => {
+    await seedMeetingMode('self-hosted')
+
+    expect(mockStoreSet).toHaveBeenCalledWith(
+      'appliedMigrations',
+      expect.arrayContaining(['2026-08-14-seed-meeting:self-hosted']),
+    )
+  })
+
+  test('never throws — a seeding failure must not be able to take down startup', async () => {
+    mockFindAllIdsIncludingDeleted.mockImplementationOnce(async () => {
+      throw new Error('SQLite is on fire')
+    })
+
+    await expect(seedMeetingMode('self-hosted')).resolves.toBe(0)
   })
 })

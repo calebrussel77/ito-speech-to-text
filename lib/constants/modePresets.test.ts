@@ -20,15 +20,15 @@ describe('modePresets', () => {
     ])
   })
 
-  test('Meeting is offered but not seeded — its engine only exists at lot 3', () => {
+  test('Meeting joins the seeded set once its engine exists', () => {
     expect(SEEDED_PRESET_KEYS).toEqual([
       'voice-to-text',
       'intelligent',
+      'meeting',
       'message',
       'mail',
       'blank',
     ])
-    expect(SEEDED_PRESET_KEYS).not.toContain('meeting')
     expect(findPreset('meeting')).toBeDefined()
   })
 

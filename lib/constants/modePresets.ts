@@ -236,15 +236,16 @@ ${LANGUAGE_CLAUSE}`,
  * Ce qui est semé au premier lancement. Volontairement distinct de
  * `MODE_PRESETS` : un gabarit peut être proposé sans être imposé.
  *
- * `meeting` en est absent tant que le chemin Deepgram n'existe pas (lot 3).
- * Son modèle vocal est routé chez OpenRouter dans le catalogue — pas de
- * diarisation par cette voie, et 10,6 % de WER au banc de mesure. Un mode
- * Meeting visible et médiocre pendant deux lots serait pire que pas de mode
- * Meeting du tout.
+ * `meeting` y figure depuis que le chemin Deepgram par upload de fichier
+ * existe : c'est ce qui manquait pour la diarisation, et le WER mesuré par
+ * `nova-3` chez Deepgram n'a plus rien à voir avec les 10,6 % constatés via
+ * OpenRouter. Les installations qui ont déjà consommé le premier seed sont
+ * rattrapées séparément par `seedMeetingMode` (`lib/main/modes/modeSeeder.ts`).
  */
 export const SEEDED_PRESET_KEYS = [
   'voice-to-text',
   'intelligent',
+  'meeting',
   'message',
   'mail',
   'blank',
