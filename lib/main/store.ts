@@ -172,7 +172,10 @@ export const defaultValues: AppStore = {
         modeId: 'intelligent',
       },
     ],
-    cycleModeShortcut: ['control-left', 'shift-left', 'm'] as KeyName[],
+    // Ships unbound: registering a chord with the global key grabber by
+    // default would silently take it away from every other app on first
+    // launch, for a feature nobody asked to opt into.
+    cycleModeShortcut: [] as KeyName[],
     firstName: '',
     lastName: '',
     email: '',

@@ -296,6 +296,11 @@ export default function KeyboardShortcutEditor({
                 }}
               />
             ))}
+            {shortcutKeys.length === 0 && (
+              <div className="text-[var(--subtle-foreground)] text-xs">
+                No shortcut set
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 w-full mt-1">
             <Button

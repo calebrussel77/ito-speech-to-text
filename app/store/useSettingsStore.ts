@@ -86,11 +86,8 @@ const getInitialState = () => {
         id: crypto.randomUUID(),
       },
     ],
-    cycleModeShortcut: storedSettings?.cycleModeShortcut ?? [
-      'control-left',
-      'shift-left',
-      'm',
-    ],
+    // Ships unbound — see the matching default in lib/main/store.ts.
+    cycleModeShortcut: storedSettings?.cycleModeShortcut ?? [],
     firstName: storedSettings?.firstName ?? '',
     lastName: storedSettings?.lastName ?? '',
     email: storedSettings?.email ?? '',

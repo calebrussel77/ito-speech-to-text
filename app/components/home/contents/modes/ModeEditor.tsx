@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useModesStore } from '@/app/store/useModesStore'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
+import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { findPreset } from '@/lib/constants/modePresets'
 import {
   SettingsCard,
@@ -20,6 +21,7 @@ import ContextToggles from './ContextToggles'
 import ExamplesEditor from './ExamplesEditor'
 import { modeIcon } from './modeIcons'
 import type { ModeLanguage } from '@/lib/constants/modeLanguages'
+import MultiShortcutEditor from '@/app/components/ui/multi-shortcut-editor'
 
 const INSTRUCTIONS_LIMIT = 3500
 const ASR_PROMPT_LIMIT = 100
@@ -33,9 +35,19 @@ export default function ModeEditor({
 }) {
   const { modes, update, updateLocal, remove, duplicate } = useModesStore()
   const { groqApiKey, openRouterApiKey } = useAdvancedSettingsStore()
+  const { keyboardShortcuts } = useSettingsStore()
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [shortcutError, setShortcutError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Passed to MultiShortcutEditor so a rejected shortcut (duplicate or
+  // reserved) shows up as a SettingsNote here, not just in the editor's own
+  // inline text — see the note in multi-shortcut-editor.tsx.
+  const handleShortcutError = useCallback(
+    (message: string) => setShortcutError(message),
+    [],
+  )
 
   const mode = modes.find(item => item.id === modeId)
 
@@ -201,6 +213,24 @@ export default function ModeEditor({
           </SettingsRow>
         )}
       </SettingsGroup>
+
+      <SettingsGroup title="Shortcut">
+        <SettingsRow
+          title="Dedicated shortcut"
+          description="Starts a dictation in this mode, regardless of which mode is currently active."
+          align="start"
+        >
+          <MultiShortcutEditor
+            shortcuts={keyboardShortcuts}
+            modeId={mode.id}
+            onError={handleShortcutError}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
+      {shortcutError && (
+        <SettingsNote tone="error">{shortcutError}</SettingsNote>
+      )}
 
       <button
         type="button"

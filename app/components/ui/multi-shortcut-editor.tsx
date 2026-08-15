@@ -21,6 +21,8 @@ type Props = {
   className?: string
   keySize?: number
   maxShortcutsPerMode?: number
+  /** Mirrors the current inline error so a host screen can surface it too. */
+  onError?: (message: string) => void
 }
 
 const MAX_KEYS_PER_SHORTCUT = 5
@@ -30,6 +32,7 @@ export default function MultiShortcutEditor({
   modeId,
   className = '',
   maxShortcutsPerMode = 5,
+  onError,
 }: Props) {
   const {
     createKeyboardShortcut,
@@ -47,7 +50,9 @@ export default function MultiShortcutEditor({
     [shortcuts, modeId],
   )
   const isAtLimit = rows.length >= maxShortcutsPerMode
-  const isMinimum = rows.length <= 1
+  // A mode's shortcut is entirely optional (that's the point of this editor),
+  // so the last remaining row must stay deletable — otherwise a mode could be
+  // given a shortcut but never cleared of it again.
 
   // editing state
   const [editingId, setEditingId] = useState<string | null>(null) // existing row id or "__new__"
@@ -57,6 +62,14 @@ export default function MultiShortcutEditor({
 
   const cleanupRef = useRef<(() => void) | null>(null)
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // A rejected shortcut (duplicate or reserved) must not fail silently: the
+  // persistent `error` is mirrored to the host screen, which can render it
+  // as a SettingsNote — the inline text here alone is easy to miss below
+  // the fold of a 620px window.
+  useEffect(() => {
+    onError?.(error)
+  }, [error, onError])
 
   const beginEditExisting = (row: KeyboardShortcutConfig) => {
     if (!start(editorKey)) {
@@ -278,11 +291,14 @@ export default function MultiShortcutEditor({
           type="button"
           onClick={() => {
             const lastRow = rows.at(-1)
-            if (lastRow) {
-              removeKeyboardShortcut(lastRow.id)
-            }
+            if (!lastRow) return
+            // Deleting the row being edited would otherwise leave the
+            // shortcut-editing lock held and global shortcuts disabled,
+            // since stopEdit() would never run for it.
+            if (editingId === lastRow.id) stopEdit()
+            removeKeyboardShortcut(lastRow.id)
           }}
-          hidden={isMinimum}
+          hidden={rows.length === 0}
           className="ml-auto text-[11px] text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           disabled={isLockedByOther}
         >
