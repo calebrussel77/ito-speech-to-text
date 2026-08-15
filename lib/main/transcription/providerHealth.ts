@@ -68,14 +68,27 @@ export function failureNotice(provider: Provider, code?: string): string {
  */
 function storedFailure(provider: Provider): ProviderFailure | undefined {
   const advanced = getAdvancedSettings() as any
-  // Forme héritée : le réglage portait un seul objet, implicitement
-  // OpenRouter, avant que Deepgram ne rejoigne les fournisseurs pouvant
-  // refuser une clé. Les installations existantes gardent cette forme tant
-  // qu'aucune nouvelle panne OpenRouter ne la remplace.
-  if (provider === 'openrouter' && advanced?.openRouterFailure) {
-    return advanced.providerFailures?.openrouter ?? advanced.openRouterFailure
+  const failures = advanced?.providerFailures
+  if (provider === 'openrouter') {
+    // `clearProviderFailure` cannot delete a key — the store's `deepSet` only
+    // ever overwrites — so a cleared record lives on as an *explicit* `null`
+    // under `providerFailures.openrouter`, not as an absent key. That explicit
+    // entry must win over the legacy field below, including when its value is
+    // `null`: `??` would treat `null` as "nothing here" and fall through to
+    // the stale legacy record forever, which is exactly the bug this guards
+    // against (a fixed key would never stop being reported as rejected).
+    // `in` is what tells "present but null" apart from "never written".
+    if (failures && 'openrouter' in failures) {
+      return failures.openrouter ?? undefined
+    }
+    // Forme héritée : le réglage portait un seul objet, implicitement
+    // OpenRouter, avant que Deepgram ne rejoigne les fournisseurs pouvant
+    // refuser une clé. Les installations existantes gardent cette forme tant
+    // qu'aucune entrée (même un `null` explicite) n'existe dans
+    // `providerFailures.openrouter`.
+    return advanced?.openRouterFailure ?? undefined
   }
-  return advanced?.providerFailures?.[provider]
+  return failures?.[provider]
 }
 
 /**

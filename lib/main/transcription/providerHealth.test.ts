@@ -144,6 +144,48 @@ describe('providerHealth', () => {
     expect(getProviderFailure('deepgram', KEY)).toBeNull()
   })
 
+  test('a success after a legacy rejection permanently clears it, not just until the next read', () => {
+    // Installation mise à niveau : une vraie panne OpenRouter existe encore
+    // sous l'ancien champ, avant que `providerFailures` n'existe.
+    advancedSettings = {
+      openRouterFailure: {
+        code: 'INVALID_API_KEY',
+        message: 'refused',
+        model: 'x',
+        at: '2026-08-14T00:00:00.000Z',
+        keyFingerprint: fingerprintOf(KEY),
+      },
+    }
+
+    // 1. Premier lancement après la mise à niveau : le dossier hérité est lu.
+    expect(getProviderFailure('openrouter', KEY)?.code).toBe('INVALID_API_KEY')
+    expect(getRejectedKeyFailure('openrouter', KEY)?.code).toBe(
+      'INVALID_API_KEY',
+    )
+
+    // 2. L'utilisateur corrige sa clé, la dictée suivante réussit.
+    mockStoreSet.mockClear()
+    clearProviderFailure('openrouter')
+    expect(mockStoreSet).toHaveBeenCalledWith(
+      'advancedSettings.providerFailures.openrouter',
+      null,
+    )
+    // Le vrai store ne supprime jamais une clé : `deepSet` écrit un `null`
+    // explicite. On reproduit donc exactement ce que le store produirait,
+    // plutôt que de remplacer l'objet entier et perdre le champ hérité.
+    advancedSettings = {
+      ...advancedSettings,
+      providerFailures: { openrouter: null },
+    }
+
+    // 3. Toute lecture suivante doit rester saine : l'entrée explicite gagne
+    // sur le champ hérité, sinon le contournement de la clé refusée ne serait
+    // jamais levé — et la dictée longue resterait dégradée vers Groq pour
+    // toujours, même avec une clé qui fonctionne à nouveau.
+    expect(getProviderFailure('openrouter', KEY)).toBeNull()
+    expect(getRejectedKeyFailure('openrouter', KEY)).toBeNull()
+  })
+
   test('each provider keeps its own record', () => {
     recordProviderFailure({
       provider: 'deepgram',
