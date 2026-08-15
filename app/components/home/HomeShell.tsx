@@ -14,7 +14,8 @@ import { useAudioStore } from '@/app/store/useAudioStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { usePlatform } from '@/app/hooks/usePlatform'
-import { getKeyDisplay } from '@/app/utils/keyboard'
+import { formatChord, formatChordDetailed } from '@/app/utils/keyboard'
+import { Kbd } from '@/app/components/ui/kbd'
 import type { KeyName } from '@/lib/types/keyboard'
 
 type PageKey =
@@ -63,14 +64,13 @@ export default function HomeShell({
   const platform = usePlatform()
   const groqApiKey = useAdvancedSettingsStore(s => s.groqApiKey)
 
-  const keys: string[] = (
-    keyboardShortcuts.find(s => s.modeId === 'voice-to-text')?.keys ?? []
-  ).map((k: string) =>
-    getKeyDisplay(k as KeyName, platform, {
-      showDirectionalText: false,
-      format: 'label',
-    }),
-  )
+  // L'accord du raccourci par défaut s'il existe, sinon celui de Voice to text
+  // — la barre latérale annonce ce qu'une pression déclenche, et depuis que le
+  // raccourci par défaut existe, c'est lui qui répond en premier.
+  const keys = (
+    keyboardShortcuts.find(s => s.modeId === null) ??
+    keyboardShortcuts.find(s => s.modeId === 'voice-to-text')
+  )?.keys as KeyName[] | undefined
 
   const canDictate = !!groqApiKey?.trim()
   const statusLabel = isRecording
@@ -158,16 +158,11 @@ export default function HomeShell({
                 <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
                 {statusLabel}
               </span>
-              <span className="flex items-center gap-0.5">
-                {keys.map(k => (
-                  <kbd
-                    key={k}
-                    className="rounded border border-border bg-[var(--surface-2)] px-1 py-px font-mono text-[9px] text-[var(--muted-foreground)]"
-                  >
-                    {k}
-                  </kbd>
-                ))}
-              </span>
+              {keys?.length ? (
+                <Kbd title={formatChordDetailed(keys, platform)}>
+                  {formatChord(keys, platform)}
+                </Kbd>
+              ) : null}
             </div>
           ) : (
             <div className="flex justify-center py-1.5" title={statusLabel}>

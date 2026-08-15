@@ -22,13 +22,22 @@ export const ENCRYPTED_API_KEY_FIELDS = [
   'groqApiKey',
   'openRouterApiKey',
   'deepgramApiKey',
+  'googleApiKey',
+  'openaiApiKey',
 ] as const
 
 export interface KeyboardShortcutConfig {
   id: string
   keys: KeyName[]
-  /** Id d'une ligne de la table `modes`. */
-  modeId: string
+  /**
+   * Id d'une ligne de la table `modes`, ou `null` pour « le mode actif ».
+   *
+   * `null` est le raccourci de dictée par défaut : il ne nomme aucun mode et
+   * suit celui que la page Modes désigne comme actif. Sans lui, le mode actif
+   * ne pilotait que le clic sur la pill — tout raccourci imposait son propre
+   * mode, et changer de mode actif ne changeait aucune dictée au clavier.
+   */
+  modeId: string | null
 }
 
 export type InteractionSoundTheme = 'pop' | 'marimba' | 'custom'
@@ -101,11 +110,19 @@ export interface AdvancedSettings {
   groqApiKey?: string
   openRouterApiKey?: string
   deepgramApiKey?: string
+  googleApiKey?: string
+  openaiApiKey?: string
   /**
    * Modèle texte par défaut des modes créés ensuite. Le modèle réellement
    * utilisé est celui du mode ; celui-ci ne sert qu'à préremplir.
    */
   textModelKey?: string
+  /**
+   * Modèle qui transcrit un fichier importé. Ce chemin n'a pas de mode — il
+   * lui faut donc son propre réglage, et pas celui d'un mode qui n'a rien à
+   * voir avec le fichier ouvert.
+   */
+  fileTranscriptionModelKey?: string
   /**
    * Ancienne forme du réglage, d'avant que Deepgram ne devienne un second
    * fournisseur pouvant refuser une clé. Conservée en lecture seule pour ne
@@ -209,6 +226,8 @@ export const defaultValues: AppStore = {
     groqApiKey: '',
     openRouterApiKey: '',
     deepgramApiKey: '',
+    googleApiKey: '',
+    openaiApiKey: '',
     textModelKey: DEFAULT_TEXT_KEY,
   },
   openMic: false,

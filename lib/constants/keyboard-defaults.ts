@@ -32,3 +32,17 @@ export function getModeShortcutDefaults(
 
 // For backward compatibility, export the defaults for the current platform
 export const MODE_SHORTCUT_DEFAULTS = getModeShortcutDefaults()
+
+/**
+ * Id fixe du raccourci qui ne nomme aucun mode et suit le mode actif.
+ *
+ * Fixe, et pas un uuid, parce que l'éditeur de raccourci dérive de cet id la
+ * clé de son verrou d'édition : le voir changer entre la saisie et l'écriture
+ * laisserait le verrou tenu par une clé que plus personne ne relâche, et tous
+ * les autres éditeurs grisés jusqu'au redémarrage.
+ *
+ * Ici plutôt que dans `lib/main/store.ts` : le rendu l'importe comme *valeur*,
+ * et une valeur venue d'un module du processus principal traîne tout SQLite
+ * dans le bundle du rendu — le build s'en aperçoit, pas le typage.
+ */
+export const ACTIVE_MODE_SHORTCUT_ID = 'active-mode'

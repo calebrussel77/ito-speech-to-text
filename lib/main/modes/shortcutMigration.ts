@@ -29,9 +29,16 @@ export function migrateShortcutsToModeIds(): void {
 
   const migrated = shortcuts.map(shortcut => {
     const { mode, ...rest } = shortcut
+    // `'modeId' in shortcut`, et pas `?? ` : `null` est une valeur légitime —
+    // « suit le mode actif » — que le repli aurait épinglée sur `voice-to-text`.
+    // La migration ne tourne qu'une fois, mais elle n'a aucune raison d'être
+    // fausse le jour où elle tourne sur une base plus récente qu'elle.
     return {
       ...rest,
-      modeId: shortcut.modeId ?? LEGACY_MODE_IDS[mode] ?? LEGACY_MODE_IDS[0],
+      modeId:
+        'modeId' in shortcut
+          ? shortcut.modeId
+          : (LEGACY_MODE_IDS[mode] ?? LEGACY_MODE_IDS[0]),
     }
   })
 

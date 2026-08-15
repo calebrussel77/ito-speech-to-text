@@ -23,7 +23,8 @@ import {
   getTotalWordsLevel,
   getActivityMessage,
 } from './activityMessages'
-import { getKeyDisplay } from '@/app/utils/keyboard'
+import { formatChord, formatChordDetailed } from '@/app/utils/keyboard'
+import { Kbd } from '@/app/components/ui/kbd'
 import { createStereo48kWavFromMonoPCM } from '@/app/utils/audioUtils'
 import { KeyName } from '@/lib/types/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
@@ -726,17 +727,15 @@ export default function HomeContent({
             </div>
             <div className="text-sm text-muted-foreground">
               <span key="hold-down">Hold down the trigger key </span>
-              {keyboardShortcut.map((key, index) => (
-                <React.Fragment key={index}>
-                  <span className="bg-[var(--surface-3)] px-1.5 py-0.5 rounded text-xs font-mono border border-border text-foreground">
-                    {getKeyDisplay(key as KeyName, platform, {
-                      showDirectionalText: false,
-                      format: 'label',
-                    })}
-                  </span>
-                  <span>{index < keyboardShortcut.length - 1 && ' + '}</span>
-                </React.Fragment>
-              ))}
+              <Kbd
+                className="mx-0.5 align-middle"
+                title={formatChordDetailed(
+                  keyboardShortcut as KeyName[],
+                  platform,
+                )}
+              >
+                {formatChord(keyboardShortcut as KeyName[], platform)}
+              </Kbd>
               <span key="and"> and speak into any textbox</span>
             </div>
           </div>

@@ -263,14 +263,18 @@ async function handleKeyEventInMain(event: KeyEvent) {
       // Starting a new session
       activeShortcutId = currentlyHeldShortcut.id
       console.info('lib Shortcut ACTIVATED, starting recording...')
-      await itoSessionManager.startSession(currentlyHeldShortcut.modeId)
+      // `null` (« le mode actif ») devient `undefined`, que le gestionnaire de
+      // session résout déjà en mode actif — la distinction s'arrête ici.
+      await itoSessionManager.startSession(
+        currentlyHeldShortcut.modeId ?? undefined,
+      )
     } else if (activeShortcutId !== currentlyHeldShortcut.id) {
       // Different shortcut detected while already recording - change mode
       activeShortcutId = currentlyHeldShortcut.id
       console.info(
         `lib Shortcut mode CHANGED to ${currentlyHeldShortcut.modeId}, updating session...`,
       )
-      void itoSessionManager.setMode(currentlyHeldShortcut.modeId)
+      void itoSessionManager.setMode(currentlyHeldShortcut.modeId ?? undefined)
     }
   } else if (!currentlyHeldShortcut) {
     // No shortcut detected - cancel pending activation or deactivate active shortcut

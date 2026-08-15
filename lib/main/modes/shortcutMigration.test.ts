@@ -41,6 +41,23 @@ describe('migrateShortcutsToModeIds', () => {
     }
   })
 
+  test('leaves a shortcut that already follows the active mode alone', () => {
+    // `modeId: null` veut dire « le mode actif ». Le repli de la migration
+    // l'aurait épinglé sur `voice-to-text`, c'est-à-dire supprimé le seul
+    // raccourci qui ne nomme pas de mode — sans rien afficher.
+    settings = {
+      keyboardShortcuts: [
+        { id: 'default', keys: ['control-left'], modeId: null },
+      ],
+    }
+
+    migrateShortcutsToModeIds()
+
+    expect(settings.keyboardShortcuts).toEqual([
+      { id: 'default', keys: ['control-left'], modeId: null },
+    ])
+  })
+
   test('maps the two legacy modes onto the seeded mode ids', () => {
     migrateShortcutsToModeIds()
 

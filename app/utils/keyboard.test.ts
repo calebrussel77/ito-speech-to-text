@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import { KeyState } from './keyboard'
+import { KeyState, validateShortcutForDuplicate } from './keyboard'
 import type { KeyEvent } from '@/lib/preload'
+import type { KeyName } from '@/lib/types/keyboard'
+import type { KeyboardShortcutConfig } from '@/lib/main/store'
 
 // Mock the window.api for KeyState tests
 const mockApi = {
@@ -154,5 +156,47 @@ describe('KeyState', () => {
       keyState.update({ key: 'KeyA', type: 'keyup' } as KeyEvent)
       expect(keyState.getPressedKeys()).toEqual([])
     })
+  })
+})
+
+describe('validateShortcutForDuplicate', () => {
+  const chord = ['control-left', 'command-left'] as KeyName[]
+
+  const shortcuts: KeyboardShortcutConfig[] = [
+    { id: 'dedicated', keys: chord, modeId: 'voice-to-text' },
+    { id: 'default', keys: ['option-left'] as KeyName[], modeId: null },
+  ]
+
+  test('the shortcut that follows the active mode cannot steal a mode chord', () => {
+    // `modeId: null` doit se comparer comme n'importe quel autre mode : sans ça
+    // le raccourci par défaut aurait pu prendre une combinaison déjà attribuée,
+    // et seul le premier des deux se serait déclenché — en silence.
+    const result = validateShortcutForDuplicate(
+      shortcuts,
+      { id: 'default', keys: chord, modeId: null },
+      null,
+    )
+
+    expect(result).toEqual({ success: false, error: 'duplicate-key-diff-mode' })
+  })
+
+  test('a mode chord free of collisions passes', () => {
+    const result = validateShortcutForDuplicate(
+      shortcuts,
+      { id: 'other', keys: ['space'] as KeyName[], modeId: 'intelligent' },
+      'intelligent',
+    )
+
+    expect(result).toBeNull()
+  })
+
+  test('the duplicate is reported as the same mode when it is', () => {
+    const result = validateShortcutForDuplicate(
+      shortcuts,
+      { id: 'another-row', keys: chord, modeId: 'voice-to-text' },
+      'voice-to-text',
+    )
+
+    expect(result).toEqual({ success: false, error: 'duplicate-key-same-mode' })
   })
 })

@@ -41,16 +41,24 @@ mock.module('node:child_process', () => ({
 }))
 
 const mockMainStore = {
-  get: mock(() => ({
-    isShortcutGloballyEnabled: true,
-    keyboardShortcuts: [
-      {
-        id: 'mock-shortcut-1',
-        keys: ['command', 'space'],
-        modeId: 'voice-to-text',
-      },
-    ],
-  })),
+  // `modeId` est typé large exprès : `null` y est une valeur légitime — le
+  // raccourci qui suit le mode actif — et l'inférence sur le seul littéral
+  // ci-dessous l'aurait interdite aux tests qui en ont besoin.
+  get: mock(
+    (): {
+      isShortcutGloballyEnabled: boolean
+      keyboardShortcuts: { id: string; keys: string[]; modeId: string | null }[]
+    } => ({
+      isShortcutGloballyEnabled: true,
+      keyboardShortcuts: [
+        {
+          id: 'mock-shortcut-1',
+          keys: ['command', 'space'],
+          modeId: 'voice-to-text',
+        },
+      ],
+    }),
+  ),
 }
 mock.module('../main/store', () => ({
   default: mockMainStore,
@@ -457,10 +465,57 @@ describe('Keyboard Module', () => {
         Buffer.from(JSON.stringify(spaceDown) + '\n'),
       )
 
-      expect(mockitoSessionManager.startSession).toHaveBeenCalled()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(
+        'voice-to-text',
+      )
       expect(console.info).toHaveBeenCalledWith(
         'lib Shortcut ACTIVATED, starting recording...',
       )
+    })
+
+    test('a shortcut that names no mode dictates in the active mode', async () => {
+      // `modeId: null` est le raccourci de dictée par défaut. Il doit atteindre
+      // `startSession` en `undefined` — la seule valeur que le gestionnaire de
+      // session résout en mode actif ; `null` y serait tombé sur le PREMIER
+      // mode, silencieusement, et le mode actif n'aurait servi à rien.
+      mockMainStore.get.mockReturnValue({
+        isShortcutGloballyEnabled: true,
+        keyboardShortcuts: [
+          {
+            id: 'default-shortcut',
+            keys: ['command', 'space'],
+            modeId: null,
+          },
+        ],
+      })
+
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      mockChildProcess.stdout.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            type: 'keydown',
+            key: 'MetaLeft',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            raw_code: 91,
+          }) + '\n',
+        ),
+      )
+      mockChildProcess.stdout.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            type: 'keydown',
+            key: 'Space',
+            timestamp: '2024-01-01T00:00:00.001Z',
+            raw_code: 32,
+          }) + '\n',
+        ),
+      )
+
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(undefined)
     })
 
     test('should deactivate shortcut when keys are released', async () => {

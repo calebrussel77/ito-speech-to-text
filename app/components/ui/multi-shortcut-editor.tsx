@@ -8,12 +8,9 @@ import { cx } from 'class-variance-authority'
 import { KeyName } from '@/lib/types/keyboard'
 import { useShortcutEditingStore } from '@/app/store/useShortcutEditingStore'
 
-export interface KeyboardShortcutConfig {
-  id: string
-  keys: KeyName[]
-  /** Id d'une ligne de la table `modes`. */
-  modeId: string
-}
+import type { KeyboardShortcutConfig } from '@/lib/main/store'
+
+export type { KeyboardShortcutConfig }
 
 type Props = {
   shortcuts: KeyboardShortcutConfig[] // persisted rows
