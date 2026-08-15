@@ -19,6 +19,7 @@ export type ModePresetKey =
   | 'voice-to-text'
   | 'intelligent'
   | 'meeting'
+  | 'meeting-summary'
   | 'message'
   | 'mail'
   | 'blank'
@@ -144,6 +145,40 @@ ${LANGUAGE_CLAUSE}`,
     autoPaste: false,
     autocapitalize: false,
     identifySpeakers: true,
+    asrPrompt: '',
+  },
+  {
+    key: 'meeting-summary',
+    label: 'Meeting summary',
+    description:
+      'Reads a speaker-separated transcript from your clipboard and turns it into a structured summary.',
+    icon: 'UsersGroup',
+    instructions: `## Role
+You summarize a meeting transcript provided in the copied text. Your ONLY function is to structure it.
+
+## Instructions
+1. Create one section per speaker, with a heading and bullet points for their main contributions.
+2. Include timestamps for the most important points, using the ones in the transcript.
+3. End with an "Action items" section listing tasks, decisions and follow-ups, naming who is responsible when the information is available.
+
+## Critical
+You never invent contributions, decisions or names absent from the transcript. The spoken message is only a trigger — the content to summarize is the copied text.
+
+${LANGUAGE_CLAUSE}`,
+    language: 'fr',
+    voiceModelKey: 'whisper-large-v3-turbo',
+    textModelKey: 'gpt-5-6-luna',
+    useLlm: true,
+    contextApplication: false,
+    contextClipboard: true,
+    contextSelection: false,
+    audioSource: 'microphone',
+    playbackWhenRecording: 'mute',
+    // Un compte-rendu de plusieurs paragraphes tapé au curseur atterrirait
+    // n'importe où : il va au presse-papier.
+    autoPaste: false,
+    autocapitalize: false,
+    identifySpeakers: false,
     asrPrompt: '',
   },
   {

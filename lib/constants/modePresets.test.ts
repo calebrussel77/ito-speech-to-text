@@ -9,15 +9,33 @@ import { MODE_LANGUAGES } from './modeLanguages'
 import { findModel } from './modelCatalog'
 
 describe('modePresets', () => {
-  test('ships the six templates, in display order', () => {
+  test('the templates list grows to seven', () => {
     expect(MODE_PRESETS.map(p => p.key)).toEqual([
       'voice-to-text',
       'intelligent',
       'meeting',
+      'meeting-summary',
       'message',
       'mail',
       'blank',
     ])
+  })
+
+  test('the meeting summary preset exists, reads the clipboard, and does not paste', () => {
+    const preset = findPreset('meeting-summary')!
+
+    expect(preset).toBeDefined()
+    expect(preset.contextClipboard).toBe(true)
+    // Le compte-rendu ne doit pas atterrir au curseur : il va au presse-papier.
+    expect(preset.autoPaste).toBe(false)
+    expect(preset.useLlm).toBe(true)
+  })
+
+  test('the seeded set stays at six — the summary preset is offered, not imposed', () => {
+    // Un mode qui lit le presse-papier à chaque dictée serait une surprise
+    // désagréable s'il arrivait tout seul.
+    expect(SEEDED_PRESET_KEYS).toHaveLength(6)
+    expect(SEEDED_PRESET_KEYS).not.toContain('meeting-summary')
   })
 
   test('Meeting joins the seeded set once its engine exists', () => {
