@@ -640,9 +640,13 @@ export async function initializeStore() {
   // 5) Sème les modes. Après les migrations : la migration des raccourcis
   //    référence les ids semés, donc les modes doivent exister d'abord.
   if (process.env.NODE_ENV !== 'test') {
-    const { seedModes } = await import('./modes/modeSeeder')
+    const { seedModes, seedMeetingMode } = await import('./modes/modeSeeder')
     const userId = getCurrentUserId() || 'self-hosted'
     await seedModes(userId)
+    // Meeting arrive après coup : son moteur (le chemin fichier Deepgram)
+    // n'existait pas au premier semis, donc les installations déjà semées ne
+    // l'ont jamais reçu. Son propre drapeau le sème une fois et une seule.
+    await seedMeetingMode(userId)
 
     const { migrateSettingsIntoModes } = await import(
       './modes/modeSettingsMigration'
