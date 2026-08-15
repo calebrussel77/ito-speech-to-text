@@ -35,11 +35,30 @@ const OPTIONS = {
 
 describe('openRouterChatService.complete', () => {
   test('asks OpenRouter to keep reasoning out of the response', () => {
-    // `exclude` et non `effort: 'none'` : les modèles à raisonnement
-    // obligatoire rejettent le second.
+    // Sans consigne du catalogue, on n'envoie pas d'`effort` : un modèle qui
+    // ne raisonne pas peut rejeter le champ.
     return openRouterChatService.complete(OPTIONS).then(() => {
       const body = JSON.parse(String(calls[0].init.body))
       expect(body.reasoning).toEqual({ exclude: true })
+    })
+  })
+
+  test('forwards the catalogue reasoning effort — none cuts it, low floors it', async () => {
+    // Réécrire une dictée est du formatage : chaque seconde de thinking est
+    // de la latence pure entre la fin de la dictée et le collage du texte.
+    await openRouterChatService.complete({
+      ...OPTIONS,
+      reasoningEffort: 'none',
+    })
+    expect(JSON.parse(String(calls[0].init.body)).reasoning).toEqual({
+      exclude: true,
+      effort: 'none',
+    })
+
+    await openRouterChatService.complete({ ...OPTIONS, reasoningEffort: 'low' })
+    expect(JSON.parse(String(calls[1].init.body)).reasoning).toEqual({
+      exclude: true,
+      effort: 'low',
     })
   })
 

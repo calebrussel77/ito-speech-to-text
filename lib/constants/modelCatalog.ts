@@ -101,6 +101,17 @@ export interface CatalogModel {
    * modèles sont donc exclus du sélecteur de modèle vocal d'un mode.
    */
   fileOnly?: boolean
+  /**
+   * Ce que la requête demande au raisonnement du modèle. Réécrire une dictée
+   * est du formatage : chaque seconde de « thinking » est de la latence pure
+   * entre la fin de la dictée et le collage du texte.
+   *
+   * - `'none'` : le modèle pense par défaut mais sait s'arrêter — on coupe.
+   * - `'low'` : le raisonnement est obligatoire (il rejette `none`) — on le
+   *   réduit au minimum accepté.
+   * - absent : le modèle ne raisonne pas, ne rien demander.
+   */
+  reasoning?: 'none' | 'low'
 }
 
 export const VOICE_MODELS: CatalogModel[] = [
@@ -340,6 +351,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     price: '$0.075 / $0.30 per M',
     speed: 3,
     note: 'Default',
+    reasoning: 'low',
   },
   {
     key: 'gpt-oss-120b-groq',
@@ -350,6 +362,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.15 / $0.60 per M',
     speed: 3,
+    reasoning: 'low',
   },
   {
     key: 'qwen3-27b-groq',
@@ -363,6 +376,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     // Groq lists this one under Preview, which its own policy defines as
     // evaluation-only and removable at short notice.
     note: 'Preview at Groq',
+    reasoning: 'none',
   },
   {
     key: 'gpt-oss-120b-cerebras',
@@ -375,6 +389,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     price: '$0.35 / $0.75 per M',
     speed: 5,
     note: 'Fastest — 5× Groq',
+    reasoning: 'low',
   },
   {
     key: 'gemma-4-31b-cerebras',
@@ -396,6 +411,9 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'qwen',
     price: '$0.03 / $0.13 per M',
     speed: 5,
+    // Hybride pensant par défaut — c'est lui qui laissait fuir son <think>
+    // dans les dictées (2026-08-15).
+    reasoning: 'none',
   },
   {
     key: 'glm-4-7-flash',
@@ -406,6 +424,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'zai',
     price: '$0.06 / $0.40 per M',
     speed: 4,
+    reasoning: 'none',
   },
   {
     key: 'gpt-5-6-luna',
@@ -416,6 +435,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.10 / $0.60 per M',
     speed: 4,
+    reasoning: 'low',
   },
   {
     key: 'gpt-5-4-nano',
@@ -426,6 +446,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'openai',
     price: '$0.20 / $1.25 per M',
     speed: 3,
+    reasoning: 'low',
   },
   {
     key: 'mistral-nemo',
@@ -457,6 +478,7 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'google',
     price: '$0.38 / $1.88 per M',
     speed: 2,
+    reasoning: 'none',
   },
   {
     key: 'gemini-3-5-flash-lite',

@@ -19,6 +19,13 @@ export type OpenRouterChatOptions = {
    * order of magnitude — so an unpinned "fastest" choice would not be one.
    */
   pinnedProvider?: PinnedProvider
+  /**
+   * Ce que le catalogue sait du raisonnement du modèle (`CatalogModel.reasoning`) :
+   * `'none'` le coupe, `'low'` le réduit au minimum qu'un modèle à raisonnement
+   * obligatoire accepte. Absent, on ne demande rien — un modèle qui ne raisonne
+   * pas peut rejeter le champ.
+   */
+  reasoningEffort?: 'none' | 'low'
 }
 
 const CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -93,12 +100,16 @@ class OpenRouterChatService {
       messages: options.messages,
       temperature: options.temperature ?? 0.1,
       ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
-      // Le raisonnement n'a rien à faire dans un texte dicté. `exclude` et
-      // non `effort: 'none'` : les modèles à raisonnement obligatoire
-      // rejettent le second, le premier vaut pour tous. Le vrai filet reste
-      // `stripReasoning` plus bas — l'hôte qui laisse fuir un `<think>` dans
-      // `content` est précisément celui qui ignore ce champ.
-      reasoning: { exclude: true },
+      // Le raisonnement n'a rien à faire dans un texte dicté. `exclude` vaut
+      // pour tous les modèles ; `effort` vient du catalogue — `none` pour les
+      // hybrides qui pensent par défaut, `low` pour ceux qui refusent de ne
+      // pas penser. Le vrai filet reste `stripReasoning` plus bas — l'hôte
+      // qui laisse fuir un `<think>` dans `content` est précisément celui qui
+      // ignore ces champs.
+      reasoning: {
+        exclude: true,
+        ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
+      },
     }
 
     if (options.pinnedProvider) {

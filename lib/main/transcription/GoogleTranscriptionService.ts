@@ -285,6 +285,10 @@ class GoogleTranscriptionService {
       model: options.model,
       system_instruction: TRANSCRIBE_INSTRUCTION,
       input: [{ type: 'text', text: prompt }, audioPart],
+      // Transcrire n'est pas raisonner : les Gemini 3.x pensent par défaut,
+      // et chaque seconde de « thinking » retarde un transcript qui n'en a
+      // pas besoin. `minimal` est le plancher documenté de l'API.
+      generation_config: { thinking_level: 'minimal' },
     }
     if (options.diarize) {
       body.response_format = {

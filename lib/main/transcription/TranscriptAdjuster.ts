@@ -61,12 +61,14 @@ class TranscriptAdjuster {
               temperature,
               maxTokens,
               pinnedProvider: model.pinnedProvider,
+              reasoningEffort: model.reasoning,
             })
           : await localTranscriptionService.complete({
               model: model.slug,
               messages,
               temperature,
               maxTokens,
+              reasoningEffort: model.reasoning,
             })
 
       return adjusted || transcript

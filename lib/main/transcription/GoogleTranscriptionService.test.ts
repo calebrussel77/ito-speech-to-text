@@ -100,6 +100,16 @@ describe('googleTranscriptionService.transcribeAudio', () => {
     expect(body.input[1].data).toBe(audio.toString('base64'))
   })
 
+  test('asks for minimal thinking — transcribing is not reasoning', async () => {
+    // Les Gemini 3.x pensent par défaut, et chaque seconde de thinking
+    // retarde un transcript qui n'en a pas besoin.
+    await googleTranscriptionService.transcribeAudio(audio, options)
+
+    expect(bodyOf(calls[0]).generation_config).toEqual({
+      thinking_level: 'minimal',
+    })
+  })
+
   test('forbids anything but a transcript through the system instruction', async () => {
     // Gemini n'est pas un ASR : sans cette consigne il répond au contenu, le
     // résume, ou refuse. C'est la seule protection contre ça.

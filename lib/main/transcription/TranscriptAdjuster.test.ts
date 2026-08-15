@@ -113,6 +113,30 @@ describe('TranscriptAdjuster', () => {
     )
   })
 
+  test('forwards the catalogue reasoning setting to both providers', async () => {
+    // Sans ce relais, le réglage du catalogue est décoratif : qwen3.7-flash
+    // repartirait en thinking par défaut, et gpt-oss en effort medium.
+    await transcriptAdjuster.adjust(
+      'raw',
+      mode({ textModelKey: 'qwen3-flash' }),
+      context,
+      settings(),
+    )
+    expect(mockOpenRouterComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: 'none' }),
+    )
+
+    await transcriptAdjuster.adjust(
+      'raw',
+      mode({ textModelKey: 'gpt-oss-20b-groq' }),
+      context,
+      settings(),
+    )
+    expect(mockGroqComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoningEffort: 'low' }),
+    )
+  })
+
   test('a Cerebras key pins the upstream provider', async () => {
     await transcriptAdjuster.adjust(
       'raw',

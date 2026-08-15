@@ -17,6 +17,8 @@ export type ChatCompletionOptions = {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
   temperature?: number
   maxTokens?: number
+  /** Voir `CatalogModel.reasoning` — traduit en `reasoning_effort` chez Groq. */
+  reasoningEffort?: 'none' | 'low'
 }
 
 type ApiTestResult = { ok: boolean; message?: string }
@@ -303,7 +305,12 @@ class LocalTranscriptionService {
       messages: options.messages,
       temperature: options.temperature ?? 0.1,
       max_tokens: options.maxTokens,
-    })
+      // gpt-oss accepte low/medium/high, les qwen3 acceptent none : la valeur
+      // vient du catalogue, qui sait ce que chaque modèle tolère.
+      ...(options.reasoningEffort
+        ? { reasoning_effort: options.reasoningEffort }
+        : {}),
+    } as any)
 
     const content = (result as any)?.choices?.[0]?.message?.content
     // Même filet que le chemin OpenRouter : un hôte qui inline son
