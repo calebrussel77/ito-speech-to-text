@@ -18,15 +18,31 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
   const [drafts, setDrafts] = useState<
     Record<string, { spoken: string; ai: string }>
   >({})
+  const [error, setError] = useState('')
 
   const load = async () => {
-    const list = await window.api.modes.examples.get(modeId)
-    setExamples(list)
-    setDrafts(
-      Object.fromEntries(
-        list.map(e => [e.id, { spoken: e.spokenInput, ai: e.aiOutput }]),
-      ),
-    )
+    setError('')
+    try {
+      const list = await window.api.modes.examples.get(modeId)
+      setExamples(list)
+      // On garde le brouillon déjà en mémoire pour tout id connu au lieu de
+      // l'écraser avec la valeur serveur : ça règle à la fois le cas d'une
+      // ligne encore en cours de frappe ailleurs (elle n'a jamais été
+      // touchée ici) et celui d'un save() qui perd la course contre ce
+      // load() (la ligne en vol garde son brouillon au lieu de revenir en
+      // arrière). Seuls les ids nouveaux ou disparus sont réconciliés.
+      setDrafts(previous =>
+        Object.fromEntries(
+          list.map(e => [
+            e.id,
+            previous[e.id] ?? { spoken: e.spokenInput, ai: e.aiOutput },
+          ]),
+        ),
+      )
+    } catch (err) {
+      console.error('Failed to load examples', err)
+      setError('Could not load the examples.')
+    }
   }
 
   useEffect(() => {
@@ -34,19 +50,37 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
   }, [modeId])
 
   const add = async () => {
-    await window.api.modes.examples.add(modeId, '', '')
-    await load()
+    setError('')
+    try {
+      await window.api.modes.examples.add(modeId, '', '')
+      await load()
+    } catch (err) {
+      console.error('Failed to add an example', err)
+      setError('Could not add the example.')
+    }
   }
 
   const save = async (id: string) => {
     const draft = drafts[id]
     if (!draft) return
-    await window.api.modes.examples.update(id, draft.spoken, draft.ai)
+    setError('')
+    try {
+      await window.api.modes.examples.update(id, draft.spoken, draft.ai)
+    } catch (err) {
+      console.error('Failed to save an example', err)
+      setError('Could not save this example. Your edit may be lost.')
+    }
   }
 
   const remove = async (id: string) => {
-    await window.api.modes.examples.delete(id)
-    await load()
+    setError('')
+    try {
+      await window.api.modes.examples.delete(id)
+      await load()
+    } catch (err) {
+      console.error('Failed to remove an example', err)
+      setError('Could not remove the example.')
+    }
   }
 
   return (
@@ -59,6 +93,8 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
         </Button>
       }
     >
+      {error && <SettingsNote tone="error">{error}</SettingsNote>}
+
       {examples.length === 0 && (
         <SettingsNote>
           No example yet. If this mode answers your dictation instead of
