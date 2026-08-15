@@ -144,6 +144,16 @@ describe('ModesTable', () => {
     expect(query).toContain('UPDATE modes SET deleted_at')
     expect(query).not.toContain('DELETE FROM')
   })
+
+  test('softDelete also soft-deletes the mode examples — ON DELETE CASCADE never fires on an UPDATE', async () => {
+    await ModesTable.softDelete('intelligent')
+
+    expect(mockRun).toHaveBeenCalledTimes(2)
+    const [examplesQuery, examplesParams] = mockRun.mock.calls[1]
+    expect(examplesQuery).toContain('UPDATE mode_examples SET deleted_at')
+    expect(examplesQuery).not.toContain('DELETE FROM')
+    expect(examplesParams).toContain('intelligent')
+  })
 })
 
 describe('ModeExamplesTable', () => {

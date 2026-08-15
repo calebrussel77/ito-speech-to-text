@@ -127,14 +127,17 @@ const testMode = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+const mockResolveActiveMode = mock(async () => testMode())
+const mockResolveMode = mock(async (id: string) =>
+  id === 'intelligent'
+    ? testMode({ id: 'intelligent', name: 'Intelligent', useLlm: true })
+    : id === 'copy-mode'
+      ? testMode({ id: 'copy-mode', name: 'Copy mode', autoPaste: false })
+      : testMode(),
+)
 mock.module('./modes/activeMode', () => ({
-  resolveActiveMode: async () => testMode(),
-  resolveMode: async (id: string) =>
-    id === 'intelligent'
-      ? testMode({ id: 'intelligent', name: 'Intelligent', useLlm: true })
-      : id === 'copy-mode'
-        ? testMode({ id: 'copy-mode', name: 'Copy mode', autoPaste: false })
-        : testMode(),
+  resolveActiveMode: mockResolveActiveMode,
+  resolveMode: mockResolveMode,
 }))
 
 const mockSoundFeedback = {
@@ -162,6 +165,16 @@ beforeEach(() => {
   mockGetAdvancedSettings.mockClear()
   mockStore.get.mockClear()
   mockStore.get.mockReturnValue({ interactionSounds: false })
+  mockResolveActiveMode.mockClear()
+  mockResolveActiveMode.mockImplementation(async () => testMode())
+  mockResolveMode.mockClear()
+  mockResolveMode.mockImplementation(async (id: string) =>
+    id === 'intelligent'
+      ? testMode({ id: 'intelligent', name: 'Intelligent', useLlm: true })
+      : id === 'copy-mode'
+        ? testMode({ id: 'copy-mode', name: 'Copy mode', autoPaste: false })
+        : testMode(),
+  )
 
   mockItoStreamController.initialize.mockImplementation(() =>
     Promise.resolve(true),
@@ -434,5 +447,46 @@ describe('itoSessionManager (state machine)', () => {
     expect(
       mockRecordingStateNotifier.notifyRecordingStarted,
     ).not.toHaveBeenCalled()
+  })
+
+  test('a failed mode resolution resets to idle instead of wedging in starting', async () => {
+    // resolveActiveMode/resolveMode throw by design when no mode exists.
+    // Left uncaught, `state` would stay 'starting' forever and every later
+    // shortcut press would be silently ignored until the app restarts.
+    mockResolveActiveMode.mockImplementationOnce(() => {
+      throw new Error('No mode available — the seeder did not run')
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    const result = await session.startSession()
+
+    expect(result).toBeNull()
+    expect(session.getState()).toBe('idle')
+    expect(mockRecordingStateNotifier.notifyRecordingStopped).toHaveBeenCalled()
+    expect(mockItoStreamController.initialize).not.toHaveBeenCalled()
+
+    // And a subsequent, successful call must still work — not wedged.
+    mockResolveActiveMode.mockClear()
+    await session.startSession('voice-to-text')
+    expect(session.getState()).toBe('recording')
+  })
+
+  test('setMode swallows a failed mode resolution instead of an unhandled rejection', async () => {
+    // lib/media/keyboard.ts fires this as `void itoSessionManager.setMode(...)`.
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('voice-to-text')
+    mockItoStreamController.setMode.mockClear()
+
+    // Only the setMode call below should throw, not the startSession above.
+    mockResolveMode.mockImplementationOnce(() => {
+      throw new Error('Mode "gone" is gone, falling back')
+    })
+    await expect(session.setMode('gone')).resolves.toBeUndefined()
+
+    expect(mockItoStreamController.setMode).not.toHaveBeenCalled()
+    expect(session.getState()).toBe('recording')
   })
 })

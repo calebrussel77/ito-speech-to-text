@@ -1,3 +1,4 @@
+import { Notification } from 'electron'
 import type { AdvancedSettings } from '../store'
 import type { ContextData } from '../context/ContextGrabber'
 import type { Mode } from '../sqlite/models'
@@ -8,6 +9,16 @@ import {
   type ChatMessage,
 } from './OpenRouterChatService'
 import { buildMessages } from '../modes/promptBuilder'
+
+function showNotification(title: string, body: string) {
+  try {
+    if (Notification?.isSupported?.()) {
+      new Notification({ title, body }).show()
+    }
+  } catch (error) {
+    console.warn('[TranscriptAdjuster] Failed to show notification:', error)
+  }
+}
 
 /**
  * Post-traite un transcript avec le modèle texte du mode.
@@ -63,6 +74,14 @@ class TranscriptAdjuster {
       console.error(
         `[TranscriptAdjuster] ${model.provider} adjustment failed (${model.slug}):`,
         error?.message || error,
+      )
+      // Every speech-model downgrade already gets a notification; this path
+      // was silent. The shipped presets use OpenRouter text models, so a
+      // Groq-only install would hit this constantly with no explanation for
+      // why the text came back un-rewritten.
+      showNotification(
+        'Ito — texte non reformulé',
+        'La réécriture du texte a échoué, la transcription brute a été utilisée.',
       )
       return transcript
     }

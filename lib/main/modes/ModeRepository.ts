@@ -187,6 +187,13 @@ export class ModesTable {
       now,
       id,
     ])
+    // `mode_examples` declares ON DELETE CASCADE, but this is an UPDATE, not
+    // a DELETE — the cascade never fires. Soft-delete the examples explicitly
+    // so they don't outlive their mode.
+    await run(
+      'UPDATE mode_examples SET deleted_at = ?, updated_at = ? WHERE mode_id = ?',
+      [now, now, id],
+    )
   }
 }
 

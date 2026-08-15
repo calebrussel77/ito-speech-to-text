@@ -891,7 +891,7 @@ export function registerIPC() {
     try {
       return getOpenRouterFailure(getAdvancedSettings()?.openRouterApiKey)
     } catch (error) {
-      log.warn('[IPC] Could not read the OpenRouter failure record:', error)
+      console.warn('[IPC] Could not read the OpenRouter failure record:', error)
       return null
     }
   })
@@ -964,7 +964,10 @@ export function registerIPC() {
   // When the hotkey is pressed, start recording and notify the pill window.
   ipcMain.on('start-native-recording', _event => {
     console.log(`IPC: Received 'start-native-recording'`)
-    itoSessionManager.startSession('voice-to-text')
+    // No explicit mode id: resolves the user's active mode instead of
+    // hardcoding voice-to-text, so a mode without its own shortcut can still
+    // be used from the pill's click-to-record.
+    itoSessionManager.startSession()
   })
 
   ipcMain.on('start-native-recording-test', _event => {

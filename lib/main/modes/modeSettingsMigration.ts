@@ -26,6 +26,26 @@ export async function migrateSettingsIntoModes(): Promise<void> {
 
   const advanced: any = store.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
   const llm: any = advanced.llm || {}
+
+  // These four keys only ever existed on a pre-modes store; a fresh install
+  // never wrote them. Without this guard the migration still "runs once" on
+  // a fresh install too — against the presets the seeder just wrote minutes
+  // earlier, each with its own deliberately different language and model —
+  // and flattens them to the global defaults. Marking the flag and returning
+  // here (rather than skipping it) keeps that a genuine one-shot: nothing
+  // legacy will ever appear later to retrigger it.
+  if (
+    !(
+      'asrLanguage' in llm ||
+      'asrPrompt' in llm ||
+      'editingPrompt' in llm ||
+      'transcriptionPrompt' in llm
+    )
+  ) {
+    markRunOnce(MIGRATION_ID)
+    return
+  }
+
   const modes = await ModesTable.findAll(
     (store.get(STORE_KEYS.USER_PROFILE) as any)?.id || 'self-hosted',
   )

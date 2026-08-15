@@ -92,4 +92,16 @@ describe('modes IPC', () => {
     const result = await handlers.get('modes:delete')!({}, 'intelligent')
     expect(result).toEqual({ ok: true })
   })
+
+  test('deleting a mode drops its keyboard shortcut — a dangling modeId would keep firing', async () => {
+    const { default: store } = await import('../main/store')
+    const { STORE_KEYS } = await import('../constants/store-keys')
+
+    await handlers.get('modes:delete')!({}, 'intelligent')
+
+    const settings: any = store.get(STORE_KEYS.SETTINGS)
+    expect(
+      settings.keyboardShortcuts.some((s: any) => s.modeId === 'intelligent'),
+    ).toBe(false)
+  })
 })

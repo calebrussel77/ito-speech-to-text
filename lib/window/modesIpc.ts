@@ -6,7 +6,8 @@ import {
   cycleActiveMode,
 } from '../main/modes/activeMode'
 import { findPreset, MODE_PRESETS } from '../constants/modePresets'
-import { getCurrentUserId } from '../main/store'
+import store, { getCurrentUserId } from '../main/store'
+import { STORE_KEYS } from '../constants/store-keys'
 import { recordingStateNotifier } from '../main/recordingStateNotifier'
 import type { Mode } from '../main/sqlite/models'
 
@@ -75,6 +76,20 @@ export function registerModeIpc() {
       const remaining = await ModesTable.findAll(userId())
       setActiveModeId(remaining[0].id)
     }
+
+    // Left behind, the shortcut would keep firing and dictate in whatever
+    // modes[0] happens to resolve to, and Settings → Keyboard would render
+    // the now-dangling uuid as the row title.
+    const settings: any = store.get(STORE_KEYS.SETTINGS) || {}
+    if (Array.isArray(settings.keyboardShortcuts)) {
+      const keyboardShortcuts = settings.keyboardShortcuts.filter(
+        (shortcut: any) => shortcut.modeId !== id,
+      )
+      if (keyboardShortcuts.length !== settings.keyboardShortcuts.length) {
+        store.set(STORE_KEYS.SETTINGS, { ...settings, keyboardShortcuts })
+      }
+    }
+
     return { ok: true }
   })
 

@@ -114,7 +114,35 @@ describe('seedModes', () => {
 
     expect(mockStoreSet).toHaveBeenCalledWith(
       'appliedMigrations',
-      expect.arrayContaining(['2026-08-14-seed-modes']),
+      expect.arrayContaining(['2026-08-14-seed-modes:self-hosted']),
     )
+  })
+
+  test('the seed flag is keyed per user, so signing in as someone new still seeds', async () => {
+    // Modes are scoped by user_id, but a global flag would see the new user
+    // as "already seeded" and refuse to run, leaving them with zero modes.
+    await seedModes('user-a')
+    mockInsert.mockClear()
+
+    const createdForB = await seedModes('user-b')
+
+    expect(createdForB).toBe(5)
+    expect(mockInsert.mock.calls.every(c => c[0].userId === 'user-b')).toBe(
+      true,
+    )
+    expect(applied).toEqual(
+      expect.arrayContaining([
+        '2026-08-14-seed-modes:user-a',
+        '2026-08-14-seed-modes:user-b',
+      ]),
+    )
+  })
+
+  test('re-seeding the same user a second time still creates nothing', async () => {
+    await seedModes('user-a')
+    mockInsert.mockClear()
+
+    expect(await seedModes('user-a')).toBe(0)
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 })

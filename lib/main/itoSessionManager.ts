@@ -67,44 +67,60 @@ export class ItoSessionManager {
   }
 
   private async doStartSession(modeId?: string): Promise<string | null> {
-    const mode = modeId ? await resolveMode(modeId) : await resolveActiveMode()
-    console.log(`[itoSessionManager] Starting session in mode "${mode.name}"`)
-    this.currentMode = mode
+    try {
+      const mode = modeId
+        ? await resolveMode(modeId)
+        : await resolveActiveMode()
+      console.log(`[itoSessionManager] Starting session in mode "${mode.name}"`)
+      this.currentMode = mode
 
-    let interactionId = interactionManager.getCurrentInteractionId()
-    if (interactionId) {
-      console.log(
-        '[itoSessionManager] Reusing existing interaction ID:',
-        interactionId,
-      )
-      interactionManager.adoptInteractionId(interactionId)
-    } else {
-      interactionId = interactionManager.initialize()
-    }
+      let interactionId = interactionManager.getCurrentInteractionId()
+      if (interactionId) {
+        console.log(
+          '[itoSessionManager] Reusing existing interaction ID:',
+          interactionId,
+        )
+        interactionManager.adoptInteractionId(interactionId)
+      } else {
+        interactionId = interactionManager.initialize()
+      }
 
-    const started = await itoStreamController.initialize(mode)
-    if (!started) {
-      log.error('[itoSessionManager] Failed to initialize itoStreamController')
+      const started = await itoStreamController.initialize(mode)
+      if (!started) {
+        log.error(
+          '[itoSessionManager] Failed to initialize itoStreamController',
+        )
+        this.state = 'idle'
+        // Keep the UI in sync: nothing is recording.
+        recordingStateNotifier.notifyRecordingStopped()
+        return null
+      }
+
+      voiceInputService.startAudioRecording()
+      itoStreamController.setMode(mode)
+      recordingStateNotifier.notifyRecordingStarted(mode)
+
+      // Grammar context is NOT gathered here: it simulates keystrokes, and the
+      // push-to-talk keys are still physically held at this point (held Alt +
+      // simulated Ctrl+C = "©" typed into the focused app). It runs during
+      // completeSession instead, in parallel with the transcription call.
+
+      timingCollector.startInteraction()
+      timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
+
+      this.state = 'recording'
+      return interactionId
+    } catch (error) {
+      // resolveMode/resolveActiveMode throw when no mode can be resolved at
+      // all (e.g. the seeder never ran for this user). Left uncaught, this
+      // leaves `state` stuck at 'starting' forever — every later shortcut
+      // press would be silently ignored until the app restarts. Fail the
+      // same way the `!started` branch above already does.
+      log.error('[itoSessionManager] Failed to start session:', error)
       this.state = 'idle'
-      // Keep the UI in sync: nothing is recording.
       recordingStateNotifier.notifyRecordingStopped()
       return null
     }
-
-    voiceInputService.startAudioRecording()
-    itoStreamController.setMode(mode)
-    recordingStateNotifier.notifyRecordingStarted(mode)
-
-    // Grammar context is NOT gathered here: it simulates keystrokes, and the
-    // push-to-talk keys are still physically held at this point (held Alt +
-    // simulated Ctrl+C = "©" typed into the focused app). It runs during
-    // completeSession instead, in parallel with the transcription call.
-
-    timingCollector.startInteraction()
-    timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
-
-    this.state = 'recording'
-    return interactionId
   }
 
   private async prepareGrammarContext() {
@@ -124,10 +140,17 @@ export class ItoSessionManager {
       console.log(`[itoSessionManager] Ignoring setMode while ${this.state}`)
       return
     }
-    const mode = await resolveMode(modeId)
-    this.currentMode = mode
-    itoStreamController.setMode(mode)
-    recordingStateNotifier.notifyRecordingStarted(mode)
+    try {
+      const mode = await resolveMode(modeId)
+      this.currentMode = mode
+      itoStreamController.setMode(mode)
+      recordingStateNotifier.notifyRecordingStarted(mode)
+    } catch (error) {
+      // lib/media/keyboard.ts fires this as `void itoSessionManager.setMode(...)`:
+      // an uncaught throw here would be an unhandled rejection, not just a
+      // failure to switch modes mid-recording.
+      log.error('[itoSessionManager] Failed to switch mode:', error)
+    }
   }
 
   public async cancelSession() {

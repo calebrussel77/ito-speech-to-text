@@ -135,6 +135,20 @@ describe('migrateSettingsIntoModes', () => {
     expect(mockUpdate).not.toHaveBeenCalled()
   })
 
+  test('a fresh install with no legacy settings touches no mode, only marks the flag', async () => {
+    // On a fresh install these four keys never existed — only a pre-modes
+    // store carries them. Without the guard this migration would still
+    // "run once" here, flattening the presets the seeder just wrote
+    // (deliberately different language/model per mode) to the global
+    // defaults.
+    advanced = { textModelKey: 'gpt-5-6-luna', llm: { noSpeechThreshold: 0.6 } }
+
+    await migrateSettingsIntoModes()
+
+    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(applied).toContain('2026-08-14-settings-into-modes')
+  })
+
   test('a second run after a restart never clobbers the modes', async () => {
     // Le scénario que le drapeau existe pour empêcher : au deuxième passage,
     // asrLanguage n'existe plus, donc la migration écraserait language et

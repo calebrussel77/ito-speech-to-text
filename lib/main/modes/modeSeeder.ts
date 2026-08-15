@@ -37,8 +37,13 @@ const SEED_ID = '2026-08-14-seed-modes'
  * n'a de chemin viable qu'au lot 3.
  */
 export async function seedModes(userId: string): Promise<number> {
-  if (hasRunOnce(SEED_ID)) {
-    markRunOnce(SEED_ID)
+  // Modes are scoped by user_id, but signing in swaps userProfile.id
+  // (lib/auth/events.ts) to a different user. A global flag would see that
+  // user as already seeded and refuse to run, leaving them with zero modes —
+  // so the flag itself is keyed per user.
+  const seedFlag = `${SEED_ID}:${userId}`
+  if (hasRunOnce(seedFlag)) {
+    markRunOnce(seedFlag)
     return 0
   }
 
@@ -77,7 +82,7 @@ export async function seedModes(userId: string): Promise<number> {
     created++
   }
 
-  markRunOnce(SEED_ID)
+  markRunOnce(seedFlag)
   console.log(`[modeSeeder] Seeded ${created} mode(s)`)
   return created
 }
