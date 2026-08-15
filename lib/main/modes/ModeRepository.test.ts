@@ -133,6 +133,31 @@ describe('ModesTable', () => {
     expect(params[1]).toBe(0)
   })
 
+  test('a row written before the colour migration reads as no chosen colour', async () => {
+    // `row()` n'a pas de colonne `color` : c'est exactement ce que SQLite rend
+    // pour une ligne antérieure à l'ALTER. Elle doit se lire « pas de choix »,
+    // pas `undefined` — c'est `null` qui déclenche la couleur dérivée.
+    rows.push(row())
+    const [mode] = await ModesTable.findAll('self-hosted')
+    expect(mode.color).toBeNull()
+  })
+
+  test('a chosen colour round-trips', async () => {
+    rows.push(row({ color: '#6BA6FF' }))
+    const [mode] = await ModesTable.findAll('self-hosted')
+    expect(mode.color).toBe('#6BA6FF')
+  })
+
+  test('clearing the colour writes null instead of skipping the field', async () => {
+    // Revenir à « automatique » est un choix, pas une absence de patch : si
+    // `update` sautait la valeur nulle, le bouton Automatic ne ferait rien.
+    await ModesTable.update('intelligent', { color: null })
+    const [query, params] = mockRun.mock.calls[0]
+
+    expect(query).toContain('color = ?')
+    expect(params[0]).toBeNull()
+  })
+
   test('update with an empty patch does not hit the database', async () => {
     await ModesTable.update('intelligent', {})
     expect(mockRun).not.toHaveBeenCalled()

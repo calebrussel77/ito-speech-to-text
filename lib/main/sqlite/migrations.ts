@@ -113,4 +113,26 @@ export const MIGRATIONS: Migration[] = [
     `,
     down: 'DROP TABLE mode_examples;',
   },
+  {
+    // Teinte choisie par l'utilisateur. Nullable, et null par défaut : un mode
+    // sans couleur explicite garde celle que `lib/constants/modeColors.ts`
+    // dérive de son id. La colonne ne sert donc qu'à enregistrer un choix,
+    // jamais à porter la valeur par défaut — sans quoi il faudrait réécrire
+    // toutes les lignes le jour où la palette change.
+    id: '20260815120000_add_color_to_modes',
+    up: 'ALTER TABLE modes ADD COLUMN color TEXT;',
+    down: 'ALTER TABLE modes DROP COLUMN color;',
+  },
+  {
+    // Le modèle vocal par défaut passe de `whisper-large-v3-turbo` à
+    // `whisper-large-v3`, sur demande explicite. Les modes semés portent encore
+    // l'ancienne valeur : sans cette reprise, changer le défaut ne changerait
+    // rien pour une installation existante.
+    //
+    // Seules les lignes qui portent EXACTEMENT l'ancien défaut sont touchées —
+    // un mode dont le modèle a été choisi à la main garde le sien.
+    id: '20260815140000_default_voice_model_to_whisper_v3',
+    up: "UPDATE modes SET voice_model_key = 'whisper-large-v3' WHERE voice_model_key = 'whisper-large-v3-turbo';",
+    down: "UPDATE modes SET voice_model_key = 'whisper-large-v3-turbo' WHERE voice_model_key = 'whisper-large-v3';",
+  },
 ]

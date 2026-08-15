@@ -4,6 +4,7 @@ import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { usePlatform } from '@/app/hooks/usePlatform'
 import { findPreset } from '@/lib/constants/modePresets'
+import { modeColor } from '@/lib/constants/modeColors'
 import {
   SettingsCard,
   SettingsGroup,
@@ -15,19 +16,30 @@ import { Input } from '@/app/components/ui/input'
 import { Textarea } from '@/app/components/ui/textarea'
 import { Switch } from '@/app/components/ui/switch'
 import { Button } from '@/app/components/ui/button'
-import { ChevronLeft } from '@mynaui/icons-react'
+import {
+  ChevronLeft,
+  LayersTwo,
+  Microphone,
+  Speaker,
+  VolumeHigh,
+  VolumeSlash,
+} from '@mynaui/icons-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select'
 import PresetSelect from './PresetSelect'
 import LanguageSelect from './LanguageSelect'
 import ModelSelect from './ModelSelect'
 import ContextToggles from './ContextToggles'
 import ExamplesEditor from './ExamplesEditor'
-import { modeIcon } from './modeIcons'
+import ModeColorPicker from './ModeColorPicker'
+import { modeIcon } from '@/app/components/modeIcons'
 import type { ModeLanguage } from '@/lib/constants/modeLanguages'
 import MultiShortcutEditor from '@/app/components/ui/multi-shortcut-editor'
-import { cn } from '@/lib/utils'
-
-const INSTRUCTIONS_LIMIT = 3500
-const ASR_PROMPT_LIMIT = 100
 
 export default function ModeEditor({
   modeId,
@@ -36,8 +48,22 @@ export default function ModeEditor({
   modeId: string
   onBack: () => void
 }) {
-  const { modes, update, updateLocal, remove, duplicate } = useModesStore()
-  const { groqApiKey, openRouterApiKey } = useAdvancedSettingsStore()
+  const {
+    modes,
+    activeModeId,
+    setActive,
+    update,
+    updateLocal,
+    remove,
+    duplicate,
+  } = useModesStore()
+  const {
+    groqApiKey,
+    openRouterApiKey,
+    deepgramApiKey,
+    googleApiKey,
+    openaiApiKey,
+  } = useAdvancedSettingsStore()
   const { keyboardShortcuts } = useSettingsStore()
   const platform = usePlatform()
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -84,8 +110,11 @@ export default function ModeEditor({
     const providers = new Set<string>()
     if (groqApiKey) providers.add('groq')
     if (openRouterApiKey) providers.add('openrouter')
+    if (deepgramApiKey) providers.add('deepgram')
+    if (googleApiKey) providers.add('google')
+    if (openaiApiKey) providers.add('openai')
     return providers
-  }, [groqApiKey, openRouterApiKey])
+  }, [groqApiKey, openRouterApiKey, deepgramApiKey, googleApiKey, openaiApiKey])
 
   useEffect(() => {
     if (!mode) onBack()
@@ -94,6 +123,20 @@ export default function ModeEditor({
   if (!mode) return null
 
   const Icon = modeIcon(mode.icon)
+  // Attribuée sur la liste complète, comme dans ModesContent : la teinte d'un
+  // mode dépend de ses voisins, la calculer sur lui seul la ferait diverger.
+  const color = modeColor(mode.id, modes)!
+  // Ce que le mode prendrait sans choix explicite : la même attribution, ce
+  // mode-ci remis à « dérivé ». Sans ce recalcul, l'échantillon « Automatic »
+  // afficherait la couleur déjà choisie et ne montrerait donc rien.
+  const derivedColor = modeColor(
+    mode.id,
+    modes.map(item =>
+      item.id === mode.id
+        ? { id: item.id }
+        : { id: item.id, color: item.color },
+    ),
+  )!
   const set = (patch: Record<string, unknown>) => void update(mode.id, patch)
 
   // Free-text fields fire on every keystroke; an IPC round trip plus a
@@ -158,7 +201,13 @@ export default function ModeEditor({
         <Button variant="outline" size="sm" onClick={onBack}>
           <ChevronLeft className="size-3.5" />
         </Button>
-        <Icon className="size-4 text-[var(--subtle-foreground)]" />
+        {/* La même pastille que dans la liste et dans la pill : c'est à cette
+            teinte qu'on reconnaît le mode qu'on est en train d'éditer. */}
+        <span
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: color, boxShadow: `0 0 0 3px ${color}26` }}
+        />
+        <Icon className="size-4 text-[var(--muted-foreground)]" />
         <Input
           value={mode.name}
           onChange={event => setDebounced('name', { name: event.target.value })}
@@ -174,6 +223,38 @@ export default function ModeEditor({
             onApply={applyPreset}
           />
         </div>
+
+        {/* Le mode actif n'était réglable qu'en cliquant la pastille de la
+            liste — une cible de 6 px, sans libellé, que rien n'annonçait. */}
+        <SettingsRow
+          title="Active mode"
+          description="Used by the default shortcut (Settings → Keyboard), by a click on the pill, and by the cycle shortcut. A dedicated shortcut below always dictates in its own mode instead."
+        >
+          {mode.id === activeModeId ? (
+            <span className="rounded border border-border px-1.5 py-px text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
+              Active
+            </span>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void setActive(mode.id)}
+            >
+              Make active
+            </Button>
+          )}
+        </SettingsRow>
+
+        <SettingsRow
+          title="Colour"
+          description="Marks this mode in the list, and on the pill while it dictates."
+        >
+          <ModeColorPicker
+            value={mode.color}
+            derived={derivedColor}
+            onChange={nextColor => set({ color: nextColor })}
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       <SettingsRow
@@ -193,13 +274,15 @@ export default function ModeEditor({
             description="What this mode turns a dictation into. Keep the Role / Instructions / Critical structure — it is what stops the model from answering instead of formatting."
             action={
               <span className="text-[10px] tabular-nums text-[var(--subtle-foreground)]">
-                {mode.instructions.length}/{INSTRUCTIONS_LIMIT}
+                {mode.instructions.length} characters
               </span>
             }
           >
+            {/* Aucun `maxLength` : le plafond de 3500 signes coupait au milieu
+                d'une consigne sans rien dire. Le compteur reste, il informe
+                sans interdire. */}
             <Textarea
               value={mode.instructions}
-              maxLength={INSTRUCTIONS_LIMIT}
               rows={10}
               placeholder="## Role&#10;You are a text formatting AI…"
               onChange={event =>
@@ -244,19 +327,22 @@ export default function ModeEditor({
           />
         </SettingsRow>
 
-        {mode.useLlm && (
-          <SettingsRow
-            title="Text model"
-            description="Rewrites the transcript following the instructions above."
-          >
-            <ModelSelect
-              kind="text"
-              value={mode.textModelKey}
-              availableProviders={availableProviders}
-              onChange={textModelKey => set({ textModelKey })}
-            />
-          </SettingsRow>
-        )}
+        {/* La ligne reste visible même quand la réécriture est coupée : la
+            masquer donnait « ce mode n'a pas de modèle de texte » alors que la
+            réponse est « ce mode n'en utilise pas, et voici pourquoi ». */}
+        <SettingsRow
+          title="Text model"
+          description="Rewrites the transcript following the instructions above."
+        >
+          <ModelSelect
+            kind="text"
+            value={mode.textModelKey}
+            availableProviders={availableProviders}
+            disabled={!mode.useLlm}
+            disabledReason="Turn on “Rewrite the dictation” to use a text model."
+            onChange={textModelKey => set({ textModelKey })}
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title="Shortcut">
@@ -313,29 +399,35 @@ export default function ModeEditor({
               title="Audio source"
               description="System audio captures what your speakers play — a Meet or Teams call. Both mixes it with your microphone."
             >
-              <select
+              <Select
                 value={mode.audioSource}
-                onChange={event => set({ audioSource: event.target.value })}
-                className={cn(
-                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
-                  CONTROL_WIDTH,
-                )}
+                onValueChange={audioSource => set({ audioSource })}
               >
-                <option value="microphone">Microphone</option>
-                {/* Disabled, not removed: a mode synced from Windows (or the
-                    seeded Meeting preset) can already hold 'system'/'both' on
-                    a platform that can't capture them. The option must still
-                    render so the select shows what the mode is actually set
-                    to, and the user must still be able to reach
-                    'microphone' from here — disabling the whole control
-                    would trap them with no way back. */}
-                <option value="system" disabled={platform !== 'win32'}>
-                  System audio
-                </option>
-                <option value="both" disabled={platform !== 'win32'}>
-                  Both
-                </option>
-              </select>
+                <SelectTrigger className={CONTROL_WIDTH}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="microphone">
+                    <Microphone className="size-3.5 text-[var(--muted-foreground)]" />
+                    Microphone
+                  </SelectItem>
+                  {/* Disabled, not removed: a mode synced from Windows (or the
+                      seeded Meeting preset) can already hold 'system'/'both' on
+                      a platform that can't capture them. The option must still
+                      render so the select shows what the mode is actually set
+                      to, and the user must still be able to reach
+                      'microphone' from here — disabling the whole control
+                      would trap them with no way back. */}
+                  <SelectItem value="system" disabled={platform !== 'win32'}>
+                    <Speaker className="size-3.5 text-[var(--muted-foreground)]" />
+                    System audio
+                  </SelectItem>
+                  <SelectItem value="both" disabled={platform !== 'win32'}>
+                    <LayersTwo className="size-3.5 text-[var(--muted-foreground)]" />
+                    Both
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </SettingsRow>
 
             {platform !== undefined && platform !== 'win32' && (
@@ -349,19 +441,26 @@ export default function ModeEditor({
               title="Playback when recording"
               description="Muting other apps keeps dictations clean — but it would silence a call you are trying to record."
             >
-              <select
+              <Select
                 value={mode.playbackWhenRecording}
-                onChange={event =>
-                  set({ playbackWhenRecording: event.target.value })
+                onValueChange={playbackWhenRecording =>
+                  set({ playbackWhenRecording })
                 }
-                className={cn(
-                  'rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground',
-                  CONTROL_WIDTH,
-                )}
               >
-                <option value="mute">Mute other apps</option>
-                <option value="leave">Leave it playing</option>
-              </select>
+                <SelectTrigger className={CONTROL_WIDTH}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mute">
+                    <VolumeSlash className="size-3.5 text-[var(--muted-foreground)]" />
+                    Mute other apps
+                  </SelectItem>
+                  <SelectItem value="leave">
+                    <VolumeHigh className="size-3.5 text-[var(--muted-foreground)]" />
+                    Leave it playing
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </SettingsRow>
 
             {mode.audioSource !== 'microphone' &&
@@ -385,16 +484,15 @@ export default function ModeEditor({
 
           <SettingsCard
             title="Transcription priming"
-            description="The voice model mimics this text rather than obeying it: write a sample of the style you dictate in. Your dictionary is appended automatically."
+            description="The voice model mimics this text rather than obeying it: write a sample of the style you dictate in. Your dictionary is appended automatically. Whisper only reads the last ~224 tokens of it, so the end is what counts."
             action={
               <span className="text-[10px] tabular-nums text-[var(--subtle-foreground)]">
-                {mode.asrPrompt.length}/{ASR_PROMPT_LIMIT}
+                {mode.asrPrompt.length} characters
               </span>
             }
           >
             <Textarea
               value={mode.asrPrompt}
-              maxLength={ASR_PROMPT_LIMIT}
               rows={3}
               onChange={event =>
                 setDebounced('asrPrompt', { asrPrompt: event.target.value })

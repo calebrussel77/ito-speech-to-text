@@ -81,6 +81,8 @@ export interface ModeRow {
   identify_speakers: number
   asr_prompt: string
   sort_order: number
+  /** Ajoutée après coup : les lignes antérieures à la migration la lisent nulle. */
+  color: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -108,6 +110,8 @@ export interface Mode {
   identifySpeakers: boolean
   asrPrompt: string
   sortOrder: number
+  /** Teinte choisie ; `null` laisse la couleur être dérivée de l'id. */
+  color: string | null
   createdAt: string
   updatedAt: string
 }

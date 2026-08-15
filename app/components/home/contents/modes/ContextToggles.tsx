@@ -43,7 +43,10 @@ export default function ContextToggles({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-4">
+      {/* Trois colonnes fixes : en flux libre, la largeur du libellé de
+          « Selected text » poussait le troisième interrupteur sur une
+          deuxième ligne. */}
+      <div className="grid grid-cols-3 gap-4">
         {items.map(item => (
           <label
             key={item.key}

@@ -96,7 +96,12 @@ if (typeof window !== 'undefined' && window.api?.on) {
       // old name until the next full `load()` (i.e. a restart).
       modes: state.modes.map(mode =>
         mode.id === payload.modeId
-          ? { ...mode, name: payload.modeName, icon: payload.modeIcon }
+          ? {
+              ...mode,
+              name: payload.modeName,
+              icon: payload.modeIcon,
+              color: payload.modeColor ?? null,
+            }
           : mode,
       ),
     }))

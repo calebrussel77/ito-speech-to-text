@@ -34,6 +34,7 @@ const COLUMNS = [
   'identify_speakers',
   'asr_prompt',
   'sort_order',
+  'color',
   'created_at',
   'updated_at',
   'deleted_at',
@@ -59,6 +60,7 @@ const COLUMN_OF: Record<string, string> = {
   identifySpeakers: 'identify_speakers',
   asrPrompt: 'asr_prompt',
   sortOrder: 'sort_order',
+  color: 'color',
 }
 
 function toMode(row: ModeRow): Mode {
@@ -83,12 +85,21 @@ function toMode(row: ModeRow): Mode {
     identifySpeakers: bool(row.identify_speakers),
     asrPrompt: row.asr_prompt,
     sortOrder: row.sort_order,
+    color: row.color ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
 }
 
-export type InsertMode = Omit<Mode, 'createdAt' | 'updatedAt'> & { id?: string }
+/**
+ * `color` est facultative à l'insertion : un mode naît sans teinte choisie, et
+ * c'est `null` — pas une valeur de la palette — qui le dit. La couleur affichée
+ * est alors dérivée de l'id.
+ */
+export type InsertMode = Omit<Mode, 'createdAt' | 'updatedAt' | 'color'> & {
+  id?: string
+  color?: string | null
+}
 
 export class ModesTable {
   static async findAll(userId: string): Promise<Mode[]> {
@@ -169,6 +180,7 @@ export class ModesTable {
     const created: Mode = {
       ...mode,
       id: mode.id ?? uuidv4(),
+      color: mode.color ?? null,
       createdAt: now,
       updatedAt: now,
     }
@@ -198,6 +210,7 @@ export class ModesTable {
         int(created.identifySpeakers),
         created.asrPrompt,
         created.sortOrder,
+        created.color,
         created.createdAt,
         created.updatedAt,
         null,

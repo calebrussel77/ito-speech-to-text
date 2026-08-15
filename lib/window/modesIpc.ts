@@ -67,13 +67,16 @@ export function registerModeIpc() {
     async (_e, id: string, patch: Partial<Mode>) => {
       await ModesTable.update(id, patch)
 
-      // Renaming (or re-iconing) the active mode must reach the pill: it
-      // renders the mode name from this broadcast's payload, not a live
-      // query, and `modes:update` itself was silent until now — the pill
-      // kept showing the old name until restart. Scoped to name/icon so the
-      // other, much more frequent field patches (toggles, selects) don't
-      // fire a broadcast nothing needs.
-      if (('name' in patch || 'icon' in patch) && getActiveModeId() === id) {
+      // Renaming (or re-iconing, or re-colouring) the active mode must reach
+      // the pill: it renders the mode's icon and tint from this broadcast's
+      // payload, not a live query, and `modes:update` itself was silent until
+      // now — the pill kept showing the old name until restart. Scoped to
+      // name/icon/colour so the other, much more frequent field patches
+      // (toggles, selects) don't fire a broadcast nothing needs.
+      if (
+        ('name' in patch || 'icon' in patch || 'color' in patch) &&
+        getActiveModeId() === id
+      ) {
         const mode = await ModesTable.findById(id)
         if (mode) recordingStateNotifier.notifyActiveModeChanged(mode)
       }
@@ -131,6 +134,10 @@ export function registerModeIpc() {
       sortOrder: modes.length,
       preset: source.preset,
       icon: source.icon,
+      // La copie garde la teinte choisie ; si l'original n'en avait pas, la
+      // copie n'en a pas non plus et dérive la sienne de son propre id — deux
+      // modes distincts, deux couleurs distinctes.
+      color: source.color,
       instructions: source.instructions,
       language: source.language,
       voiceModelKey: source.voiceModelKey,
