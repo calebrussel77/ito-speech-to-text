@@ -238,7 +238,8 @@ const api = {
     ipcRenderer.invoke('test-openrouter-api-key', apiKey),
   testDeepgramApiKey: (apiKey: string) =>
     ipcRenderer.invoke('test-deepgram-api-key', apiKey),
-  getOpenRouterFailure: () => ipcRenderer.invoke('get-openrouter-failure'),
+  getProviderFailure: (provider: 'openrouter' | 'deepgram') =>
+    ipcRenderer.invoke('get-provider-failure', provider),
 
   modes: {
     getAll: () => ipcRenderer.invoke('modes:get-all'),

@@ -22,11 +22,12 @@ import {
 } from './transcription/DeepgramTranscriptionService'
 import { chooseTranscriptionPath } from './transcription/transcriptionRouter'
 import {
-  clearOpenRouterFailure,
+  clearProviderFailure,
   failureNotice,
   getRejectedKeyFailure,
-  recordOpenRouterFailure,
-} from './transcription/openRouterHealth'
+  recordProviderFailure,
+  type Provider,
+} from './transcription/providerHealth'
 import { transcriptAdjuster } from './transcription/TranscriptAdjuster'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
@@ -276,30 +277,55 @@ export class ItoStreamController {
     try {
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
         if (decision.path === 'deepgram') {
-          try {
-            const result = await this.withRetry(
-              `Deepgram (${voiceModel.slug})`,
-              OPENROUTER_RETRY,
-              () =>
-                deepgramTranscriptionService.transcribeAudio(wavAudio, {
-                  apiKey: advancedSettings.deepgramApiKey || '',
-                  model: 'nova-3',
-                  language: languageHint,
-                  diarize: mode.identifySpeakers,
-                }),
+          const apiKey = advancedSettings.deepgramApiKey || ''
+          const deepgramModel = 'deepgram/nova-3'
+          const rejected = getRejectedKeyFailure('deepgram', apiKey)
+
+          if (rejected) {
+            // Same fast-skip as OpenRouter below: this key already came back
+            // refused, so trying again would upload the whole dictation for
+            // another certain 401. Go straight to Groq — and still say so,
+            // rather than passing the downgrade off as a normal dictation.
+            console.warn(
+              `[ItoStreamController] Skipping Deepgram: the stored key was refused on ${rejected.at}`,
             )
-            asrEngine = 'deepgram/nova-3'
-            speakerSegments = result.segments
-            return result.text
-          } catch (error: any) {
-            // Same guarantee as OpenRouter below: a failed precise engine
-            // falls through to Groq rather than losing the dictation.
-            asrFallback = this.recordProviderFallback(error, 'deepgram/nova-3')
+            asrFallback = {
+              from: deepgramModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const result = await this.withRetry(
+                `Deepgram (${voiceModel.slug})`,
+                OPENROUTER_RETRY,
+                () =>
+                  deepgramTranscriptionService.transcribeAudio(wavAudio, {
+                    apiKey,
+                    model: 'nova-3',
+                    language: languageHint,
+                    diarize: mode.identifySpeakers,
+                  }),
+              )
+              asrEngine = deepgramModel
+              speakerSegments = result.segments
+              clearProviderFailure('deepgram')
+              return result.text
+            } catch (error: any) {
+              // Same guarantee as OpenRouter below: a failed precise engine
+              // falls through to Groq rather than losing the dictation.
+              asrFallback = this.recordProviderFallback(
+                error,
+                deepgramModel,
+                apiKey,
+                'deepgram',
+              )
+            }
           }
         } else if (decision.path === 'openrouter') {
           const apiKey = advancedSettings.openRouterApiKey || ''
           const openRouterModel = voiceModel.slug
-          const rejected = getRejectedKeyFailure(apiKey)
+          const rejected = getRejectedKeyFailure('openrouter', apiKey)
 
           if (rejected) {
             // This key already came back refused. Trying again would upload
@@ -329,16 +355,17 @@ export class ItoStreamController {
                   }),
               )
               asrEngine = openRouterModel
-              clearOpenRouterFailure()
+              clearProviderFailure('openrouter')
               return text
             } catch (error: any) {
               // The precise engine must never lose or block a dictation:
               // whatever went wrong, the Groq path (and its retry/persistence
               // layer) takes over.
-              asrFallback = this.recordOpenRouterFallback(
+              asrFallback = this.recordProviderFallback(
                 error,
                 openRouterModel,
                 apiKey,
+                'openrouter',
               )
             }
           }
@@ -411,46 +438,28 @@ export class ItoStreamController {
   }
 
   /**
-   * Turns an OpenRouter failure into the three traces it deserves: a line in
-   * the log, a notification that names the actual cause, and a record in the
-   * settings that outlives both.
+   * Turns a precise-engine failure (OpenRouter or Deepgram) into the three
+   * traces it deserves: a line in the log, a notification that names the
+   * actual cause, and a per-provider record in the settings that outlives
+   * both — so a key already known to be refused can be skipped next time
+   * (see `getRejectedKeyFailure`) instead of re-uploading the dictation for
+   * another certain rejection.
    */
-  private recordOpenRouterFallback(
+  private recordProviderFallback(
     error: any,
     model: string,
     apiKey: string,
+    provider: Provider,
   ): AsrFallback {
     const code = error?.code || 'UNKNOWN'
-    const message = error?.message || 'OpenRouter request failed'
-
-    console.warn(
-      `[ItoStreamController] OpenRouter (${model}) failed (${code}), falling back to Groq:`,
-      message,
-    )
-    recordOpenRouterFailure({ code, message, model, apiKey })
-    showNotification('Ito — repli sur Groq', failureNotice(code))
-
-    return { from: model, code, message }
-  }
-
-  /**
-   * Deepgram failure, logged and surfaced the same way an OpenRouter one is.
-   * Doesn't persist the failure to settings yet — that skip-the-retry
-   * optimisation is OpenRouter-only until `openRouterHealth` generalizes into
-   * a per-provider record (task 3.3bis).
-   */
-  private recordProviderFallback(error: any, model: string): AsrFallback {
-    const code = error?.code || 'UNKNOWN'
-    const message = error?.message || 'Deepgram request failed'
+    const message = error?.message || `${model} request failed`
 
     console.warn(
       `[ItoStreamController] ${model} failed (${code}), falling back to Groq:`,
       message,
     )
-    showNotification(
-      'Ito — repli sur Groq',
-      'La transcription Deepgram a échoué ; la dictée est transcrite par Groq.',
-    )
+    recordProviderFailure({ provider, code, message, model, apiKey })
+    showNotification('Ito — repli sur Groq', failureNotice(provider, code))
 
     return { from: model, code, message }
   }

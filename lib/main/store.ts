@@ -11,7 +11,7 @@ import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
 import { MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
-import type { OpenRouterFailure } from './transcription/openRouterHealth'
+import type { Provider, ProviderFailure } from './transcription/providerHealth'
 import * as electron from 'electron'
 
 const safeStorageApi: any = (electron as any).safeStorage
@@ -106,10 +106,18 @@ export interface AdvancedSettings {
    * utilisé est celui du mode ; celui-ci ne sert qu'à préremplir.
    */
   textModelKey?: string
-  // Why the last long dictation could not use OpenRouter. Written by the
-  // transcription pipeline, never by the settings UI — see
-  // main/transcription/openRouterHealth.ts.
-  openRouterFailure?: OpenRouterFailure | null
+  /**
+   * Ancienne forme du réglage, d'avant que Deepgram ne devienne un second
+   * fournisseur pouvant refuser une clé. Conservée en lecture seule pour ne
+   * pas perdre le dossier d'une installation existante — voir
+   * `providerHealth.ts`, qui la retombe dessus pour OpenRouter tant qu'elle
+   * n'a pas été remplacée par `providerFailures.openrouter`.
+   */
+  openRouterFailure?: ProviderFailure | null
+  // Why the last long dictation could not use a given provider. Written by
+  // the transcription pipeline, never by the settings UI — see
+  // main/transcription/providerHealth.ts.
+  providerFailures?: Partial<Record<Provider, ProviderFailure>>
 }
 
 interface AppStore {

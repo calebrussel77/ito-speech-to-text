@@ -71,7 +71,9 @@ export interface IpcApi {
   testOpenRouterApiKey: (apiKey: string) => Promise<ApiTestResult>
   testDeepgramApiKey: (apiKey: string) => Promise<ApiTestResult>
   /** Null unless the record describes the key currently stored. */
-  getOpenRouterFailure: () => Promise<OpenRouterFailureRecord | null>
+  getProviderFailure: (
+    provider: 'openrouter' | 'deepgram',
+  ) => Promise<ProviderFailureRecord | null>
   modes: {
     getAll: () => Promise<ModeDto[]>
     create: (preset: string, name: string) => Promise<ModeDto>
@@ -102,7 +104,7 @@ export interface ApiTestResult {
   message?: string
 }
 
-export interface OpenRouterFailureRecord {
+export interface ProviderFailureRecord {
   code: string
   message: string
   model: string

@@ -29,13 +29,21 @@ export default function ModelsSettingsContent() {
   // describes the key currently stored, so there is nothing to keep in sync.
   const [openRouterRejection, setOpenRouterRejection] =
     useState<KeyRejection | null>(null)
+  const [deepgramRejection, setDeepgramRejection] =
+    useState<KeyRejection | null>(null)
   useEffect(() => {
     window.api
-      .getOpenRouterFailure()
+      .getProviderFailure('openrouter')
       .then((failure: KeyRejection | null) =>
         setOpenRouterRejection(failure ?? null),
       )
       .catch(() => setOpenRouterRejection(null))
+    window.api
+      .getProviderFailure('deepgram')
+      .then((failure: KeyRejection | null) =>
+        setDeepgramRejection(failure ?? null),
+      )
+      .catch(() => setDeepgramRejection(null))
   }, [])
 
   const availableProviders = new Set<string>()
@@ -86,6 +94,7 @@ export default function ModelsSettingsContent() {
           placeholder="Token…"
           consoleUrl="https://console.deepgram.com/"
           storedKey={deepgramApiKey}
+          rejection={deepgramRejection}
           expanded={expandedProvider === 'deepgram'}
           onToggle={() =>
             setExpandedProvider(

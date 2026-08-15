@@ -119,13 +119,13 @@ mock.module('./transcription/OpenRouterTranscriptionService', () => ({
   openRouterTranscriptionService: mockOpenRouterService,
 }))
 
-const mockOpenRouterHealth = {
+const mockProviderHealth = {
   getRejectedKeyFailure: mock((): any => null),
-  recordOpenRouterFailure: mock(() => {}),
-  clearOpenRouterFailure: mock(() => {}),
+  recordProviderFailure: mock(() => {}),
+  clearProviderFailure: mock(() => {}),
   failureNotice: mock(() => 'notice'),
 }
-mock.module('./transcription/openRouterHealth', () => mockOpenRouterHealth)
+mock.module('./transcription/providerHealth', () => mockProviderHealth)
 
 const mockDeepgramService = {
   transcribeAudio: mock(
@@ -224,9 +224,9 @@ describe('ItoStreamController (local)', () => {
     Object.values(mockInteractionManager).forEach(fn => fn.mockClear())
 
     Object.values(mockOpenRouterService).forEach(fn => fn.mockClear())
-    Object.values(mockOpenRouterHealth).forEach(fn => fn.mockClear())
+    Object.values(mockProviderHealth).forEach(fn => fn.mockClear())
     Object.values(mockDeepgramService).forEach(fn => fn.mockClear())
-    mockOpenRouterHealth.getRejectedKeyFailure.mockReturnValue(null)
+    mockProviderHealth.getRejectedKeyFailure.mockReturnValue(null)
     mockGetAdvancedSettings.mockClear()
 
     mockAudioStreamManager.isCurrentlyStreaming.mockReturnValue(false)
@@ -539,6 +539,51 @@ describe('ItoStreamController (local)', () => {
         message: 'Deepgram rejected the API key',
       })
       expect(mockPendingDictationStore.delete).toHaveBeenCalled()
+      expect(mockProviderHealth.recordProviderFailure).toHaveBeenCalledWith({
+        provider: 'deepgram',
+        code: 'INVALID_API_KEY',
+        message: 'Deepgram rejected the API key',
+        model: 'deepgram/nova-3',
+        apiKey: 'dg-test',
+      })
+    })
+
+    test('a successful Deepgram call clears any recorded failure', async () => {
+      veryLongAudio()
+      withDeepgram()
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockProviderHealth.clearProviderFailure).toHaveBeenCalledWith(
+        'deepgram',
+      )
+      expect(result.asrFallback).toBeUndefined()
+    })
+
+    test('a Deepgram key already known to be refused skips the upload entirely', async () => {
+      veryLongAudio()
+      withDeepgram()
+      mockProviderHealth.getRejectedKeyFailure.mockReturnValue({
+        code: 'INVALID_API_KEY',
+        message: 'Deepgram rejected the API key',
+        model: 'deepgram/nova-3',
+        at: '2026-08-14T17:40:25.431Z',
+        keyFingerprint: 'abc123',
+      })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockDeepgramService.transcribeAudio).not.toHaveBeenCalled()
+      expect(mockLocalTranscriptionService.transcribeAudio).toHaveBeenCalled()
+      // The downgrade is still on the record, otherwise the history row would
+      // be indistinguishable from a dictation that was meant to run on Groq.
+      expect(result.asrFallback?.code).toBe('INVALID_API_KEY')
     })
 
     test('a long recording without a Deepgram key still reaches Groq, not OpenRouter', async () => {
@@ -614,14 +659,13 @@ describe('ItoStreamController (local)', () => {
         code: 'INVALID_API_KEY',
         message: 'OpenRouter rejected the API key',
       })
-      expect(mockOpenRouterHealth.recordOpenRouterFailure).toHaveBeenCalledWith(
-        {
-          code: 'INVALID_API_KEY',
-          message: 'OpenRouter rejected the API key',
-          model: 'openai/gpt-transcribe',
-          apiKey: 'sk-or-test',
-        },
-      )
+      expect(mockProviderHealth.recordProviderFailure).toHaveBeenCalledWith({
+        provider: 'openrouter',
+        code: 'INVALID_API_KEY',
+        message: 'OpenRouter rejected the API key',
+        model: 'openai/gpt-transcribe',
+        apiKey: 'sk-or-test',
+      })
     })
 
     test('a successful call clears any recorded failure', async () => {
@@ -633,7 +677,9 @@ describe('ItoStreamController (local)', () => {
       await controller.initialize(openRouterMode())
       const result = await controller.processLocalTranscription()
 
-      expect(mockOpenRouterHealth.clearOpenRouterFailure).toHaveBeenCalled()
+      expect(mockProviderHealth.clearProviderFailure).toHaveBeenCalledWith(
+        'openrouter',
+      )
       expect(result.asrFallback).toBeUndefined()
     })
 
@@ -682,7 +728,7 @@ describe('ItoStreamController (local)', () => {
     test('a key already known to be refused skips the upload entirely', async () => {
       longAudio()
       withOpenRouter()
-      mockOpenRouterHealth.getRejectedKeyFailure.mockReturnValue({
+      mockProviderHealth.getRejectedKeyFailure.mockReturnValue({
         code: 'INVALID_API_KEY',
         message: 'OpenRouter rejected the API key',
         model: 'openai/gpt-transcribe',

@@ -52,6 +52,7 @@ import {
 } from '../media/selected-text-reader'
 import { IPC_EVENTS } from '../types/ipc'
 import { registerModeIpc } from './modesIpc'
+import type { Provider } from '../main/transcription/providerHealth'
 
 const handleIPC = (channel: string, handler: (...args: any[]) => any) => {
   ipcMain.handle(channel, handler)
@@ -892,17 +893,22 @@ export function registerIPC() {
     }
   })
 
-  // Why the last long dictation could not use OpenRouter. Returns null unless
-  // the failure describes the key currently stored, so a record left by a key
-  // that has since been replaced never shows up as a live warning.
-  handleIPC('get-openrouter-failure', async () => {
-    const { getOpenRouterFailure } = await import(
-      '../main/transcription/openRouterHealth'
+  // Why the last long dictation could not use a given provider. Returns null
+  // unless the failure describes the key currently stored, so a record left
+  // by a key that has since been replaced never shows up as a live warning.
+  handleIPC('get-provider-failure', async (_e, provider: Provider) => {
+    const { getProviderFailure } = await import(
+      '../main/transcription/providerHealth'
     )
+    const advancedSettings = getAdvancedSettings()
+    const apiKey =
+      provider === 'deepgram'
+        ? advancedSettings?.deepgramApiKey
+        : advancedSettings?.openRouterApiKey
     try {
-      return getOpenRouterFailure(getAdvancedSettings()?.openRouterApiKey)
+      return getProviderFailure(provider, apiKey)
     } catch (error) {
-      console.warn('[IPC] Could not read the OpenRouter failure record:', error)
+      console.warn('[IPC] Could not read the provider failure record:', error)
       return null
     }
   })
