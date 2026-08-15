@@ -1,4 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { EventEmitter } from 'events'
 import { fakeTimers } from '../__tests__/helpers/testUtils'
@@ -42,19 +41,56 @@ mock.module('node:child_process', () => ({
 }))
 
 const mockMainStore = {
-  get: mock(() => ({
-    isShortcutGloballyEnabled: true,
-    keyboardShortcuts: [
-      {
-        id: 'mock-shortcut-1',
-        keys: ['command', 'space'],
-        mode: ItoMode.TRANSCRIBE,
-      },
-    ],
-  })),
+  // `modeId` est typé large exprès : `null` y est une valeur légitime — le
+  // raccourci qui suit le mode actif — et l'inférence sur le seul littéral
+  // ci-dessous l'aurait interdite aux tests qui en ont besoin.
+  get: mock(
+    (): {
+      isShortcutGloballyEnabled: boolean
+      keyboardShortcuts: { id: string; keys: string[]; modeId: string | null }[]
+    } => ({
+      isShortcutGloballyEnabled: true,
+      keyboardShortcuts: [
+        {
+          id: 'mock-shortcut-1',
+          keys: ['command', 'space'],
+          modeId: 'voice-to-text',
+        },
+      ],
+    }),
+  ),
 }
 mock.module('../main/store', () => ({
   default: mockMainStore,
+  store: mockMainStore,
+  getCurrentUserId: () => 'self-hosted',
+  getAdvancedSettings: () => ({}),
+}))
+
+mock.module('../main/modes/activeMode', () => ({
+  cycleActiveMode: mock(async () => ({
+    id: 'intelligent',
+    name: 'Intelligent',
+    icon: 'Sparkles',
+  })),
+  resolveActiveMode: async () => ({
+    id: 'voice-to-text',
+    name: 'Voice to text',
+    icon: 'Microphone',
+  }),
+  resolveMode: async () => ({
+    id: 'voice-to-text',
+    name: 'Voice to text',
+    icon: 'Microphone',
+  }),
+}))
+
+mock.module('../main/recordingStateNotifier', () => ({
+  recordingStateNotifier: {
+    notifyActiveModeChanged: mock(() => {}),
+    notifyRecordingStarted: mock(() => {}),
+    notifyRecordingStopped: mock(() => {}),
+  },
 }))
 
 mock.module('../constants/store-keys', () => ({
@@ -175,7 +211,7 @@ describe('Keyboard Module', () => {
         {
           id: 'mock-shortcut-1',
           keys: ['command', 'space'],
-          mode: ItoMode.TRANSCRIBE,
+          modeId: 'voice-to-text',
         },
       ],
     })
@@ -397,7 +433,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut-1',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -429,10 +465,57 @@ describe('Keyboard Module', () => {
         Buffer.from(JSON.stringify(spaceDown) + '\n'),
       )
 
-      expect(mockitoSessionManager.startSession).toHaveBeenCalled()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(
+        'voice-to-text',
+      )
       expect(console.info).toHaveBeenCalledWith(
         'lib Shortcut ACTIVATED, starting recording...',
       )
+    })
+
+    test('a shortcut that names no mode dictates in the active mode', async () => {
+      // `modeId: null` est le raccourci de dictée par défaut. Il doit atteindre
+      // `startSession` en `undefined` — la seule valeur que le gestionnaire de
+      // session résout en mode actif ; `null` y serait tombé sur le PREMIER
+      // mode, silencieusement, et le mode actif n'aurait servi à rien.
+      mockMainStore.get.mockReturnValue({
+        isShortcutGloballyEnabled: true,
+        keyboardShortcuts: [
+          {
+            id: 'default-shortcut',
+            keys: ['command', 'space'],
+            modeId: null,
+          },
+        ],
+      })
+
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      mockChildProcess.stdout.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            type: 'keydown',
+            key: 'MetaLeft',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            raw_code: 91,
+          }) + '\n',
+        ),
+      )
+      mockChildProcess.stdout.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            type: 'keydown',
+            key: 'Space',
+            timestamp: '2024-01-01T00:00:00.001Z',
+            raw_code: 32,
+          }) + '\n',
+        ),
+      )
+
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(undefined)
     })
 
     test('should deactivate shortcut when keys are released', async () => {
@@ -442,7 +525,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -497,7 +580,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-shortcut',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -537,7 +620,7 @@ describe('Keyboard Module', () => {
           {
             id: 'disable-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       }))
@@ -638,7 +721,7 @@ describe('Keyboard Module', () => {
           {
             id: 'complex-shortcut',
             keys: ['control', 'shift', 'f'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -689,7 +772,7 @@ describe('Keyboard Module', () => {
           {
             id: 'partial-test',
             keys: ['command', 'shift', 'a'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -731,7 +814,7 @@ describe('Keyboard Module', () => {
           {
             id: 'superset-test',
             keys: ['fn'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -773,7 +856,7 @@ describe('Keyboard Module', () => {
           {
             id: 'exact-match-test',
             keys: ['fn'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -796,7 +879,7 @@ describe('Keyboard Module', () => {
 
       // Should activate shortcut with exact match
       expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(
-        ItoMode.TRANSCRIBE,
+        'voice-to-text',
       )
     })
 
@@ -807,7 +890,7 @@ describe('Keyboard Module', () => {
           {
             id: 'extra-keys-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -859,7 +942,7 @@ describe('Keyboard Module', () => {
           {
             id: 'repeat-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -958,7 +1041,7 @@ describe('Keyboard Module', () => {
           {
             id: 'command-test',
             keys: ['command'], // Legacy key, should normalize to command-left
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1015,7 +1098,7 @@ describe('Keyboard Module', () => {
           {
             id: 'letter-test',
             keys: ['a'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1044,7 +1127,7 @@ describe('Keyboard Module', () => {
           {
             id: 'number-test',
             keys: ['1'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1073,7 +1156,7 @@ describe('Keyboard Module', () => {
           {
             id: 'unknown-test',
             keys: ['unknownkey'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1104,7 +1187,7 @@ describe('Keyboard Module', () => {
           {
             id: 'test-hotkey',
             keys: ['control', 'z'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1128,12 +1211,12 @@ describe('Keyboard Module', () => {
           {
             id: 'hotkey-1',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
           {
             id: 'hotkey-2',
             keys: ['control', 'shift', 'f'],
-            mode: ItoMode.EDIT,
+            modeId: 'intelligent',
           },
         ],
       })
@@ -1162,12 +1245,12 @@ describe('Keyboard Module', () => {
           {
             id: 'empty-hotkey',
             keys: [],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
           {
             id: 'valid-hotkey',
             keys: ['control', 'a'],
-            mode: ItoMode.EDIT,
+            modeId: 'intelligent',
           },
         ],
       })
@@ -1236,7 +1319,7 @@ describe('Keyboard Module', () => {
           {
             id: 'memory-test',
             keys: ['a', 'b'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1288,7 +1371,7 @@ describe('Keyboard Module', () => {
           {
             id: 'stuck-key-protection-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })
@@ -1334,7 +1417,7 @@ describe('Keyboard Module', () => {
           {
             id: 'partial-stuck-test',
             keys: ['command', 'space'],
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ],
       })

@@ -1,8 +1,9 @@
 import { LocalTranscriptionError } from './LocalTranscriptionService'
+import { stripReasoning } from './reasoning'
 import type { PinnedProvider } from '../../constants/modelCatalog'
 
 export type ChatMessage = {
-  role: 'system' | 'user'
+  role: 'system' | 'user' | 'assistant'
   content: string
 }
 
@@ -92,6 +93,12 @@ class OpenRouterChatService {
       messages: options.messages,
       temperature: options.temperature ?? 0.1,
       ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
+      // Le raisonnement n'a rien à faire dans un texte dicté. `exclude` et
+      // non `effort: 'none'` : les modèles à raisonnement obligatoire
+      // rejettent le second, le premier vaut pour tous. Le vrai filet reste
+      // `stripReasoning` plus bas — l'hôte qui laisse fuir un `<think>` dans
+      // `content` est précisément celui qui ignore ce champ.
+      reasoning: { exclude: true },
     }
 
     if (options.pinnedProvider) {
@@ -140,7 +147,7 @@ class OpenRouterChatService {
     }
 
     const content = json?.choices?.[0]?.message?.content
-    return typeof content === 'string' ? content.trim() : ''
+    return typeof content === 'string' ? stripReasoning(content) : ''
   }
 }
 

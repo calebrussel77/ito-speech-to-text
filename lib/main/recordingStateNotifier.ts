@@ -1,23 +1,46 @@
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getPillWindow, mainWindow } from './app'
 import {
   IPC_EVENTS,
   RecordingStatePayload,
   ProcessingStatePayload,
   PendingDictationsPayload,
+  ActiveModePayload,
 } from '../types/ipc'
 
 /**
  * Helper class to notify UI windows about recording state changes.
  */
 export class RecordingStateNotifier {
-  public notifyRecordingStarted(mode: ItoMode) {
+  public notifyRecordingStarted(mode: {
+    id: string
+    name: string
+    icon: string
+    color?: string | null
+  }) {
     console.log('[RecordingStateNotifier] Notifying recording started:', {
-      mode,
+      mode: mode.name,
     })
     this.sendToWindows(IPC_EVENTS.RECORDING_STATE_UPDATE, {
       isRecording: true,
-      mode,
+      modeId: mode.id,
+      modeName: mode.name,
+      modeIcon: mode.icon,
+      modeColor: mode.color ?? null,
+    })
+  }
+
+  public notifyActiveModeChanged(mode: {
+    id: string
+    name: string
+    icon: string
+    color?: string | null
+  }) {
+    console.log(`[RecordingStateNotifier] Active mode: ${mode.name}`)
+    this.sendToWindows(IPC_EVENTS.ACTIVE_MODE_UPDATE, {
+      modeId: mode.id,
+      modeName: mode.name,
+      modeIcon: mode.icon,
+      modeColor: mode.color ?? null,
     })
   }
 
@@ -46,12 +69,33 @@ export class RecordingStateNotifier {
     this.sendToWindows(IPC_EVENTS.PENDING_DICTATIONS_UPDATE, { count })
   }
 
+  /**
+   * Signals that `keyboardShortcuts` changed in the main-process store
+   * outside of a renderer-initiated write (e.g. a mode delete pruning its
+   * shortcut). No payload — listeners re-read the store themselves via the
+   * synchronous `window.electron.store.get`, so there is nothing to
+   * serialize and no risk of the payload drifting from what actually landed
+   * on disk.
+   */
+  public notifyKeyboardShortcutsChanged() {
+    console.log('[RecordingStateNotifier] Notifying keyboard shortcuts changed')
+    getPillWindow()?.webContents.send(IPC_EVENTS.KEYBOARD_SHORTCUTS_UPDATE)
+    if (
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !mainWindow.webContents.isDestroyed()
+    ) {
+      mainWindow.webContents.send(IPC_EVENTS.KEYBOARD_SHORTCUTS_UPDATE)
+    }
+  }
+
   private sendToWindows(
     event: string,
     payload:
       | RecordingStatePayload
       | ProcessingStatePayload
-      | PendingDictationsPayload,
+      | PendingDictationsPayload
+      | ActiveModePayload,
   ) {
     // Send to pill window
     getPillWindow()?.webContents.send(event, payload)

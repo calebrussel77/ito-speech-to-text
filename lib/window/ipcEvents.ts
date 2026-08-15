@@ -1,8 +1,9 @@
 import { BrowserWindow, ipcMain, shell, app, dialog } from 'electron'
 import log from 'electron-log'
 import os from 'os'
+import { basename } from 'path'
 import { exec } from 'child_process'
-import store, { getCurrentUserId } from '../main/store'
+import store, { getAdvancedSettings, getCurrentUserId } from '../main/store'
 import { STORE_KEYS } from '../constants/store-keys'
 import {
   checkAccessibilityPermission,
@@ -45,13 +46,14 @@ import {
   installCustomInteractionSound,
   playInteractionCompletionSoundTest,
 } from '../main/soundFeedback'
-import { ItoMode } from '@/app/generated/ito_pb'
 import {
   getSelectedText,
   getSelectedTextString,
   hasSelectedText,
 } from '../media/selected-text-reader'
 import { IPC_EVENTS } from '../types/ipc'
+import { registerModeIpc } from './modesIpc'
+import type { Provider } from '../main/transcription/providerHealth'
 
 const handleIPC = (channel: string, handler: (...args: any[]) => any) => {
   ipcMain.handle(channel, handler)
@@ -60,6 +62,8 @@ const handleIPC = (channel: string, handler: (...args: any[]) => any) => {
 // This single function registers all IPC handlers for the application.
 // It should only be called once.
 export function registerIPC() {
+  registerModeIpc()
+
   // Store
   ipcMain.on('electron-store-get', (event, val) => {
     event.returnValue = store.get(val)
@@ -180,7 +184,7 @@ export function registerIPC() {
   handleIPC('stop-key-listener', () => stopKeyListener())
   handleIPC('register-hotkeys', () => registerAllHotkeys())
   handleIPC('start-native-recording-service', () =>
-    itoSessionManager.startSession(ItoMode.TRANSCRIBE),
+    itoSessionManager.startSession('voice-to-text'),
   )
   handleIPC('stop-native-recording-service', () =>
     itoSessionManager.completeSession(),
@@ -829,6 +833,12 @@ export function registerIPC() {
     return InteractionsTable.softDeleteAllVisible(user_id)
   })
 
+  handleIPC(
+    'interactions:rename-speakers',
+    async (_e, id: string, labels: Record<number, string>) =>
+      InteractionsTable.updateSpeakerLabels(id, labels),
+  )
+
   // Pending dictations (failed transcriptions waiting for the network)
   handleIPC('pending-dictations:count', () => {
     return pendingDictationStore.list().length
@@ -836,6 +846,54 @@ export function registerIPC() {
 
   handleIPC('pending-dictations:retry', async () => {
     return await itoStreamController.flushPendingDictations()
+  })
+
+  // Transcribe a recording made outside Ito (Teams, OBS, a dictaphone…)
+  // through the active mode.
+  handleIPC('transcribe-file', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Transcribe a recording',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Audio and video',
+          extensions: ['wav', 'mp3', 'm4a', 'mp4', 'ogg', 'flac', 'webm'],
+        },
+      ],
+    })
+    if (canceled || !filePaths[0]) return { ok: false }
+
+    const { transcribeExistingFile } = await import(
+      '../main/transcription/fileTranscription'
+    )
+    const { showNotification, focusMainWindow } = await import(
+      '../main/notifications'
+    )
+
+    const fileName = basename(filePaths[0])
+    const result = await transcribeExistingFile(filePaths[0])
+
+    // Une transcription de fichier peut durer plusieurs minutes : on n'attend
+    // pas que l'utilisateur soit resté devant la fenêtre pour lui dire que
+    // c'est fini. Le clic ramène la fenêtre sur l'historique, là où le
+    // résultat vient d'être écrit — sinon la notification annonce un résultat
+    // qu'il faut ensuite aller chercher.
+    if (result.ok) {
+      const speakers = result.speakerCount ?? 0
+      showNotification(
+        'Ito — transcription ready',
+        speakers >= 2
+          ? `${fileName} — ${speakers} speakers, split by voice.`
+          : `${fileName} — transcribed.`,
+        { onClick: () => focusMainWindow('home') },
+      )
+    } else if (result.error) {
+      showNotification('Ito — transcription failed', result.error, {
+        onClick: () => focusMainWindow(),
+      })
+    }
+
+    return result
   })
 
   // User Data Deletion
@@ -868,6 +926,39 @@ export function registerIPC() {
     }
   })
 
+  handleIPC('test-deepgram-api-key', async (_e, apiKey: string) => {
+    const { deepgramTranscriptionService } = await import(
+      '../main/transcription/DeepgramTranscriptionService'
+    )
+    try {
+      return await deepgramTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  handleIPC('test-google-api-key', async (_e, apiKey: string) => {
+    const { googleTranscriptionService } = await import(
+      '../main/transcription/GoogleTranscriptionService'
+    )
+    try {
+      return await googleTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  handleIPC('test-openai-api-key', async (_e, apiKey: string) => {
+    const { openaiTranscriptionService } = await import(
+      '../main/transcription/OpenAITranscriptionService'
+    )
+    try {
+      return await openaiTranscriptionService.testConnection(apiKey)
+    } catch (error: any) {
+      return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
   handleIPC('test-openrouter-api-key', async (_e, apiKey: string) => {
     const { openRouterTranscriptionService } = await import(
       '../main/transcription/OpenRouterTranscriptionService'
@@ -876,6 +967,26 @@ export function registerIPC() {
       return await openRouterTranscriptionService.testConnection(apiKey)
     } catch (error: any) {
       return { ok: false, message: error?.message || 'Unable to test key' }
+    }
+  })
+
+  // Why the last long dictation could not use a given provider. Returns null
+  // unless the failure describes the key currently stored, so a record left
+  // by a key that has since been replaced never shows up as a live warning.
+  handleIPC('get-provider-failure', async (_e, provider: Provider) => {
+    const { getProviderFailure } = await import(
+      '../main/transcription/providerHealth'
+    )
+    const advancedSettings = getAdvancedSettings()
+    const apiKey =
+      provider === 'deepgram'
+        ? advancedSettings?.deepgramApiKey
+        : advancedSettings?.openRouterApiKey
+    try {
+      return getProviderFailure(provider, apiKey)
+    } catch (error) {
+      console.warn('[IPC] Could not read the provider failure record:', error)
+      return null
     }
   })
 
@@ -947,13 +1058,16 @@ export function registerIPC() {
   // When the hotkey is pressed, start recording and notify the pill window.
   ipcMain.on('start-native-recording', _event => {
     console.log(`IPC: Received 'start-native-recording'`)
-    itoSessionManager.startSession(ItoMode.TRANSCRIBE)
+    // No explicit mode id: resolves the user's active mode instead of
+    // hardcoding voice-to-text, so a mode without its own shortcut can still
+    // be used from the pill's click-to-record.
+    itoSessionManager.startSession()
   })
 
   ipcMain.on('start-native-recording-test', _event => {
     console.log(`IPC: Received 'start-native-recording-test'`)
     const deviceId = store.get(STORE_KEYS.SETTINGS).microphoneDeviceId
-    audioRecorderService.startRecording(deviceId)
+    audioRecorderService.startRecording({ deviceId })
   })
 
   // When the hotkey is released, stop recording and notify the pill window.

@@ -23,20 +23,36 @@ import {
   getTotalWordsLevel,
   getActivityMessage,
 } from './activityMessages'
-import { ItoMode } from '@/app/generated/ito_pb'
-import { getKeyDisplay } from '@/app/utils/keyboard'
+import { formatChord, formatChordDetailed } from '@/app/utils/keyboard'
+import { Kbd } from '@/app/components/ui/kbd'
 import { createStereo48kWavFromMonoPCM } from '@/app/utils/audioUtils'
 import { KeyName } from '@/lib/types/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
 import EngineBadge from '@/app/components/home/EngineBadge'
 import { ProUpgradeDialog } from '../ProUpgradeDialog'
 import useBillingState from '@/app/hooks/useBillingState'
+import AddAsExampleDialog from './history/AddAsExampleDialog'
+import SpeakersView from './history/SpeakersView'
 
 // Interface for interaction statistics
 interface InteractionStats {
   streakDays: number
   totalWords: number
   averageWPM: number
+}
+
+// Ce que "Add as example" a besoin de connaître d'une ligne d'historique :
+// le brut et le résultat affiché (déjà résolus par getDisplayText), pas
+// l'Interaction entière — le dialogue n'a rien d'autre à en faire.
+type HistoryView = 'result' | 'original' | 'speakers'
+
+interface ExampleDraft {
+  /** The source interaction's id — used as the dialog's React key so its
+   *  internal state can't survive from one history row to another. */
+  id: string
+  rawTranscript: string
+  currentResult: string
+  modeId: string | null
 }
 
 const StatCard = ({
@@ -79,8 +95,8 @@ interface HomeContentProps {
 export default function HomeContent({
   isStartingTrial = false,
 }: HomeContentProps) {
-  const { getItoModeShortcuts } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.TRANSCRIBE)[0].keys
+  const { getModeShortcuts } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]?.keys ?? []
   const { user } = useAuthStore()
   const firstName = user?.name?.split(' ')[0]
   const platform = usePlatform()
@@ -91,6 +107,11 @@ export default function HomeContent({
   const [isRetryingPending, setIsRetryingPending] = useState(false)
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set())
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
+  // Trois vues possibles par ligne — le résultat (par défaut), le brut avant
+  // réécriture, et le découpage par locuteur. Un simple Set à deux états ne
+  // suffisait plus une fois Speakers ajoutée à côté d'Original.
+  const [views, setViews] = useState<Record<string, HistoryView>>({})
+  const [exampleFor, setExampleFor] = useState<ExampleDraft | null>(null)
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
   const [stats, setStats] = useState<InteractionStats>({
     streakDays: 0,
@@ -293,7 +314,11 @@ export default function HomeContent({
     return `${Math.floor(days / 30)} months`
   }
 
-  const loadInteractions = useCallback(async () => {
+  // Retourne si le refetch a réussi : SpeakersView s'en sert pour ne fermer
+  // son panneau de renommage qu'une fois la liste vraiment à jour (sinon un
+  // refetch qui échoue laisserait les anciens libellés à l'écran sans le
+  // signaler, cf. `onRenamed` plus bas).
+  const loadInteractions = useCallback(async (): Promise<boolean> => {
     try {
       const allInteractions = await window.api.interactions.getAll()
 
@@ -307,8 +332,10 @@ export default function HomeContent({
       // Calculate and set statistics
       const calculatedStats = calculateStats(sortedInteractions)
       setStats(calculatedStats)
+      return true
     } catch (error) {
       console.error('Failed to load interactions:', error)
+      return false
     } finally {
       setLoading(false)
     }
@@ -474,6 +501,19 @@ export default function HomeContent({
       }
     }
 
+    // A dictation that was routed to the precise engine and came back from
+    // Groq reads exactly like an ordinary one. The tooltip is the only place
+    // that says otherwise, so it carries the engine that was skipped and why.
+    const fallback = interaction.asr_output?.fallback
+    if (fallback) {
+      return {
+        text: transcript,
+        isError: false,
+        tone: 'ok',
+        tooltip: `${fallback.from} was unavailable (${fallback.code}: ${fallback.message}) — Groq transcribed this dictation instead.`,
+      }
+    }
+
     // Return the actual transcript
     return {
       text: transcript,
@@ -505,6 +545,20 @@ export default function HomeContent({
       }
       return next
     })
+  }
+
+  const viewOf = (interaction: Interaction): HistoryView =>
+    views[interaction.id] ?? 'result'
+
+  // Original n'existe que si la réécriture a changé quelque chose du brut
+  // (InteractionManager met rawTranscript à null sinon) ; Speakers n'existe
+  // que si Deepgram a diarisé l'audio. La très grande majorité des dictées —
+  // du texte simple, sans réunion — n'a ni l'un ni l'autre.
+  const availableViews = (interaction: Interaction): HistoryView[] => {
+    const list: HistoryView[] = ['result']
+    if (interaction.asr_output?.rawTranscript) list.push('original')
+    if (interaction.asr_output?.speakers?.length) list.push('speakers')
+    return list
   }
 
   const handleDeleteInteraction = async (interactionId: string) => {
@@ -673,17 +727,15 @@ export default function HomeContent({
             </div>
             <div className="text-sm text-muted-foreground">
               <span key="hold-down">Hold down the trigger key </span>
-              {keyboardShortcut.map((key, index) => (
-                <React.Fragment key={index}>
-                  <span className="bg-[var(--surface-3)] px-1.5 py-0.5 rounded text-xs font-mono border border-border text-foreground">
-                    {getKeyDisplay(key as KeyName, platform, {
-                      showDirectionalText: false,
-                      format: 'label',
-                    })}
-                  </span>
-                  <span>{index < keyboardShortcut.length - 1 && ' + '}</span>
-                </React.Fragment>
-              ))}
+              <Kbd
+                className="mx-0.5 align-middle"
+                title={formatChordDetailed(
+                  keyboardShortcut as KeyName[],
+                  platform,
+                )}
+              >
+                {formatChord(keyboardShortcut as KeyName[], platform)}
+              </Kbd>
               <span key="and"> and speak into any textbox</span>
             </div>
           </div>
@@ -770,12 +822,26 @@ export default function HomeContent({
                 <div className="glass-card rounded-lg divide-y divide-border/50 overflow-hidden">
                   {dateInteractions.map(interaction => {
                     const displayInfo = getDisplayText(interaction)
+                    const view = viewOf(interaction)
+                    const rowViews = availableViews(interaction)
+                    const shownText =
+                      view === 'original' &&
+                      interaction.asr_output?.rawTranscript
+                        ? interaction.asr_output.rawTranscript
+                        : displayInfo.text
                     const durationLabel = formatDuration(
                       interaction.duration_ms,
                     )
                     const isExpanded = expandedItems.has(interaction.id)
+                    // Clampability must follow shownText, not displayInfo.text:
+                    // the rendered element shows shownText, so the "Show more"
+                    // affordance has to match whichever variant is on screen.
+                    // Speakers has its own scroll container, so the clamp/expand
+                    // affordance doesn't apply there.
                     const showToggle =
-                      !displayInfo.isError && isClampable(displayInfo.text)
+                      view !== 'speakers' &&
+                      !displayInfo.isError &&
+                      isClampable(shownText)
 
                     return (
                       <div
@@ -791,6 +857,54 @@ export default function HomeContent({
                             <EngineBadge
                               engine={interaction.asr_output?.engine}
                             />
+                            {interaction.asr_output?.modeName && (
+                              <span className="text-[11px] text-muted-foreground/70">
+                                {interaction.asr_output.modeName}
+                              </span>
+                            )}
+                            {rowViews.length > 1 &&
+                              rowViews.map(candidateView => (
+                                <button
+                                  key={candidateView}
+                                  type="button"
+                                  onClick={() =>
+                                    setViews(previous => ({
+                                      ...previous,
+                                      [interaction.id]: candidateView,
+                                    }))
+                                  }
+                                  className={`text-[11px] underline-offset-2 hover:underline ${
+                                    view === candidateView
+                                      ? 'text-foreground'
+                                      : 'text-muted-foreground/70 hover:text-foreground'
+                                  }`}
+                                >
+                                  {candidateView === 'result'
+                                    ? 'Result'
+                                    : candidateView === 'original'
+                                      ? 'Original'
+                                      : 'Speakers'}
+                                </button>
+                              ))}
+                            {interaction.asr_output?.rawTranscript && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExampleFor({
+                                    id: interaction.id,
+                                    rawTranscript:
+                                      interaction.asr_output?.rawTranscript ??
+                                      '',
+                                    currentResult: displayInfo.text,
+                                    modeId:
+                                      interaction.asr_output?.modeId ?? null,
+                                  })
+                                }
+                                className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
+                              >
+                                Add as example
+                              </button>
+                            )}
                             {durationLabel && (
                               <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                                 {durationLabel}
@@ -808,34 +922,50 @@ export default function HomeContent({
                             )}
                           </div>
 
-                          <div
-                            className={`${
-                              displayInfo.tone === 'pending'
-                                ? 'text-[var(--subtle-foreground)] italic'
-                                : displayInfo.isError
-                                  ? 'text-destructive'
-                                  : 'text-foreground'
-                            } text-sm leading-relaxed whitespace-pre-wrap ${
-                              isExpanded ? '' : 'line-clamp-3'
-                            }`}
-                          >
-                            {displayInfo.text}
-                          </div>
+                          {view === 'speakers' ? (
+                            <SpeakersView
+                              interactionId={interaction.id}
+                              // `?? []` : cette vue n'est atteignable que si
+                              // `availableViews` a déjà vu `asr_output.speakers`
+                              // non vide (control flow), mais rien ici ne
+                              // garantit que cet invariant survive à un futur
+                              // changement — l'accès doit se défendre seul.
+                              segments={interaction.asr_output?.speakers ?? []}
+                              onRenamed={loadInteractions}
+                            />
+                          ) : (
+                            <>
+                              <div
+                                className={`${
+                                  displayInfo.tone === 'pending'
+                                    ? 'text-[var(--subtle-foreground)] italic'
+                                    : displayInfo.isError
+                                      ? 'text-destructive'
+                                      : 'text-foreground'
+                                } text-sm leading-relaxed whitespace-pre-wrap ${
+                                  isExpanded ? '' : 'line-clamp-3'
+                                }`}
+                              >
+                                {shownText}
+                              </div>
 
-                          {showToggle && (
-                            <button
-                              className="mt-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                              onClick={() => toggleExpanded(interaction.id)}
-                            >
-                              {isExpanded ? 'Show less' : 'Show more'}
-                            </button>
+                              {showToggle && (
+                                <button
+                                  className="mt-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                                  onClick={() => toggleExpanded(interaction.id)}
+                                >
+                                  {isExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
 
                         {/* Copy, Download, and Play buttons - only show on hover or when playing */}
                         <div className="flex items-center gap-2 pt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          {/* Copy button */}
-                          {!displayInfo.isError && (
+                          {/* Copy button — Speakers has its own Copy, tied to
+                              the named transcript rather than shownText. */}
+                          {view !== 'speakers' && !displayInfo.isError && (
                             <Tooltip
                               open={openTooltipKey === `copy:${interaction.id}`}
                               onOpenChange={open => {
@@ -863,10 +993,8 @@ export default function HomeContent({
                                       : 'text-muted-foreground hover:text-foreground'
                                   }`}
                                   onClick={() =>
-                                    copyToClipboard(
-                                      displayInfo.text,
-                                      interaction.id,
-                                    )
+                                    // Copy whatever is displayed, not always the rewrite.
+                                    copyToClipboard(shownText, interaction.id)
                                   }
                                 >
                                   {copiedItems.has(interaction.id) ? (
@@ -948,6 +1076,16 @@ export default function HomeContent({
 
       {/* Pro Upgrade Dialog */}
       <ProUpgradeDialog open={showProDialog} onOpenChange={setShowProDialog} />
+
+      {exampleFor && (
+        <AddAsExampleDialog
+          key={exampleFor.id}
+          rawTranscript={exampleFor.rawTranscript}
+          currentResult={exampleFor.currentResult}
+          defaultModeId={exampleFor.modeId}
+          onClose={() => setExampleFor(null)}
+        />
+      )}
     </div>
   )
 }

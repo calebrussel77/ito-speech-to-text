@@ -9,9 +9,10 @@ import type {
   InteractionSoundTheme,
   KeyboardShortcutConfig,
 } from '@/lib/main/store'
-import { ItoMode } from '../generated/ito_pb'
-
-import { ITO_MODE_SHORTCUT_DEFAULTS } from '@/lib/constants/keyboard-defaults'
+import {
+  ACTIVE_MODE_SHORTCUT_ID,
+  MODE_SHORTCUT_DEFAULTS,
+} from '@/lib/constants/keyboard-defaults'
 import {
   normalizeChord,
   ShortcutResult,
@@ -19,6 +20,7 @@ import {
   isReservedCombination,
 } from '../utils/keyboard'
 import { KeyName } from '@/lib/types/keyboard'
+import { IPC_EVENTS } from '@/lib/types/ipc'
 
 interface SettingsState {
   shareAnalytics: boolean
@@ -34,6 +36,9 @@ interface SettingsState {
   microphoneName: string
   theme: 'light' | 'dark' | 'system'
   keyboardShortcuts: KeyboardShortcutConfig[]
+  /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
+  cycleModeShortcut: KeyName[]
+  setCycleModeShortcut: (keys: KeyName[]) => void
   setShareAnalytics: (share: boolean) => void
   setLaunchAtLogin: (launch: boolean) => void
   setShowItoBarAlways: (show: boolean) => void
@@ -45,9 +50,11 @@ interface SettingsState {
   setPasteCombo: (combo: SettingsState['pasteCombo']) => void
   setMicrophoneDeviceId: (deviceId: string, name: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
-  createKeyboardShortcut: (mode: ItoMode) => ShortcutResult
+  createKeyboardShortcut: (modeId: string) => ShortcutResult
+  /** Crée ou réattribue le raccourci qui suit le mode actif. */
+  setActiveModeShortcut: (keys: KeyName[]) => Promise<ShortcutResult>
   removeKeyboardShortcut: (shortcutId: string) => void
-  getItoModeShortcuts: (mode: ItoMode) => KeyboardShortcutConfig[]
+  getModeShortcuts: (modeId: string) => KeyboardShortcutConfig[]
   updateKeyboardShortcut: (
     shortcutId: string,
     keys: KeyName[],
@@ -75,16 +82,18 @@ const getInitialState = () => {
     theme: storedSettings?.theme ?? 'dark',
     keyboardShortcuts: storedSettings?.keyboardShortcuts ?? [
       {
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.EDIT],
-        mode: ItoMode.EDIT,
+        keys: MODE_SHORTCUT_DEFAULTS.intelligent,
+        modeId: 'intelligent',
         id: crypto.randomUUID(),
       },
       {
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.TRANSCRIBE],
-        mode: ItoMode.TRANSCRIBE,
+        keys: MODE_SHORTCUT_DEFAULTS['voice-to-text'],
+        modeId: 'voice-to-text',
         id: crypto.randomUUID(),
       },
     ],
+    // Ships unbound — see the matching default in lib/main/store.ts.
+    cycleModeShortcut: storedSettings?.cycleModeShortcut ?? [],
     firstName: storedSettings?.firstName ?? '',
     lastName: storedSettings?.lastName ?? '',
     email: storedSettings?.email ?? '',
@@ -114,6 +123,43 @@ const syncToStore = (state: Partial<SettingsState>) => {
   if ('keyboardShortcuts' in state && window.api?.registerHotkeys) {
     window.api.registerHotkeys()
   }
+}
+
+/**
+ * Les deux vérifications qu'un accord doit passer avant d'être écrit : la
+ * combinaison n'est pas réservée par l'OS, et elle n'est pas déjà prise.
+ *
+ * Partagée par la mise à jour d'un raccourci et par la création du raccourci
+ * par défaut : deux chemins d'écriture qui ne doivent pas juger différemment.
+ */
+async function validateChord(
+  currentShortcuts: KeyboardShortcutConfig[],
+  shortcut: KeyboardShortcutConfig,
+  keys: KeyName[],
+): Promise<{ keys: KeyName[]; error?: ShortcutResult }> {
+  const normalizedKeys = normalizeChord(keys)
+  const platform = await window.api.getPlatform()
+
+  const reservedCheck = isReservedCombination(normalizedKeys, platform)
+  if (reservedCheck.isReserved) {
+    return {
+      keys: normalizedKeys,
+      error: {
+        success: false,
+        error: 'reserved-combination',
+        errorMessage: reservedCheck.reason,
+      },
+    }
+  }
+
+  const duplicateError = validateShortcutForDuplicate(
+    currentShortcuts,
+    { ...shortcut, keys: normalizedKeys },
+    shortcut.modeId,
+  )
+  if (duplicateError) return { keys: normalizedKeys, error: duplicateError }
+
+  return { keys: normalizedKeys }
 }
 
 export const useSettingsStore = create<SettingsState>(set => {
@@ -207,12 +253,19 @@ export const useSettingsStore = create<SettingsState>(set => {
       syncToStore(partialState)
     },
     setTheme: createSetter('theme', 'ui'),
-    createKeyboardShortcut: (mode: ItoMode): ShortcutResult => {
+    setCycleModeShortcut: (keys: KeyName[]) => {
+      set(() => {
+        const partialState = { cycleModeShortcut: normalizeChord(keys) }
+        syncToStore(partialState)
+        return partialState
+      })
+    },
+    createKeyboardShortcut: (modeId: string): ShortcutResult => {
       const currentShortcuts = useSettingsStore.getState().keyboardShortcuts
 
       const newShortcut = {
         keys: [],
-        mode,
+        modeId,
         id: crypto.randomUUID(),
       }
 
@@ -257,9 +310,41 @@ export const useSettingsStore = create<SettingsState>(set => {
       set(partialState)
       syncToStore(partialState)
     },
-    getItoModeShortcuts: (mode: ItoMode) => {
+    getModeShortcuts: (modeId: string) => {
       const { keyboardShortcuts } = useSettingsStore.getState()
-      return keyboardShortcuts.filter(ks => ks.mode === mode)
+      return keyboardShortcuts.filter(ks => ks.modeId === modeId)
+    },
+    /**
+     * Le raccourci de dictée par défaut : celui qui ne nomme aucun mode et suit
+     * le mode actif. Il n'y en a qu'un, créé à la première attribution — d'où
+     * cette action plutôt qu'un passage par `createKeyboardShortcut`, qui
+     * laisserait une ligne vide derrière lui si la validation refusait l'accord.
+     */
+    setActiveModeShortcut: async (keys: KeyName[]): Promise<ShortcutResult> => {
+      const currentShortcuts = useSettingsStore.getState().keyboardShortcuts
+      const existing = currentShortcuts.find(ks => ks.modeId === null)
+
+      if (existing) {
+        return useSettingsStore
+          .getState()
+          .updateKeyboardShortcut(existing.id, keys)
+      }
+
+      const created: KeyboardShortcutConfig = {
+        id: ACTIVE_MODE_SHORTCUT_ID,
+        keys: [],
+        modeId: null,
+      }
+      const validation = await validateChord(currentShortcuts, created, keys)
+      if (validation.error) return validation.error
+
+      const newShortcuts = [
+        ...currentShortcuts,
+        { ...created, keys: validation.keys },
+      ]
+      set({ keyboardShortcuts: newShortcuts })
+      syncToStore({ keyboardShortcuts: newShortcuts })
+      return { success: true }
     },
     updateKeyboardShortcut: async (
       shortcutId: string,
@@ -274,34 +359,12 @@ export const useSettingsStore = create<SettingsState>(set => {
         return { success: false, error: 'not-found' }
       }
 
-      const normalizedKeys = normalizeChord(keys)
-
-      // Get platform for validation
-      const platform = await window.api.getPlatform()
-
-      // Check for reserved combinations
-      const reservedCheck = isReservedCombination(normalizedKeys, platform)
-      if (reservedCheck.isReserved) {
-        return {
-          success: false,
-          error: 'reserved-combination',
-          errorMessage: reservedCheck.reason,
-        }
-      }
-
-      const newShortcut = {
-        ...shortcut,
-        keys: normalizedKeys,
-      }
-
-      const duplicateError = validateShortcutForDuplicate(
+      const { keys: normalizedKeys, error } = await validateChord(
         currentShortcuts,
-        newShortcut,
-        shortcut.mode,
+        shortcut,
+        keys,
       )
-      if (duplicateError) {
-        return duplicateError
-      }
+      if (error) return error
 
       const updatedShortcuts = currentShortcuts.map(ks =>
         ks.id === shortcutId ? { ...ks, keys: normalizedKeys } : ks,
@@ -344,6 +407,23 @@ if (typeof window !== 'undefined' && window.api?.loginItem?.getSettings) {
         error,
       )
     })
+}
+
+// `keyboardShortcuts` is read once at module load (getInitialState) and
+// otherwise only ever changes through this store's own setters — it has no
+// way to learn about a main-side write, such as a mode delete pruning that
+// mode's shortcut from the store on disk. Left unhandled, the next
+// create/update/remove here merges this stale in-memory array back over the
+// main process's filtered one and resurrects the deleted shortcut. Refetch
+// straight from the (synchronous) electron-store on this signal rather than
+// trusting a payload, so this can never itself drift from what's on disk.
+if (typeof window !== 'undefined' && window.api?.on) {
+  window.api.on(IPC_EVENTS.KEYBOARD_SHORTCUTS_UPDATE, () => {
+    const storedSettings = window.electron.store.get(STORE_KEYS.SETTINGS)
+    useSettingsStore.setState({
+      keyboardShortcuts: storedSettings?.keyboardShortcuts ?? [],
+    })
+  })
 }
 
 if (typeof window !== 'undefined' && window.api?.dock?.getVisibility) {

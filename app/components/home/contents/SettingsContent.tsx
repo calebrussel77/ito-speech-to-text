@@ -4,7 +4,6 @@ import {
   Microphone,
   UserCircle,
   Code,
-  Sparkles,
 } from '@mynaui/icons-react'
 import { useMainStore } from '@/app/store/useMainStore'
 import { PillTabs, type PillTabItem } from '../../ui/pill-tabs'
@@ -13,23 +12,15 @@ import AudioSettingsContent from './settings/AudioSettingsContent'
 import AccountSettingsContent from './settings/AccountSettingsContent'
 import KeyboardSettingsContent from './settings/KeyboardSettingsContent'
 import AdvancedSettingsContent from './settings/AdvancedSettingsContent'
-import ModelsSettingsContent from './settings/ModelsSettingsContent'
 import PricingBillingSettingsContent from './settings/PricingBillingSettingsContent'
 
-type SettingsPage =
-  | 'general'
-  | 'keyboard'
-  | 'audio'
-  | 'account'
-  | 'models'
-  | 'advanced'
+type SettingsPage = 'general' | 'keyboard' | 'audio' | 'account' | 'advanced'
 
 const TABS: PillTabItem<SettingsPage>[] = [
   { id: 'general', label: 'General', icon: CogFour },
   { id: 'keyboard', label: 'Keyboard', icon: Keyboard },
   { id: 'audio', label: 'Audio & Mic', icon: Microphone },
   { id: 'account', label: 'Account', icon: UserCircle },
-  { id: 'models', label: 'Models', icon: Sparkles },
   { id: 'advanced', label: 'Advanced', icon: Code },
 ]
 
@@ -48,8 +39,6 @@ export default function SettingsContent() {
         return <PricingBillingSettingsContent />
       case 'account':
         return <AccountSettingsContent />
-      case 'models':
-        return <ModelsSettingsContent />
       case 'advanced':
         return <AdvancedSettingsContent />
       default:

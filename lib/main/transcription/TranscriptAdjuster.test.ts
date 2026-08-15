@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import { ItoMode } from '@/app/generated/ito_pb'
 
 const mockGroqComplete = mock(async (_options: any) => 'groq adjusted')
 mock.module('./LocalTranscriptionService', () => ({
@@ -20,13 +19,41 @@ const context = {
   windowTitle: 'Editor',
   appName: 'Code',
   contextText: '',
+  clipboardText: '',
   vocabularyWords: [],
   dictionaryEntries: [],
 } as any
 
+const mode = (overrides: Record<string, unknown> = {}) =>
+  ({
+    id: 'intelligent',
+    userId: 'self-hosted',
+    name: 'Intelligent',
+    preset: 'intelligent',
+    icon: 'Sparkles',
+    instructions: '## Role\nFormat the user message.',
+    language: 'fr',
+    voiceModelKey: null,
+    textModelKey: null,
+    useLlm: true,
+    contextApplication: false,
+    contextClipboard: false,
+    contextSelection: false,
+    audioSource: 'microphone',
+    playbackWhenRecording: 'mute',
+    autoPaste: true,
+    autocapitalize: true,
+    identifySpeakers: false,
+    asrPrompt: '',
+    sortOrder: 0,
+    createdAt: '2026-08-14T00:00:00.000Z',
+    updatedAt: '2026-08-14T00:00:00.000Z',
+    ...overrides,
+  }) as any
+
 const settings = (overrides: Record<string, unknown> = {}) =>
   ({
-    llm: { llmTemperature: 0.1, editingPrompt: 'Fix it.' },
+    llm: { llmTemperature: 0.1 },
     openRouterApiKey: 'sk-or-test',
     ...overrides,
   }) as any
@@ -39,12 +66,12 @@ beforeEach(() => {
 })
 
 describe('TranscriptAdjuster', () => {
-  test('TRANSCRIBE mode never calls a model', async () => {
+  test('a mode that does not rewrite never calls a model', async () => {
     const result = await transcriptAdjuster.adjust(
       '  raw transcript  ',
-      ItoMode.TRANSCRIBE,
+      mode({ useLlm: false, textModelKey: 'gpt-oss-20b-groq' }),
       context,
-      settings({ textModelKey: 'gpt-oss-20b-groq' }),
+      settings(),
     )
 
     expect(result).toBe('raw transcript')
@@ -55,9 +82,9 @@ describe('TranscriptAdjuster', () => {
   test('a Groq catalogue key routes to Groq', async () => {
     const result = await transcriptAdjuster.adjust(
       'raw',
-      ItoMode.EDIT,
+      mode({ textModelKey: 'gpt-oss-20b-groq' }),
       context,
-      settings({ textModelKey: 'gpt-oss-20b-groq' }),
+      settings(),
     )
 
     expect(result).toBe('groq adjusted')
@@ -70,9 +97,9 @@ describe('TranscriptAdjuster', () => {
   test('an OpenRouter catalogue key routes to OpenRouter', async () => {
     const result = await transcriptAdjuster.adjust(
       'raw',
-      ItoMode.EDIT,
+      mode({ textModelKey: 'mistral-nemo' }),
       context,
-      settings({ textModelKey: 'mistral-nemo' }),
+      settings(),
     )
 
     expect(result).toBe('openrouter adjusted')
@@ -89,9 +116,9 @@ describe('TranscriptAdjuster', () => {
   test('a Cerebras key pins the upstream provider', async () => {
     await transcriptAdjuster.adjust(
       'raw',
-      ItoMode.EDIT,
+      mode({ textModelKey: 'gpt-oss-120b-cerebras' }),
       context,
-      settings({ textModelKey: 'gpt-oss-120b-cerebras' }),
+      settings(),
     )
 
     expect(mockOpenRouterComplete).toHaveBeenCalledWith(
@@ -102,12 +129,12 @@ describe('TranscriptAdjuster', () => {
     )
   })
 
-  test('an unknown key falls back to the default model', async () => {
+  test('a mode without a model falls back to the global default', async () => {
     await transcriptAdjuster.adjust(
       'raw',
-      ItoMode.EDIT,
+      mode({ textModelKey: null }),
       context,
-      settings({ textModelKey: 'model-that-left-the-catalogue' }),
+      settings({ textModelKey: 'gpt-oss-20b-groq' }),
     )
 
     expect(mockGroqComplete).toHaveBeenCalledWith(
@@ -115,14 +142,55 @@ describe('TranscriptAdjuster', () => {
     )
   })
 
+  test('an unknown key falls back to the default model', async () => {
+    await transcriptAdjuster.adjust(
+      'raw',
+      mode({ textModelKey: 'model-that-left-the-catalogue' }),
+      context,
+      settings(),
+    )
+
+    expect(mockGroqComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'openai/gpt-oss-20b' }),
+    )
+  })
+
+  test('the mode instructions become the system message', async () => {
+    await transcriptAdjuster.adjust(
+      'raw',
+      mode({ textModelKey: 'gpt-oss-20b-groq' }),
+      context,
+      settings(),
+    )
+
+    const [{ messages }] = mockGroqComplete.mock.calls[0] as any[]
+    expect(messages[0].role).toBe('system')
+    expect(messages[0].content).toContain('## Role')
+    // La langue du mode est imposée à la sortie.
+    expect(messages[0].content).toContain('French')
+    expect(messages[1]).toEqual({ role: 'user', content: 'raw' })
+  })
+
+  test('an automatic language leaves the output language alone', async () => {
+    await transcriptAdjuster.adjust(
+      'raw',
+      mode({ textModelKey: 'gpt-oss-20b-groq', language: 'auto' }),
+      context,
+      settings(),
+    )
+
+    const [{ messages }] = mockGroqComplete.mock.calls[0] as any[]
+    expect(messages[0].content).not.toContain('Always write the result in')
+  })
+
   test('a failed adjustment returns the raw transcript', async () => {
     mockOpenRouterComplete.mockRejectedValue(new Error('rate limited'))
 
     const result = await transcriptAdjuster.adjust(
       'raw transcript',
-      ItoMode.EDIT,
+      mode({ textModelKey: 'mistral-nemo' }),
       context,
-      settings({ textModelKey: 'mistral-nemo' }),
+      settings(),
     )
 
     expect(result).toBe('raw transcript')
@@ -133,9 +201,9 @@ describe('TranscriptAdjuster', () => {
 
     const result = await transcriptAdjuster.adjust(
       'raw transcript',
-      ItoMode.EDIT,
+      mode({ textModelKey: 'gpt-oss-20b-groq' }),
       context,
-      settings({ textModelKey: 'gpt-oss-20b-groq' }),
+      settings(),
     )
 
     expect(result).toBe('raw transcript')

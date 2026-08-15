@@ -1,5 +1,3 @@
-import { ItoMode } from '@/app/generated/ito_pb'
-import { Notification } from 'electron'
 import log from 'electron-log'
 import { AudioStreamManager } from './audio/AudioStreamManager'
 import { localAudioProcessor } from './transcription/LocalAudioProcessor'
@@ -8,16 +6,30 @@ import {
   LocalTranscriptionError,
   TranscriptionOptions,
 } from './transcription/LocalTranscriptionService'
+import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import {
-  UNRECOVERABLE_CODES,
-  LONG_DICTATION_THRESHOLD_MS,
-} from '../constants/transcription'
-import {
-  DEFAULT_LONG_VOICE_KEY,
   DEFAULT_SHORT_VOICE_KEY,
   resolveModel,
 } from '../constants/modelCatalog'
+import { asrLanguageHint } from '../constants/modeLanguages'
+import { showNotification } from './notifications'
+import type { Mode } from './sqlite/models'
+import { resolveActiveMode } from './modes/activeMode'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
+import { openaiTranscriptionService } from './transcription/OpenAITranscriptionService'
+import { googleTranscriptionService } from './transcription/GoogleTranscriptionService'
+import {
+  deepgramTranscriptionService,
+  type SpeakerSegment,
+} from './transcription/DeepgramTranscriptionService'
+import { chooseTranscriptionPath } from './transcription/transcriptionRouter'
+import {
+  clearProviderFailure,
+  failureNotice,
+  getRejectedKeyFailure,
+  recordProviderFailure,
+  type Provider,
+} from './transcription/providerHealth'
 import { transcriptAdjuster } from './transcription/TranscriptAdjuster'
 import { pendingDictationStore } from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
@@ -28,16 +40,35 @@ import { getAdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 
 const RETRYABLE_CODES = new Set(['RATE_LIMIT', 'NETWORK'])
-const MAX_TRANSCRIPTION_ATTEMPTS = 3
 
-function showNotification(title: string, body: string) {
-  try {
-    if (Notification?.isSupported?.()) {
-      new Notification({ title, body }).show()
-    }
-  } catch (error) {
-    console.warn('[ItoStreamController] Failed to show notification:', error)
-  }
+type RetryPolicy = {
+  attempts: number
+  /** A wait longer than this is not worth it: give up and let the caller move on. */
+  maxDelayMs: number
+}
+
+const GROQ_RETRY: RetryPolicy = {
+  attempts: 3,
+  maxDelayMs: Number.POSITIVE_INFINITY,
+}
+
+// Each OpenRouter attempt re-uploads the whole dictation (~3.5 MB for 80s) and
+// takes roughly as long as the recording itself, and Groq still has to run
+// afterwards if it fails — so one extra try is all a waiting user can absorb.
+// For the same reason a server-suggested delay of more than a second and a
+// half is declined: falling back is faster than honouring it.
+const OPENROUTER_RETRY: RetryPolicy = { attempts: 2, maxDelayMs: 1500 }
+
+/**
+ * Why a dictation that should have gone to the precise engine came back from
+ * Groq instead. Travels with the transcript so the history row can say it,
+ * rather than leaving a downgrade indistinguishable from a normal dictation.
+ */
+export interface AsrFallback {
+  /** Model slug that was skipped or that failed. */
+  from: string
+  code: string
+  message: string
 }
 
 export interface LocalTranscriptionResult {
@@ -48,6 +79,22 @@ export interface LocalTranscriptionResult {
   // Model that actually produced the transcript (e.g. 'whisper-large-v3',
   // 'openai/gpt-transcribe') — shown as a badge in the history.
   asrEngine: string
+  asrFallback?: AsrFallback
+  /**
+   * Segments de locuteurs rendus par Deepgram quand le mode demande la
+   * diarisation. Tableau vide sur les deux autres chemins, qui ne la
+   * fournissent pas.
+   */
+  speakerSegments: SpeakerSegment[]
+  /** Le mode qui a produit ce transcript, figé pour l'historique. */
+  modeId: string
+  modeName: string
+  /**
+   * Ce que le moteur vocal a réellement rendu, après correction du
+   * dictionnaire mais avant toute réécriture par le mode. Moitié gauche
+   * d'une paire d'exemple, et onglet « Original » de l'historique.
+   */
+  rawTranscript: string
 }
 
 /**
@@ -56,9 +103,9 @@ export interface LocalTranscriptionResult {
  */
 export class ItoStreamController {
   private audioStreamManager = new AudioStreamManager()
-  private currentMode: ItoMode = ItoMode.TRANSCRIBE
+  private currentMode: Mode | null = null
 
-  public async initialize(mode: ItoMode): Promise<boolean> {
+  public async initialize(mode: Mode): Promise<boolean> {
     if (this.audioStreamManager.isCurrentlyStreaming()) {
       log.warn('[ItoStreamController] Stream already in progress.')
       return false
@@ -66,17 +113,19 @@ export class ItoStreamController {
 
     this.audioStreamManager.initialize()
     this.currentMode = mode
-    console.log('[ItoStreamController] Starting new local interaction stream.')
+    console.log(
+      `[ItoStreamController] Starting new interaction stream in mode "${mode.name}"`,
+    )
     return true
   }
 
-  public getCurrentMode(): ItoMode {
+  public getCurrentMode(): Mode | null {
     return this.currentMode
   }
 
-  public setMode(mode: ItoMode) {
+  public setMode(mode: Mode) {
     this.currentMode = mode
-    console.log(`[ItoStreamController] Mode set to ${mode}`)
+    console.log(`[ItoStreamController] Mode set to "${mode.name}"`)
   }
 
   public endInteraction() {
@@ -151,12 +200,14 @@ export class ItoStreamController {
       )
     }
 
-    const context = await contextGrabber.gatherContext(this.currentMode)
+    const mode = this.currentMode
+    if (!mode) throw new Error('No mode set on the stream controller')
+
+    const context = await contextGrabber.gatherContext(mode)
     const advancedSettings = getAdvancedSettings()
-    const timingEvent =
-      this.currentMode === ItoMode.EDIT
-        ? TimingEventName.LOCAL_EDIT
-        : TimingEventName.LOCAL_TRANSCRIBE
+    const timingEvent = mode.useLlm
+      ? TimingEventName.LOCAL_EDIT
+      : TimingEventName.LOCAL_TRANSCRIBE
 
     try {
       localTranscriptionService.initialize(advancedSettings.groqApiKey || '')
@@ -169,57 +220,212 @@ export class ItoStreamController {
       )
     }
 
-    const shortModel = resolveModel(
-      advancedSettings.shortVoiceModelKey,
+    const voiceModel = resolveModel(
+      mode.voiceModelKey ?? undefined,
       DEFAULT_SHORT_VOICE_KEY,
     )
+    const languageHint = asrLanguageHint(mode.language)
+    // Le repli Groq garde un modèle Groq : le slug d'un modèle OpenRouter
+    // envoyé à Groq est un 404 garanti.
+    const groqModel =
+      voiceModel.provider === 'groq'
+        ? voiceModel
+        : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
 
     const groqOptions: TranscriptionOptions = {
-      asrModel: shortModel.slug,
+      asrModel: groqModel.slug,
       vocabulary: context.vocabularyWords,
       noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
       fileType: 'wav',
-      language: advancedSettings.llm.asrLanguage,
-      customPrompt: advancedSettings.llm.asrPrompt,
+      language: languageHint,
+      customPrompt: mode.asrPrompt,
     }
 
+    // Décide une fois, avant toute tentative réseau, quel transport prend
+    // l'audio — pas de sondage inline comme avant : la durée, la taille et la
+    // diarisation demandée sont déjà connues.
+    const decision = chooseTranscriptionPath({
+      voiceModelProvider: voiceModel.provider,
+      durationMs,
+      wavBytes: wavAudio.length,
+      identifySpeakers: mode.identifySpeakers,
+      hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
+      hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+      hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
+      hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
+    })
+
     let transcript: string
-    // Groq is the default attribution; overwritten when OpenRouter answers.
-    let asrEngine = shortModel.slug
+    // Groq is the default attribution; overwritten when Deepgram or
+    // OpenRouter answers.
+    let asrEngine = groqModel.slug
+    let asrFallback: AsrFallback | undefined
+    let speakerSegments: SpeakerSegment[] = []
     try {
+      // This throw must stay inside the try: the catch right below is what
+      // links the WAV (`error.pendingDictationPath`), carries the duration
+      // (`error.audioDurationMs`) and shows the "dictée sauvegardée"
+      // notification. Thrown ahead of the try (as it once was), none of that
+      // bookkeeping runs — the WAV survives on disk but with no notification,
+      // no link back to it, and no duration, so it can never be reconciled by
+      // `findPendingInteraction` even after `flushPendingDictations` learns
+      // to route through the file path. Second time this exact ordering has
+      // bitten this function — keep it here.
+      if (decision.path === null) {
+        throw new LocalTranscriptionError(decision.reason, 'MODEL_ERROR')
+      }
       transcript = await timingCollector.timeAsync(timingEvent, async () => {
-        if (this.shouldUseOpenRouter(advancedSettings, durationMs)) {
-          const openRouterModel = resolveModel(
-            advancedSettings.longVoiceModelKey,
-            DEFAULT_LONG_VOICE_KEY,
-          ).slug
-          try {
-            const text = await openRouterTranscriptionService.transcribeAudio(
-              wavAudio,
-              {
-                apiKey: advancedSettings.openRouterApiKey || '',
-                model: openRouterModel,
-                vocabulary: context.vocabularyWords,
-                language: advancedSettings.llm.asrLanguage,
-              },
-            )
-            asrEngine = openRouterModel
-            return text
-          } catch (error: any) {
-            // The precise engine must never lose or block a dictation:
-            // whatever went wrong, the Groq path (and its retry/persistence
-            // layer) takes over.
+        if (decision.path === 'deepgram') {
+          const apiKey = advancedSettings.deepgramApiKey || ''
+          const deepgramModel = 'deepgram/nova-3'
+          const rejected = getRejectedKeyFailure('deepgram', apiKey)
+
+          if (rejected) {
+            // Same fast-skip as OpenRouter below: this key already came back
+            // refused, so trying again would upload the whole dictation for
+            // another certain 401. Go straight to Groq — and still say so,
+            // rather than passing the downgrade off as a normal dictation.
             console.warn(
-              `[ItoStreamController] OpenRouter transcription failed (${error?.code}), falling back to Groq:`,
-              error?.message,
+              `[ItoStreamController] Skipping Deepgram: the stored key was refused on ${rejected.at}`,
             )
-            showNotification(
-              'Ito — repli sur Groq',
-              'La transcription OpenRouter a échoué ; la dictée est transcrite par Groq.',
+            asrFallback = {
+              from: deepgramModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const result = await this.withRetry(
+                `Deepgram (${voiceModel.slug})`,
+                OPENROUTER_RETRY,
+                () =>
+                  deepgramTranscriptionService.transcribeAudio(wavAudio, {
+                    apiKey,
+                    model: 'nova-3',
+                    language: languageHint,
+                    diarize: mode.identifySpeakers,
+                  }),
+              )
+              asrEngine = deepgramModel
+              speakerSegments = result.segments
+              clearProviderFailure('deepgram')
+              return result.text
+            } catch (error: any) {
+              // Same guarantee as OpenRouter below: a failed precise engine
+              // falls through to Groq rather than losing the dictation.
+              asrFallback = this.recordProviderFallback(
+                error,
+                deepgramModel,
+                apiKey,
+                'deepgram',
+              )
+            }
+          }
+        } else if (decision.path === 'openrouter') {
+          const apiKey = advancedSettings.openRouterApiKey || ''
+          const openRouterModel = voiceModel.slug
+          const rejected = getRejectedKeyFailure('openrouter', apiKey)
+
+          if (rejected) {
+            // This key already came back refused. Trying again would upload
+            // the whole dictation for another certain 401, so go straight to
+            // Groq — and still say so, rather than passing the downgrade off
+            // as a normal dictation.
+            console.warn(
+              `[ItoStreamController] Skipping OpenRouter: the stored key was refused on ${rejected.at}`,
             )
+            asrFallback = {
+              from: openRouterModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const text = await this.withRetry(
+                `OpenRouter (${openRouterModel})`,
+                OPENROUTER_RETRY,
+                () =>
+                  openRouterTranscriptionService.transcribeAudio(wavAudio, {
+                    apiKey,
+                    model: openRouterModel,
+                    vocabulary: context.vocabularyWords,
+                    language: languageHint,
+                    customPrompt: mode.asrPrompt,
+                  }),
+              )
+              asrEngine = openRouterModel
+              clearProviderFailure('openrouter')
+              return text
+            } catch (error: any) {
+              // The precise engine must never lose or block a dictation:
+              // whatever went wrong, the Groq path (and its retry/persistence
+              // layer) takes over.
+              asrFallback = this.recordProviderFallback(
+                error,
+                openRouterModel,
+                apiKey,
+                'openrouter',
+              )
+            }
+          }
+        } else if (decision.path === 'openai' || decision.path === 'google') {
+          // Même contrat que les deux branches au-dessus : le moteur précis
+          // ne perd jamais une dictée — clé refusée connue → saut direct,
+          // échec → repli Groq enregistré et annoncé.
+          const provider = decision.path
+          const apiKey =
+            (provider === 'openai'
+              ? advancedSettings.openaiApiKey
+              : advancedSettings.googleApiKey) || ''
+          const chosenModel = voiceModel.slug
+          const rejected = getRejectedKeyFailure(provider, apiKey)
+
+          if (rejected) {
+            console.warn(
+              `[ItoStreamController] Skipping ${provider}: the stored key was refused on ${rejected.at}`,
+            )
+            asrFallback = {
+              from: chosenModel,
+              code: rejected.code,
+              message: rejected.message,
+            }
+          } else {
+            try {
+              const result = await this.withRetry(
+                `${provider} (${chosenModel})`,
+                OPENROUTER_RETRY,
+                () =>
+                  provider === 'openai'
+                    ? openaiTranscriptionService.transcribeAudio(wavAudio, {
+                        apiKey,
+                        model: chosenModel,
+                        language: languageHint,
+                        contentType: 'audio/wav',
+                        fileName: 'dictation.wav',
+                      })
+                    : googleTranscriptionService.transcribeAudio(wavAudio, {
+                        apiKey,
+                        model: chosenModel,
+                        language: languageHint,
+                        contentType: 'audio/wav',
+                      }),
+              )
+              asrEngine = chosenModel
+              clearProviderFailure(provider)
+              return result.text
+            } catch (error: any) {
+              asrFallback = this.recordProviderFallback(
+                error,
+                chosenModel,
+                apiKey,
+                provider,
+              )
+            }
           }
         }
-        return await this.transcribeWithRetry(wavAudio, groqOptions)
+        return await this.withRetry('Groq', GROQ_RETRY, () =>
+          localTranscriptionService.transcribeAudio(wavAudio, groqOptions),
+        )
       })
     } catch (error: any) {
       if (pendingPath) {
@@ -247,6 +453,11 @@ export class ItoStreamController {
       context.dictionaryEntries,
     )
 
+    // Ce que le moteur vocal a réellement rendu. C'est la moitié gauche d'une
+    // paire d'exemple, et l'onglet « Original » de l'historique : sans elle,
+    // corriger un mode à partir de ses échecs est impossible.
+    const rawTranscript = transcript
+
     if (pendingPath) {
       pendingDictationStore.delete(pendingPath)
       this.notifyPendingCount()
@@ -260,7 +471,7 @@ export class ItoStreamController {
 
     const adjusted = await transcriptAdjuster.adjust(
       transcript,
-      this.currentMode,
+      mode,
       context,
       advancedSettings,
     )
@@ -271,58 +482,69 @@ export class ItoStreamController {
       sampleRate,
       durationMs,
       asrEngine,
+      asrFallback,
+      speakerSegments,
+      modeId: mode.id,
+      modeName: mode.name,
+      rawTranscript,
     }
   }
 
-  // Recordings at or above the threshold go to the precise OpenRouter engine
-  // when the long-dictation toggle is on. Without an OpenRouter key everything
-  // stays on Groq.
-  private shouldUseOpenRouter(
-    advancedSettings: ReturnType<typeof getAdvancedSettings>,
-    durationMs: number,
-  ): boolean {
-    if (advancedSettings.longDictationEnabled === false) return false
+  /**
+   * Turns a precise-engine failure (OpenRouter or Deepgram) into the three
+   * traces it deserves: a line in the log, a notification that names the
+   * actual cause, and a per-provider record in the settings that outlives
+   * both — so a key already known to be refused can be skipped next time
+   * (see `getRejectedKeyFailure`) instead of re-uploading the dictation for
+   * another certain rejection.
+   */
+  private recordProviderFallback(
+    error: any,
+    model: string,
+    apiKey: string,
+    provider: Provider,
+  ): AsrFallback {
+    const code = error?.code || 'UNKNOWN'
+    const message = error?.message || `${model} request failed`
 
-    const threshold =
-      advancedSettings.longDictationThresholdMs ?? LONG_DICTATION_THRESHOLD_MS
-    if (durationMs < threshold) return false
+    console.warn(
+      `[ItoStreamController] ${model} failed (${code}), falling back to Groq:`,
+      message,
+    )
+    recordProviderFailure({ provider, code, message, model, apiKey })
+    showNotification('Ito — repli sur Groq', failureNotice(provider, code))
 
-    if (!advancedSettings.openRouterApiKey?.trim()) {
-      console.warn(
-        '[ItoStreamController] Long dictation but no OpenRouter API key configured, using Groq',
-      )
-      return false
-    }
-    return true
+    return { from: model, code, message }
   }
 
-  private async transcribeWithRetry(
-    wavAudio: Buffer,
-    options: TranscriptionOptions,
-  ): Promise<string> {
-    let lastError: unknown
-    for (let attempt = 1; attempt <= MAX_TRANSCRIPTION_ATTEMPTS; attempt++) {
+  /**
+   * Retries a transcription call for the failures that are worth retrying —
+   * a rate limit or a dropped connection — and gives up immediately on the
+   * ones a second identical request cannot fix.
+   */
+  private async withRetry<T>(
+    label: string,
+    policy: RetryPolicy,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
       try {
-        return await localTranscriptionService.transcribeAudio(
-          wavAudio,
-          options,
-        )
+        return await run()
       } catch (error: any) {
-        lastError = error
+        const delayMs = error?.retryAfterMs ?? 500 * 2 ** (attempt - 1)
         const retryable =
           error instanceof LocalTranscriptionError &&
-          RETRYABLE_CODES.has(error.code)
-        if (!retryable || attempt === MAX_TRANSCRIPTION_ATTEMPTS) {
-          throw error
-        }
-        const delayMs = error.retryAfterMs ?? 500 * 2 ** (attempt - 1)
+          RETRYABLE_CODES.has(error.code) &&
+          attempt < policy.attempts &&
+          delayMs <= policy.maxDelayMs
+        if (!retryable) throw error
+
         console.warn(
-          `[ItoStreamController] Transcription attempt ${attempt} failed (${error.code}), retrying in ${delayMs}ms`,
+          `[ItoStreamController] ${label} attempt ${attempt} failed (${error.code}), retrying in ${delayMs}ms`,
         )
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
-    throw lastError
   }
 
   private flushingPending = false
@@ -360,29 +582,99 @@ export class ItoStreamController {
         return 0
       }
 
+      // Une dictée en attente n'a plus son mode : le WAV a survécu, pas le
+      // contexte. Le mode actif est la meilleure approximation disponible, et
+      // il ne sert ici qu'à la langue, à l'amorce de style et — nouveau — à
+      // la décision de routage.
+      const mode = await resolveActiveMode()
+      const voiceModel = resolveModel(
+        mode.voiceModelKey ?? undefined,
+        DEFAULT_SHORT_VOICE_KEY,
+      )
+      // Le repli Groq garde un modèle Groq, comme dans processLocalTranscription.
+      const groqModel =
+        voiceModel.provider === 'groq'
+          ? voiceModel
+          : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
+      const asrModel = groqModel.slug
+
       for (const filePath of pending) {
         // A live recording takes priority over recovery work.
         if (this.audioStreamManager.isCurrentlyStreaming()) break
 
         try {
           const wavAudio = pendingDictationStore.read(filePath)
-          const transcript = await localTranscriptionService.transcribeAudio(
-            wavAudio,
-            {
-              asrModel: advancedSettings.llm.asrModel,
-              noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-              fileType: 'wav',
-              language: advancedSettings.llm.asrLanguage,
-              customPrompt: advancedSettings.llm.asrPrompt,
-            },
-          )
+
+          // La durée d'origine n'a pas survécu à la persistance sur disque
+          // (seul le WAV est écrit) — mais un WAV porte sa propre durée dans
+          // son en-tête, donc pas besoin de deviner. La recalculer est
+          // nécessaire : repasser 0 comme avant fait lire un enregistrement
+          // long comme s'il était court, ce qui l'envoie silencieusement vers
+          // Groq alors que le routeur l'aurait réservé au chemin fichier
+          // (Deepgram) — et cet échec ne se corrige jamais tout seul, à
+          // chaque passe de flush. Un en-tête illisible (fichier
+          // tronqué/corrompu) ne doit pas faire échouer tout le flush : on
+          // retombe alors sur 0, le comportement d'avant, pour ce seul
+          // fichier.
+          const recoveredDurationMs =
+            localAudioProcessor.getWavDurationMs(wavAudio) ?? 0
+
+          const decision = chooseTranscriptionPath({
+            voiceModelProvider: voiceModel.provider,
+            durationMs: recoveredDurationMs,
+            wavBytes: wavAudio.length,
+            identifySpeakers: mode.identifySpeakers,
+            hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
+            hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+            hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
+            hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
+          })
+
+          if (decision.path === null) {
+            // Toujours rien pour le transporter (pas de clé Deepgram) : on
+            // laisse le WAV sur disque pour la prochaine passe, sans le
+            // supprimer ni boucler dessus.
+            continue
+          }
+
+          let transcript: string
+          let engineUsed = asrModel
+          if (decision.path === 'deepgram') {
+            const result = await deepgramTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                apiKey: advancedSettings.deepgramApiKey || '',
+                model: 'nova-3',
+                language: asrLanguageHint(mode.language),
+                diarize: mode.identifySpeakers,
+              },
+            )
+            transcript = result.text
+            engineUsed = 'deepgram/nova-3'
+          } else {
+            // Tout autre chemin ('groq', 'openrouter', 'openai', 'google') :
+            // la récupération passe par Groq, comme avant — seul le chemin
+            // fichier (Deepgram) avait besoin d'un routage propre, car Groq
+            // seul ne peut pas le porter.
+            transcript = await localTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                asrModel,
+                noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+                fileType: 'wav',
+                language: asrLanguageHint(mode.language),
+                customPrompt: mode.asrPrompt,
+              },
+            )
+          }
+
           if (transcript) {
             await interactionManager.createRecoveredInteraction(
               transcript,
               16000,
               filePath,
               undefined,
-              advancedSettings.llm.asrModel,
+              engineUsed,
             )
             recovered++
           }

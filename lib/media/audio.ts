@@ -2,6 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import log from 'electron-log'
 import { EventEmitter } from 'events'
 import { getNativeBinaryPath } from './native-interface'
+import type { AudioSource } from '../constants/modePresets'
 
 // Message types from the native binary
 const MSG_TYPE_JSON = 1
@@ -84,10 +85,25 @@ class AudioRecorderService extends EventEmitter {
 
   /**
    * Sends a command to start recording from a specific device.
+   *
+   * `audioSource` is forwarded as-is to the native binary's `audio_source`
+   * field ("microphone" | "system" | "both") — omitted (or unrecognized on
+   * the Rust side) falls back to the microphone there, so it is safe to
+   * leave undefined for callers that don't care.
    */
-  public startRecording(deviceName: string): void {
-    this.#sendCommand({ command: 'start', device_name: deviceName })
-    console.log(`[AudioService] Recording started on device: ${deviceName}`)
+  public startRecording(options: {
+    deviceId?: string
+    audioSource?: AudioSource
+  }): void {
+    const { deviceId, audioSource } = options
+    this.#sendCommand({
+      command: 'start',
+      device_name: deviceId,
+      audio_source: audioSource,
+    })
+    console.log(
+      `[AudioService] Recording started on device: ${deviceId} (source: ${audioSource ?? 'microphone'})`,
+    )
   }
 
   /**

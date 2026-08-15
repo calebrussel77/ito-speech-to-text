@@ -5,6 +5,8 @@ import log from 'electron-log'
 import { v4 as uuidv4 } from 'uuid'
 import { BrowserWindow } from 'electron'
 import { timingCollector } from '../timing/TimingCollector'
+import type { AsrFallback } from '../itoStreamController'
+import type { SpeakerSegment } from '../transcription/DeepgramTranscriptionService'
 
 export class InteractionManager {
   private currentInteractionId: string | null = null
@@ -36,7 +38,16 @@ export class InteractionManager {
     errorMessage?: string,
     errorCode?: string,
     audioDurationMs?: number,
-    asrEngine?: string,
+    // How the transcript was produced: the engine that answered, and — when
+    // the routed engine did not — why it was not the one asked for.
+    asr?: {
+      engine?: string
+      fallback?: AsrFallback
+      modeId?: string
+      modeName?: string
+      rawTranscript?: string
+      speakers?: SpeakerSegment[]
+    },
   ) {
     if (!this.currentInteractionId) {
       log.warn(
@@ -70,7 +81,24 @@ export class InteractionManager {
         timestamp: new Date().toISOString(),
         durationMs,
         interactionDurationMs,
-        engine: asrEngine || null,
+        engine: asr?.engine || null,
+        fallback: asr?.fallback || null,
+        modeId: asr?.modeId || null,
+        // Figé : renommer un mode ne doit pas réécrire l'histoire.
+        modeName: asr?.modeName || null,
+        // Vide quand il est identique au final : le stocker deux fois
+        // doublerait la base sans rien apprendre à personne. La comparaison se
+        // fait après trim — un simple espace de différence ferait apparaître
+        // « Show original » et « Add as example » sur une dictée que personne
+        // n'a réécrite.
+        rawTranscript:
+          asr?.rawTranscript && asr.rawTranscript.trim() !== transcript.trim()
+            ? asr.rawTranscript
+            : null,
+        // Même convention que le chemin fichier (createRecoveredInteraction) :
+        // un tableau vide n'apprend rien de plus qu'un null, et casserait la
+        // détection « cette interaction a des locuteurs » côté historique.
+        speakers: asr?.speakers?.length ? asr.speakers : null,
       }
 
       // Generate a meaningful title from the transcript
@@ -201,7 +229,15 @@ export class InteractionManager {
     pendingPath?: string | null,
     audioDurationMs?: number,
     asrEngine?: string,
-  ) {
+    // Ce qu'un import de fichier (transcription d'un enregistrement existant)
+    // a besoin d'attacher à la ligne, en plus des champs de base ci-dessus.
+    extra?: {
+      rawTranscript?: string
+      modeId?: string
+      modeName?: string
+      speakers?: SpeakerSegment[]
+    },
+  ): Promise<string | undefined> {
     try {
       const userProfile = mainStore.get(STORE_KEYS.USER_PROFILE) as any
       const userId = userProfile?.id || 'self-hosted'
@@ -230,6 +266,16 @@ export class InteractionManager {
           pending: false,
           recovered: true,
           engine: asrEngine || null,
+          modeId: extra?.modeId || null,
+          modeName: extra?.modeName || null,
+          // Vide quand il est identique au final, comme dans createInteraction :
+          // le stocker deux fois n'apprendrait rien de plus à personne.
+          rawTranscript:
+            extra?.rawTranscript &&
+            extra.rawTranscript.trim() !== transcript.trim()
+              ? extra.rawTranscript
+              : null,
+          speakers: extra?.speakers?.length ? extra.speakers : null,
         },
         llm_output: {},
         raw_audio: null,
@@ -244,11 +290,13 @@ export class InteractionManager {
       })
 
       this.notifyInteractionCreated(id, transcript, now, audioDurationMs ?? 0)
+      return id
     } catch (error) {
       log.error(
         '[InteractionManager] Failed to store recovered interaction:',
         error,
       )
+      return undefined
     }
   }
 

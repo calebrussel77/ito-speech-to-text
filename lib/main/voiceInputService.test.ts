@@ -72,6 +72,14 @@ beforeEach(() => {
 import { voiceInputService } from './voiceInputService'
 import { STORE_KEYS } from '../constants/store-keys'
 
+/** Un mode minimal, suffisant pour piloter `startAudioRecording`. */
+const testMode = (overrides: Record<string, unknown> = {}) =>
+  ({
+    audioSource: 'microphone',
+    playbackWhenRecording: 'leave',
+    ...overrides,
+  }) as any
+
 describe('VoiceInputService', () => {
   beforeEach(() => {
     // Reset all mocks
@@ -101,6 +109,13 @@ describe('VoiceInputService', () => {
       }
       return null
     })
+
+    // `mutedForThisSession` is instance state that survives across tests —
+    // force it back to false with a non-muting start so each test begins
+    // from a clean slate instead of depending on execution order.
+    voiceInputService.startAudioRecording(testMode())
+    mockAudioRecorderService.startRecording.mockClear()
+    mockMuteSystemAudio.mockClear()
   })
 
   describe('Audio Recording Lifecycle', () => {
@@ -111,33 +126,33 @@ describe('VoiceInputService', () => {
         muteAudioWhenDictating: false,
       })
 
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(testMode())
 
-      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
-        testDeviceId,
-      )
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith({
+        deviceId: testDeviceId,
+        audioSource: 'microphone',
+      })
       expect(mockMuteSystemAudio).not.toHaveBeenCalled()
     })
 
-    test('should mute system audio when configured', () => {
+    test('should mute system audio when the mode asks for it', () => {
       mockStore.get.mockReturnValue({
         microphoneDeviceId: 'test-device',
-        muteAudioWhenDictating: true,
-      })
-
-      voiceInputService.startAudioRecording()
-
-      expect(mockMuteSystemAudio).toHaveBeenCalledTimes(1)
-      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
-        'test-device',
-      )
-    })
-
-    test('should stop audio recording and wait for drain', async () => {
-      mockStore.get.mockReturnValue({
         muteAudioWhenDictating: false,
       })
 
+      voiceInputService.startAudioRecording(
+        testMode({ playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).toHaveBeenCalledTimes(1)
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith({
+        deviceId: 'test-device',
+        audioSource: 'microphone',
+      })
+    })
+
+    test('should stop audio recording and wait for drain', async () => {
       await voiceInputService.stopAudioRecording()
 
       expect(mockAudioRecorderService.stopRecording).toHaveBeenCalledTimes(1)
@@ -148,9 +163,9 @@ describe('VoiceInputService', () => {
     })
 
     test('should unmute system audio when stopping if it was muted', async () => {
-      mockStore.get.mockReturnValue({
-        muteAudioWhenDictating: true,
-      })
+      voiceInputService.startAudioRecording(
+        testMode({ playbackWhenRecording: 'mute' }),
+      )
 
       await voiceInputService.stopAudioRecording()
 
@@ -162,14 +177,83 @@ describe('VoiceInputService', () => {
       mockAudioRecorderService.awaitDrainComplete.mockRejectedValueOnce(
         new Error('Drain timeout'),
       )
-      mockStore.get.mockReturnValue({
-        muteAudioWhenDictating: false,
-      })
 
       await voiceInputService.stopAudioRecording()
 
       expect(mockAudioRecorderService.stopRecording).toHaveBeenCalledTimes(1)
       // Should not throw and continue with cleanup
+    })
+  })
+
+  describe('Mode-driven audio source and mute policy', () => {
+    // Sans cette règle, le mute couperait exactement la réunion enregistrée.
+    test('a mode that records the system audio never mutes it', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: true })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'both', playbackWhenRecording: 'leave' }),
+      )
+
+      expect(mockMuteSystemAudio).not.toHaveBeenCalled()
+    })
+
+    test('a microphone mode still honours a mute request', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: true })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'microphone', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).toHaveBeenCalled()
+    })
+
+    test('the mode wins over the global setting in both directions', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: false })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'microphone', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).toHaveBeenCalled()
+    })
+
+    // The contradictory combination the whole feature exists to prevent:
+    // capturing system audio while also muting it would record silence.
+    // `shouldMuteForMode` must refuse to mute here even though the mode's
+    // own `playbackWhenRecording` says 'mute'.
+    test('a system-audio mode never mutes, even if its own policy says mute', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: false })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'system', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).not.toHaveBeenCalled()
+    })
+
+    test('a both-source mode never mutes, even if its own policy says mute', async () => {
+      mockStore.get.mockReturnValue({ muteAudioWhenDictating: false })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'both', playbackWhenRecording: 'mute' }),
+      )
+
+      expect(mockMuteSystemAudio).not.toHaveBeenCalled()
+    })
+
+    test('the audio source reaches the recorder without dropping the chosen microphone', async () => {
+      mockStore.get.mockReturnValue({ microphoneDeviceId: 'usb-mic-2' })
+
+      await voiceInputService.startAudioRecording(
+        testMode({ audioSource: 'system', playbackWhenRecording: 'leave' }),
+      )
+
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioSource: 'system',
+          deviceId: 'usb-mic-2',
+        }),
+      )
     })
   })
 
@@ -277,11 +361,12 @@ describe('VoiceInputService', () => {
         muteAudioWhenDictating: false,
       })
 
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(testMode())
 
-      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
-        customDeviceId,
-      )
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith({
+        deviceId: customDeviceId,
+        audioSource: 'microphone',
+      })
     })
 
     test('should handle missing device ID gracefully', () => {
@@ -290,11 +375,12 @@ describe('VoiceInputService', () => {
         muteAudioWhenDictating: false,
       })
 
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(testMode())
 
-      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
-        undefined,
-      )
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith({
+        deviceId: undefined,
+        audioSource: 'microphone',
+      })
     })
 
     test('should handle microphone change', () => {
@@ -347,19 +433,22 @@ describe('VoiceInputService', () => {
       const deviceId = 'session-test-device'
       mockStore.get.mockReturnValue({
         microphoneDeviceId: deviceId,
-        muteAudioWhenDictating: true,
+        muteAudioWhenDictating: false,
       })
 
       // Set up listeners
       voiceInputService.setUpAudioRecorderListeners()
 
       // Start recording
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(
+        testMode({ playbackWhenRecording: 'mute' }),
+      )
 
       expect(mockMuteSystemAudio).toHaveBeenCalledTimes(1)
-      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith(
+      expect(mockAudioRecorderService.startRecording).toHaveBeenCalledWith({
         deviceId,
-      )
+        audioSource: 'microphone',
+      })
 
       // Simulate volume updates
       const volumeHandler = mockAudioRecorderService.on.mock.calls.find(
@@ -390,11 +479,11 @@ describe('VoiceInputService', () => {
       })
 
       // First cycle
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(testMode())
       await voiceInputService.stopAudioRecording()
 
       // Second cycle
-      voiceInputService.startAudioRecording()
+      voiceInputService.startAudioRecording(testMode())
       await voiceInputService.stopAudioRecording()
 
       expect(mockAudioRecorderService.startRecording).toHaveBeenCalledTimes(2)

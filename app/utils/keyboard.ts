@@ -1,6 +1,5 @@
 import { KeyEvent } from '@/lib/preload'
 import { KeyboardShortcutConfig } from '@/lib/main/store'
-import { ItoMode } from '../generated/ito_pb'
 import {
   keyNameMap,
   normalizeLegacyKey,
@@ -24,6 +23,36 @@ export function getDirectionalIndicator(
 }
 
 /**
+ * Un accord entier, tel qu'il s'affiche dans un `Kbd` : « Ctrl + ⊞ ».
+ *
+ * Une seule pastille pour tout l'accord, et pas une par touche : deux pastilles
+ * côte à côte ne disaient pas si les touches se pressent ensemble ou l'une
+ * après l'autre. Le « + » le dit, et c'est la forme des exemples de shadcn.
+ *
+ * Les indicateurs de côté sont retirés ici — ils restent dans les éditeurs de
+ * raccourci, où l'on choisit une touche physique précise, et le détail complet
+ * survit en `title` sur l'élément qui porte l'accord.
+ */
+export function formatChord(
+  keys: KeyName[],
+  platform: 'darwin' | 'win32' | undefined,
+): string {
+  return keys
+    .map(key => getKeyDisplay(key, platform, { showDirection: false }))
+    .join(' + ')
+}
+
+/** Le même accord, côtés compris : « Ctrl ◀ + ⊞ ◀ ». Pour un `title`. */
+export function formatChordDetailed(
+  keys: KeyName[],
+  platform: 'darwin' | 'win32' | undefined,
+): string {
+  return keys
+    .map(key => getKeyDisplay(key, platform, { showDirectionalText: true }))
+    .join(' + ')
+}
+
+/**
  * Get formatted display components for a key
  * @param keyboardKey The key name to display
  * @param platform The platform to render keys for
@@ -35,16 +64,27 @@ export function getKeyDisplay(
   platform: 'darwin' | 'win32' | undefined = 'darwin',
   options: {
     showDirectionalText?: boolean
+    /**
+     * Affiche le côté de la touche (« Ctrl ◀ »). Vrai par défaut : les
+     * éditeurs de raccourci en ont besoin, puisque `control-left` et
+     * `control-right` sont deux touches distinctes pour l'écouteur natif.
+     * Les affichages en lecture seule le coupent — dans un accord de deux ou
+     * trois touches, les flèches font plus de bruit que d'information.
+     */
+    showDirection?: boolean
     format?: 'symbol' | 'label' | 'both'
   } = {},
 ): string {
-  const { showDirectionalText = false, format = 'symbol' } = options
+  const {
+    showDirectionalText = false,
+    showDirection = true,
+    format = 'symbol',
+  } = options
 
   const displayInfo = getKeyDisplayInfo(keyboardKey, platform)
-  const dirIndicator = getDirectionalIndicator(
-    displayInfo.side,
-    showDirectionalText,
-  )
+  const dirIndicator = showDirection
+    ? getDirectionalIndicator(displayInfo.side, showDirectionalText)
+    : ''
 
   const label = displayInfo.label
 
@@ -225,11 +265,11 @@ export function isReservedCombination(
   return { isReserved: false }
 }
 
-// Returns the mode of the duplicate shortcut if found, otherwise undefined
+// Returns the mode id of the duplicate shortcut if found, otherwise undefined
 export function isDuplicateShortcut(
   currentShortcuts: KeyboardShortcutConfig[],
   shortcutToCheck: KeyboardShortcutConfig,
-): ItoMode | undefined {
+): string | null | undefined {
   // Normalize keys for comparison
   const normalizedCheckKeys = sortKeysCanonical(
     shortcutToCheck.keys.map(normalizeLegacyKey),
@@ -250,7 +290,7 @@ export function isDuplicateShortcut(
   })
 
   if (duplicate) {
-    return duplicate.mode
+    return duplicate.modeId
   }
 
   return undefined
@@ -260,12 +300,12 @@ export function isDuplicateShortcut(
 export function validateShortcutForDuplicate(
   currentShortcuts: KeyboardShortcutConfig[],
   shortcutToCheck: KeyboardShortcutConfig,
-  expectedMode: ItoMode,
+  expectedModeId: string | null,
 ): ShortcutResult | null {
   const duplicateMode = isDuplicateShortcut(currentShortcuts, shortcutToCheck)
 
   if (duplicateMode !== undefined) {
-    const sameMode = duplicateMode === expectedMode
+    const sameMode = duplicateMode === expectedModeId
     return {
       success: false,
       error: sameMode ? 'duplicate-key-same-mode' : 'duplicate-key-diff-mode',

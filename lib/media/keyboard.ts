@@ -4,6 +4,8 @@ import { STORE_KEYS } from '../constants/store-keys'
 import { getNativeBinaryPath } from './native-interface'
 import { BrowserWindow } from 'electron'
 import { itoSessionManager } from '../main/itoSessionManager'
+import { cycleActiveMode } from '../main/modes/activeMode'
+import { recordingStateNotifier } from '../main/recordingStateNotifier'
 import { KeyName, keyNameMap, normalizeLegacyKey } from '../types/keyboard'
 import { pressedKeys } from './keyboardState'
 
@@ -175,10 +177,23 @@ function stopStuckKeyChecker() {
   }
 }
 
+/**
+ * Le raccourci de défilement se teste avant les raccourcis de dictée, et sur
+ * une correspondance **exacte** : un sous-ensemble déclencherait un changement
+ * de mode au milieu d'une autre combinaison.
+ */
+export function matchesCycleShortcut(
+  pressed: Set<string>,
+  shortcut: string[],
+): boolean {
+  if (shortcut.length === 0) return false
+  if (pressed.size !== shortcut.length) return false
+  return shortcut.every(key => pressed.has(normalizeLegacyKey(key)))
+}
+
 async function handleKeyEventInMain(event: KeyEvent) {
-  const { isShortcutGloballyEnabled, keyboardShortcuts } = store.get(
-    STORE_KEYS.SETTINGS,
-  )
+  const { isShortcutGloballyEnabled, keyboardShortcuts, cycleModeShortcut } =
+    store.get(STORE_KEYS.SETTINGS)
 
   if (!isShortcutGloballyEnabled) {
     // check to see if we should stop an in-progress recording
@@ -207,6 +222,22 @@ async function handleKeyEventInMain(event: KeyEvent) {
     keyPressTimestamps.delete(normalizedKey)
   }
 
+  // Le défilement passe avant : sans le `return` plus bas, la combinaison
+  // retomberait dans la détection des raccourcis de dictée et démarrerait un
+  // enregistrement à chaque changement de mode.
+  if (
+    event.type === 'keydown' &&
+    matchesCycleShortcut(pressedKeys, cycleModeShortcut ?? [])
+  ) {
+    try {
+      const mode = await cycleActiveMode()
+      recordingStateNotifier.notifyActiveModeChanged(mode)
+    } catch (error) {
+      console.warn('[keyboard] Could not cycle the active mode:', error)
+    }
+    return
+  }
+
   // Check if any of the configured shortcuts are currently held
   // Match shortcuts that have exactly the same keys as currently pressed
   const currentlyHeldShortcut = keyboardShortcuts
@@ -232,14 +263,18 @@ async function handleKeyEventInMain(event: KeyEvent) {
       // Starting a new session
       activeShortcutId = currentlyHeldShortcut.id
       console.info('lib Shortcut ACTIVATED, starting recording...')
-      await itoSessionManager.startSession(currentlyHeldShortcut.mode)
+      // `null` (« le mode actif ») devient `undefined`, que le gestionnaire de
+      // session résout déjà en mode actif — la distinction s'arrête ici.
+      await itoSessionManager.startSession(
+        currentlyHeldShortcut.modeId ?? undefined,
+      )
     } else if (activeShortcutId !== currentlyHeldShortcut.id) {
       // Different shortcut detected while already recording - change mode
       activeShortcutId = currentlyHeldShortcut.id
       console.info(
-        `lib Shortcut mode CHANGED to ${currentlyHeldShortcut.mode}, updating session...`,
+        `lib Shortcut mode CHANGED to ${currentlyHeldShortcut.modeId}, updating session...`,
       )
-      itoSessionManager.setMode(currentlyHeldShortcut.mode)
+      void itoSessionManager.setMode(currentlyHeldShortcut.modeId ?? undefined)
     }
   } else if (!currentlyHeldShortcut) {
     // No shortcut detected - cancel pending activation or deactivate active shortcut
@@ -374,14 +409,21 @@ export const registerAllHotkeys = () => {
     return
   }
 
-  const { keyboardShortcuts } = store.get(STORE_KEYS.SETTINGS)
+  const { keyboardShortcuts, cycleModeShortcut } = store.get(
+    STORE_KEYS.SETTINGS,
+  )
 
   // Convert shortcuts to hotkey format for the listener
-  const hotkeys = keyboardShortcuts
-    .filter(ks => ks.keys.length > 0)
-    .map(shortcut => ({
-      keys: getKeysToRegister(shortcut),
-    }))
+  const hotkeys = [
+    ...keyboardShortcuts
+      .filter(ks => ks.keys.length > 0)
+      .map(shortcut => ({
+        keys: getKeysToRegister(shortcut),
+      })),
+    ...(cycleModeShortcut?.length
+      ? [{ keys: getKeysToRegister({ keys: cycleModeShortcut } as any) }]
+      : []),
+  ]
 
   console.info('Registering hotkeys with listener:', hotkeys)
 

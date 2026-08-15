@@ -9,8 +9,18 @@ import store from './store'
 import { STORE_KEYS } from '../constants/store-keys'
 import { IPC_EVENTS } from '../types/ipc'
 import log from 'electron-log'
+import { shouldMuteForMode } from './audio/audioSourceController'
+import type { Mode } from './sqlite/models'
 
 export class VoiceInputService {
+  // Set by `startAudioRecording`, read by `stopAudioRecording`: whether
+  // system audio was actually muted for the dictation currently in flight.
+  // The global `settings.muteAudioWhenDictating` can't be re-read at stop
+  // time to decide — it's only the default proposed to a *new* mode, and a
+  // mid-session settings change would otherwise unmute a mode that never
+  // asked for it (or leave a mute in place a mode had turned off).
+  private mutedForThisSession = false
+
   /**
    * Prepares the native audio stream so recordings can start instantly.
    * Safe to call multiple times; it will no-op if already prepared.
@@ -30,25 +40,41 @@ export class VoiceInputService {
   /**
    * Starts audio recording and handles system audio muting.
    * Does NOT start the ItoStreamController - that should be done separately.
+   *
+   * The audio source and the mute policy both come from `mode`, not from
+   * `settings.muteAudioWhenDictating` — see `shouldMuteForMode`.
    */
-  public startAudioRecording = () => {
+  public startAudioRecording = (mode: Mode) => {
     console.log('[VoiceInputService] Starting audio recording')
 
     const settings = store.get(STORE_KEYS.SETTINGS)
     const deviceId = settings.microphoneDeviceId
 
-    // Mute system audio if needed
-    if (settings.muteAudioWhenDictating) {
+    if (shouldMuteForMode(mode)) {
       console.log('[VoiceInputService] Muting system audio for dictation')
       muteSystemAudio()
+      this.mutedForThisSession = true
+    } else {
+      this.mutedForThisSession = false
     }
 
-    // Start audio recorder
+    // `deviceId` keeps flowing regardless of `mode.audioSource`: the chosen
+    // microphone is a global setting (Settings → Audio & Mic), not something
+    // a mode's source overrides. For `both` it is the primary/master-clock
+    // device (see the Rust `CaptureKind` doc comment) — but pure `system`
+    // capture ignores `device_name` entirely and lets the Rust side pick the
+    // default output device, so `deviceId` is harmless dead weight there,
+    // not something it relies on.
     console.log(
       '[VoiceInputService] Starting audio recorder with device:',
       deviceId,
+      'source:',
+      mode.audioSource,
     )
-    audioRecorderService.startRecording(deviceId)
+    audioRecorderService.startRecording({
+      deviceId,
+      audioSource: mode.audioSource,
+    })
 
     console.log('[VoiceInputService] Audio recording started')
   }
@@ -72,10 +98,13 @@ export class VoiceInputService {
       log.warn('[VoiceInputService] drain-complete wait failed, proceeding:', e)
     }
 
-    // Unmute system audio if it was muted
-    if (store.get(STORE_KEYS.SETTINGS).muteAudioWhenDictating) {
+    // Unmute only if this session actually muted — not whatever the global
+    // setting says right now: it may have changed mid-session, or the mode
+    // that started this recording may never have asked to mute at all.
+    if (this.mutedForThisSession) {
       console.log('[VoiceInputService] Unmuting system audio after dictation')
       unmuteSystemAudio()
+      this.mutedForThisSession = false
     }
 
     console.log('[VoiceInputService] Audio recording stopped')

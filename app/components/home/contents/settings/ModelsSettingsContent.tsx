@@ -1,121 +1,67 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAdvancedSettingsStore } from '@/app/store/useAdvancedSettingsStore'
+import { SettingsGroup, SettingsRow } from '@/app/components/ui/settings'
 import {
-  SettingsGroup,
-  SettingsRow,
-  CONTROL_WIDTH,
-} from '@/app/components/ui/settings'
-import { Switch } from '@/app/components/ui/switch'
-import { LONG_DICTATION_THRESHOLD_OPTIONS } from '@/lib/constants/transcription'
-import {
+  FILE_TRANSCRIPTION_KEYS,
   TEXT_MODELS,
   VOICE_MODELS,
-  type CatalogModel,
 } from '@/lib/constants/modelCatalog'
-import ModelTable, { type ModelSlot } from './models/ModelTable'
-import ProviderKeyRow from './models/ProviderKeyRow'
-import { cn } from '@/lib/utils'
+import ModelTable from './models/ModelTable'
+import ProviderKeyRow, { type KeyRejection } from './models/ProviderKeyRow'
+import ModelSelect from '../modes/ModelSelect'
 
-const isGroq = (model: CatalogModel) => model.provider === 'groq'
-const isOpenRouter = (model: CatalogModel) => model.provider === 'openrouter'
-
-function ThresholdPicker({
-  value,
-  onChange,
-}: {
-  value: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <div
-      className={cn(
-        'flex overflow-hidden rounded-lg border border-border',
-        CONTROL_WIDTH,
-      )}
-    >
-      {LONG_DICTATION_THRESHOLD_OPTIONS.map(option => (
-        <button
-          key={option}
-          type="button"
-          onClick={() => onChange(option)}
-          className={cn(
-            'flex-1 py-1 text-[11px] tabular-nums transition-colors duration-150',
-            option === value
-              ? 'bg-foreground text-[var(--background)]'
-              : 'text-[var(--muted-foreground)] hover:text-foreground',
-          )}
-        >
-          {option / 1000}s
-        </button>
-      ))}
-    </div>
-  )
-}
-
+/**
+ * Page de référence : ce que chaque modèle coûte, ce qu'il vaut, et quelles
+ * clés sont en place. Le choix d'un modèle appartient au mode — le faire
+ * aussi ici créerait deux endroits pour la même décision.
+ */
 export default function ModelsSettingsContent() {
   const {
     groqApiKey,
     openRouterApiKey,
+    deepgramApiKey,
+    googleApiKey,
+    openaiApiKey,
     setGroqApiKey,
     setOpenRouterApiKey,
-    shortVoiceModelKey,
-    longVoiceModelKey,
+    setDeepgramApiKey,
+    setGoogleApiKey,
+    setOpenaiApiKey,
     textModelKey,
-    setShortVoiceModelKey,
-    setLongVoiceModelKey,
     setTextModelKey,
-    longDictationEnabled,
-    setLongDictationEnabled,
-    longDictationThresholdMs,
-    setLongDictationThresholdMs,
+    fileTranscriptionModelKey,
+    setFileTranscriptionModelKey,
   } = useAdvancedSettingsStore()
 
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
 
+  // Read once on mount: the main process only returns a failure that still
+  // describes the key currently stored, so there is nothing to keep in sync.
+  const [openRouterRejection, setOpenRouterRejection] =
+    useState<KeyRejection | null>(null)
+  const [deepgramRejection, setDeepgramRejection] =
+    useState<KeyRejection | null>(null)
+  useEffect(() => {
+    window.api
+      .getProviderFailure('openrouter')
+      .then((failure: KeyRejection | null) =>
+        setOpenRouterRejection(failure ?? null),
+      )
+      .catch(() => setOpenRouterRejection(null))
+    window.api
+      .getProviderFailure('deepgram')
+      .then((failure: KeyRejection | null) =>
+        setDeepgramRejection(failure ?? null),
+      )
+      .catch(() => setDeepgramRejection(null))
+  }, [])
+
   const availableProviders = new Set<string>()
   if (groqApiKey) availableProviders.add('groq')
   if (openRouterApiKey) availableProviders.add('openrouter')
-
-  // With the long-dictation engine off, Groq transcribes everything, so the
-  // single remaining slot has no reason to say "short".
-  const voiceSlots: ModelSlot[] = longDictationEnabled
-    ? [
-        {
-          id: 'short',
-          label: 'Short',
-          selectedKey: shortVoiceModelKey,
-          onSelect: setShortVoiceModelKey,
-          accepts: isGroq,
-        },
-        {
-          id: 'long',
-          label: 'Long',
-          selectedKey: longVoiceModelKey,
-          onSelect: setLongVoiceModelKey,
-          accepts: isOpenRouter,
-        },
-      ]
-    : [
-        {
-          id: 'short',
-          selectedKey: shortVoiceModelKey,
-          onSelect: setShortVoiceModelKey,
-          accepts: isGroq,
-        },
-      ]
-
-  const voiceModels = longDictationEnabled
-    ? VOICE_MODELS
-    : VOICE_MODELS.filter(isGroq)
-
-  const textSlots: ModelSlot[] = [
-    {
-      id: 'text',
-      selectedKey: textModelKey,
-      onSelect: setTextModelKey,
-      accepts: () => true,
-    },
-  ]
+  if (googleApiKey) availableProviders.add('google')
+  if (openaiApiKey) availableProviders.add('openai')
+  if (deepgramApiKey) availableProviders.add('deepgram')
 
   return (
     <div className="px-1.5">
@@ -144,6 +90,7 @@ export default function ModelsSettingsContent() {
           placeholder="sk-or-v1-..."
           consoleUrl="https://openrouter.ai/settings/keys"
           storedKey={openRouterApiKey}
+          rejection={openRouterRejection}
           expanded={expandedProvider === 'openrouter'}
           onToggle={() =>
             setExpandedProvider(
@@ -153,50 +100,94 @@ export default function ModelsSettingsContent() {
           onSave={setOpenRouterApiKey}
           onTest={key => window.api.testOpenRouterApiKey(key)}
         />
+        <ProviderKeyRow
+          provider="deepgram"
+          name="Deepgram"
+          hint="Long recordings and speaker separation — used by the Meeting mode"
+          placeholder="Token…"
+          consoleUrl="https://console.deepgram.com/"
+          storedKey={deepgramApiKey}
+          rejection={deepgramRejection}
+          expanded={expandedProvider === 'deepgram'}
+          onToggle={() =>
+            setExpandedProvider(
+              expandedProvider === 'deepgram' ? null : 'deepgram',
+            )
+          }
+          onSave={setDeepgramApiKey}
+          onTest={key => window.api.testDeepgramApiKey(key)}
+        />
+        <ProviderKeyRow
+          provider="openai"
+          name="OpenAI"
+          hint="GPT Transcribe and the 4o family — strongest on imported files"
+          placeholder="sk-..."
+          consoleUrl="https://platform.openai.com/api-keys"
+          storedKey={openaiApiKey}
+          expanded={expandedProvider === 'openai'}
+          onToggle={() =>
+            setExpandedProvider(expandedProvider === 'openai' ? null : 'openai')
+          }
+          onSave={setOpenaiApiKey}
+          onTest={key => window.api.testOpenaiApiKey(key)}
+        />
+        <ProviderKeyRow
+          provider="google"
+          name="Google"
+          hint="Gemini reads a whole recording at once — the imported-file path"
+          placeholder="AIza…"
+          consoleUrl="https://aistudio.google.com/apikey"
+          storedKey={googleApiKey}
+          expanded={expandedProvider === 'google'}
+          onToggle={() =>
+            setExpandedProvider(expandedProvider === 'google' ? null : 'google')
+          }
+          onSave={setGoogleApiKey}
+          onTest={key => window.api.testGoogleApiKey(key)}
+        />
       </SettingsGroup>
 
-      <SettingsGroup title="Routing">
+      <SettingsGroup title="Defaults">
         <SettingsRow
-          title="Dedicated engine for long dictations"
-          description="Whisper starts hallucinating on long recordings. Above the threshold, transcription moves to OpenRouter; below it, Groq keeps its head start. A failed OpenRouter call always falls back to Groq."
+          title="Text model for new modes"
+          description="Only prefills a mode when it is created. Change the model itself in Modes."
         >
-          <Switch
-            checked={longDictationEnabled}
-            onCheckedChange={setLongDictationEnabled}
+          <ModelSelect
+            kind="text"
+            value={textModelKey}
+            availableProviders={availableProviders}
+            onChange={key => setTextModelKey(key ?? '')}
           />
         </SettingsRow>
-        {longDictationEnabled && (
-          <SettingsRow
-            title="Switch over at"
-            description="Lower it if you dictate paragraphs, raise it if you dictate sentences."
-          >
-            <ThresholdPicker
-              value={longDictationThresholdMs}
-              onChange={setLongDictationThresholdMs}
-            />
-          </SettingsRow>
-        )}
+
+        <SettingsRow
+          title="Imported file transcription"
+          description="Used by “Transcribe a file”. That path has no mode, so it has its own model. Default sends the file to Deepgram."
+        >
+          <ModelSelect
+            kind="voice"
+            keys={FILE_TRANSCRIPTION_KEYS}
+            value={fileTranscriptionModelKey}
+            availableProviders={availableProviders}
+            onChange={key => setFileTranscriptionModelKey(key ?? '')}
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       <ModelTable
         title="Voice models"
-        description={
-          longDictationEnabled
-            ? 'Click a row to use it. Short dictations run on Groq, long ones on OpenRouter.'
-            : 'Click a row to use it. Groq transcribes every dictation.'
-        }
-        models={voiceModels}
-        slots={voiceSlots}
+        description="What each model costs and how it scored on real dictations. Pick one per mode, in Modes."
+        models={VOICE_MODELS}
         availableProviders={availableProviders}
         onRequestKey={setExpandedProvider}
         showAccuracy
+        markOpenRouter
       />
 
       <ModelTable
         title="Text models"
-        description="Click a row to use it. Intelligent Mode rewrites a dictation into the document you asked for."
+        description="Used by modes that rewrite the dictation."
         models={TEXT_MODELS}
-        slots={textSlots}
         availableProviders={availableProviders}
         onRequestKey={setExpandedProvider}
       />

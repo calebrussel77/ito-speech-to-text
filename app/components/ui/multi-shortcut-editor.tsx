@@ -2,34 +2,34 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import KeyboardKey from '@/app/components/ui/keyboard-key'
 import { ShortcutError } from '@/app/utils/keyboard'
 import { keyNameMap } from '@/lib/types/keyboard'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import { Check, Pencil } from '@mynaui/icons-react'
 import { cx } from 'class-variance-authority'
 import { KeyName } from '@/lib/types/keyboard'
 import { useShortcutEditingStore } from '@/app/store/useShortcutEditingStore'
 
-export interface KeyboardShortcutConfig {
-  id: string
-  keys: KeyName[]
-  mode: ItoMode
-}
+import type { KeyboardShortcutConfig } from '@/lib/main/store'
+
+export type { KeyboardShortcutConfig }
 
 type Props = {
   shortcuts: KeyboardShortcutConfig[] // persisted rows
-  mode: ItoMode
+  modeId: string
   className?: string
   keySize?: number
   maxShortcutsPerMode?: number
+  /** Mirrors the current inline error so a host screen can surface it too. */
+  onError?: (message: string) => void
 }
 
 const MAX_KEYS_PER_SHORTCUT = 5
 
 export default function MultiShortcutEditor({
   shortcuts,
-  mode,
+  modeId,
   className = '',
   maxShortcutsPerMode = 5,
+  onError,
 }: Props) {
   const {
     createKeyboardShortcut,
@@ -38,15 +38,18 @@ export default function MultiShortcutEditor({
   } = useSettingsStore()
 
   // global editing lock
-  const editorKey = useMemo(() => `multi-shortcut-editor:${mode}`, [mode])
+  const editorKey = useMemo(() => `multi-shortcut-editor:${modeId}`, [modeId])
   const { start, stop, activeEditor } = useShortcutEditingStore()
 
   const rows = useMemo(
-    () => (mode == null ? shortcuts : shortcuts.filter(s => s.mode === mode)),
-    [shortcuts, mode],
+    () =>
+      modeId == null ? shortcuts : shortcuts.filter(s => s.modeId === modeId),
+    [shortcuts, modeId],
   )
   const isAtLimit = rows.length >= maxShortcutsPerMode
-  const isMinimum = rows.length <= 1
+  // A mode's shortcut is entirely optional (that's the point of this editor),
+  // so the last remaining row must stay deletable — otherwise a mode could be
+  // given a shortcut but never cleared of it again.
 
   // editing state
   const [editingId, setEditingId] = useState<string | null>(null) // existing row id or "__new__"
@@ -56,6 +59,26 @@ export default function MultiShortcutEditor({
 
   const cleanupRef = useRef<(() => void) | null>(null)
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // A rejected shortcut (duplicate or reserved) must not fail silently: the
+  // persistent `error` is mirrored to the host screen, which can render it
+  // as a SettingsNote — the inline text here alone is easy to miss below
+  // the fold of a 620px window.
+  useEffect(() => {
+    onError?.(error)
+  }, [error, onError])
+
+  const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
+
+  // beginEditExisting's lock-contention error has no natural end: it never
+  // starts an edit session, so stopEdit() — the only other place `error` is
+  // cleared — never runs for it. Once the other editor releases the lock,
+  // the message no longer describes reality and must clear on its own
+  // instead of sticking around (and with it, the mirrored SettingsNote in
+  // ModeEditor) until this editor happens to be used again.
+  useEffect(() => {
+    if (!isLockedByOther) setError('')
+  }, [isLockedByOther])
 
   const beginEditExisting = (row: KeyboardShortcutConfig) => {
     if (!start(editorKey)) {
@@ -90,7 +113,7 @@ export default function MultiShortcutEditor({
   }
 
   const addNew = () => {
-    const result = createKeyboardShortcut(mode)
+    const result = createKeyboardShortcut(modeId)
     if (!result.success && result.error) {
       setError(getErrorMessage(result.error, result.errorMessage))
       return
@@ -203,8 +226,6 @@ export default function MultiShortcutEditor({
     'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ' +
     'text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-3)] hover:text-foreground'
 
-  const isLockedByOther = activeEditor !== null && activeEditor !== editorKey
-
   return (
     <div className={cx('w-[220px]', className)}>
       {rows.map(row => {
@@ -277,11 +298,14 @@ export default function MultiShortcutEditor({
           type="button"
           onClick={() => {
             const lastRow = rows.at(-1)
-            if (lastRow) {
-              removeKeyboardShortcut(lastRow.id)
-            }
+            if (!lastRow) return
+            // Deleting the row being edited would otherwise leave the
+            // shortcut-editing lock held and global shortcuts disabled,
+            // since stopEdit() would never run for it.
+            if (editingId === lastRow.id) stopEdit()
+            removeKeyboardShortcut(lastRow.id)
           }}
-          hidden={isMinimum}
+          hidden={rows.length === 0}
           className="ml-auto text-[11px] text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           disabled={isLockedByOther}
         >

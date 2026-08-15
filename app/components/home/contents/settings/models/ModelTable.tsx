@@ -1,5 +1,8 @@
 import { Check } from '@mynaui/icons-react'
-import type { CatalogModel } from '@/lib/constants/modelCatalog'
+import {
+  PROVIDER_LABELS,
+  type CatalogModel,
+} from '@/lib/constants/modelCatalog'
 import { MODEL_LAB_ICONS } from '@/app/components/icons/modelLabIcons'
 import { cn } from '@/lib/utils'
 
@@ -30,7 +33,11 @@ type ModelTableProps = {
   title: string
   description?: string
   models: CatalogModel[]
-  slots: ModelSlot[]
+  /**
+   * Colonnes de sélection. Absentes, le tableau devient une référence en
+   * lecture seule : le choix du modèle appartient au mode, pas à cet écran.
+   */
+  slots?: ModelSlot[]
   /** Providers whose API key is configured. Others render disabled. */
   availableProviders: Set<string>
   onRequestKey: (provider: string) => void
@@ -40,6 +47,13 @@ type ModelTableProps = {
    * rewrite" is a judgement, and a gauge would dress it up as a measurement.
    */
   showAccuracy?: boolean
+  /**
+   * Badge the rows served by OpenRouter. The voice table lists the same
+   * display name twice — GPT Transcribe via OpenRouter and via OpenAI — and
+   * nothing else on the row says which is which. Off for the text table,
+   * where OpenRouter serves most rows and the badge would be noise.
+   */
+  markOpenRouter?: boolean
 }
 
 /**
@@ -92,10 +106,11 @@ export default function ModelTable({
   title,
   description,
   models,
-  slots,
+  slots = [],
   availableProviders,
   onRequestKey,
   showAccuracy = false,
+  markOpenRouter = false,
 }: ModelTableProps) {
   const showSlotLabels = slots.length > 1
   // The price column gives up room when a third gauge has to fit.
@@ -156,6 +171,13 @@ export default function ModelTable({
           {models.map(model => {
             const LabIcon = MODEL_LAB_ICONS[model.lab]
             const unavailable = !availableProviders.has(model.provider)
+            // Un seul badge par ligne : un modèle épinglé (Cerebras) est déjà
+            // un modèle OpenRouter, et deux pastilles diraient la même chose.
+            const badge =
+              model.pinnedProvider ??
+              (markOpenRouter && model.provider === 'openrouter'
+                ? 'OpenRouter'
+                : undefined)
             // A Groq model can only fill "Short" and an OpenRouter one only
             // "Long", so no row is ever assignable to more than one slot —
             // which lets the whole row be the click target instead of a 16px
@@ -200,16 +222,16 @@ export default function ModelTable({
                       <span className="truncate text-xs text-foreground">
                         {model.label}
                       </span>
-                      {model.pinnedProvider && (
+                      {badge && (
                         <span className="shrink-0 rounded-full border border-border-strong px-1.5 py-px text-[9px] uppercase tracking-wide text-[var(--muted-foreground)]">
-                          {model.pinnedProvider}
+                          {badge}
                         </span>
                       )}
                     </span>
                     {(model.note || unavailable) && (
                       <span className="block truncate text-[10px] leading-snug text-[var(--subtle-foreground)]">
                         {unavailable
-                          ? `${model.provider === 'groq' ? 'Groq' : 'OpenRouter'} key required`
+                          ? `${PROVIDER_LABELS[model.provider]} key required`
                           : model.note}
                       </span>
                     )}
@@ -264,7 +286,7 @@ export default function ModelTable({
                 onClick={() => onRequestKey(provider)}
                 className="text-[11px] text-[var(--muted-foreground)] underline-offset-2 transition-colors hover:text-foreground hover:underline"
               >
-                Add a {provider === 'groq' ? 'Groq' : 'OpenRouter'} key →
+                Add a {PROVIDER_LABELS[provider]} key →
               </button>
             ))}
           </div>

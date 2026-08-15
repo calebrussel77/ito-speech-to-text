@@ -47,15 +47,20 @@ par seconde, réseau compris.
 
 | modèle | code (79 s) | feature (149 s) | vitesse |
 | --- | --- | --- | --- |
+| gpt-transcribe (OpenAI direct) | 1,6 % | 1,1 % | 3,2× |
 | gpt-transcribe | 1,6 % | 1,5 % | 7,7× |
+| gpt-4o-mini-transcribe (OpenAI direct) | 1,6 % | 2,2 % | 4,9× |
 | qwen3-asr-flash | 3,3 % | 2,5 % | 5,3× |
 | gpt-4o-transcribe | 3,3 % | 5,1 % | 7,9× |
+| gpt-4o-transcribe (OpenAI direct) | 2,4 % | 5,1 % | 2,7× |
 | voxtral-small-stt | 2,4 % | 6,5 % | 6,4× |
 | whisper-large-v3-turbo (Groq) | 1,6 % | 7,6 % | 29,8× |
 | voxtral-mini-transcribe | 4,1 % | 6,2 % | 10,6× |
 | whisper-large-v3-turbo (OpenRouter) | 7,3 % | 12,7 % | 5,9× |
 | nova-3 | 10,6 % | 11,6 % | 9,0× |
 | **whisper-large-v3** | **8,9 %** | **82,9 %** | 24,4× |
+| gpt-4o-transcribe-diarize (sur m4a) | 8,1 % | 17,1 % | 1,5× |
+| **gpt-4o-transcribe-diarize (sur WAV 16 kHz)** | **74,0 %** | **42,9 %** | 1,6× |
 | chirp-3 | HTTP 400 | HTTP 400 | — |
 
 ### Texte — tokens/seconde (médiane de 3)
@@ -89,6 +94,23 @@ claude-haiku-4.5 60 · gemini-2.5-flash-lite 20
 
 4. **L'épinglage Cerebras est spectaculaire** : le même `gpt-oss-120b` rend
    1704 tok/s via Cerebras contre 348 chez Groq, soit 5×.
+
+## Run du 2026-08-15 — OpenAI en direct
+
+Les quatre modèles OpenAI servis en direct (`openai-voice.mjs`, clé de Caleb),
+même protocole. Deux constats :
+
+1. **OpenAI en direct est ~2,5× plus lent que les mêmes modèles via
+   OpenRouter**, à précision égale (gpt-transcribe : 3,2× temps réel en direct
+   contre 7,7× revendus). Les gauges `speed` des entrées `-openai` du
+   catalogue sont donc à 1 là où leurs jumelles OpenRouter sont à 2.
+2. **`gpt-4o-transcribe-diarize` déraille sur le WAV 16 kHz mono** : il part en
+   code-switching et TRADUIT des passages entiers en anglais (74 % de WER sur
+   le clip code). Sur les m4a originaux — le payload réel de son seul usage,
+   le fichier importé — il reste en français (8,1 % / 17,1 %). Ses gauges sont
+   mesurées sur m4a (`diarize-m4a-results.json`), et c'est une raison de plus
+   de le garder `fileOnly` : la dictée en direct enverrait précisément le
+   WAV 16 kHz qui le fait dérailler.
 
 ## Limite connue
 

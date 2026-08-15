@@ -9,15 +9,14 @@ import CursorIcon from '../../icons/CursorIcon'
 import { useState } from 'react'
 import { ArrowUp } from '@mynaui/icons-react'
 import React from 'react'
-import { ItoMode } from '@/app/generated/ito_pb'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
 
 export default function TryItOut() {
   const { decrementOnboardingStep, setOnboardingCompleted } =
     useOnboardingStore()
-  const { getItoModeShortcuts } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.TRANSCRIBE)[0].keys
+  const { getModeShortcuts } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]?.keys ?? []
   const platform = usePlatform()
   const [selectedApp, setSelectedApp] = useState<
     'slack' | 'gmail' | 'cursor' | 'chatgpt' | 'notion'

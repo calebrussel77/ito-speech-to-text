@@ -1,8 +1,7 @@
 import { useOnboardingStore } from '@/app/store/useOnboardingStore'
 import { useSettingsStore } from '@/app/store/useSettingsStore'
 import KeyboardShortcutEditor from '../../ui/keyboard-shortcut-editor'
-import { ItoMode } from '@/app/generated/ito_pb'
-import { getItoModeShortcutDefaults } from '@/lib/constants/keyboard-defaults'
+import { getModeShortcutDefaults } from '@/lib/constants/keyboard-defaults'
 import { usePlatform } from '@/app/hooks/usePlatform'
 import { getKeyDisplay } from '@/app/utils/keyboard'
 import { KeyName } from '@/lib/types/keyboard'
@@ -11,10 +10,10 @@ import React from 'react'
 export default function KeyboardTestContent() {
   const { incrementOnboardingStep, decrementOnboardingStep } =
     useOnboardingStore()
-  const { getItoModeShortcuts, updateKeyboardShortcut } = useSettingsStore()
-  const keyboardShortcut = getItoModeShortcuts(ItoMode.TRANSCRIBE)[0]
+  const { getModeShortcuts, updateKeyboardShortcut } = useSettingsStore()
+  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]
   const platform = usePlatform()
-  const defaultKeys = getItoModeShortcutDefaults(platform)[ItoMode.TRANSCRIBE]
+  const defaultKeys = getModeShortcutDefaults(platform)['voice-to-text']
 
   return (
     <div className="flex flex-row h-full w-full bg-background">

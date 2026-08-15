@@ -133,6 +133,8 @@ const api = {
 
     delete: (id: string) => ipcRenderer.invoke('interactions:delete', id),
     clearAll: () => ipcRenderer.invoke('interactions:clear-all'),
+    renameSpeakers: (id: string, labels: Record<number, string>) =>
+      ipcRenderer.invoke('interactions:rename-speakers', id, labels),
   },
   pendingDictations: {
     count: (): Promise<number> =>
@@ -140,6 +142,13 @@ const api = {
     retry: (): Promise<number> =>
       ipcRenderer.invoke('pending-dictations:retry'),
   },
+  transcribeFile: (): Promise<{
+    ok: boolean
+    interactionId?: string
+    /** Locuteurs trouvés dans le fichier. 1 = monologue, 0 = rien de parlé. */
+    speakerCount?: number
+    error?: string
+  }> => ipcRenderer.invoke('transcribe-file'),
   trial: {
     complete: () => ipcRenderer.invoke('trial:complete'),
     startAfterOnboarding: () =>
@@ -236,6 +245,34 @@ const api = {
     ipcRenderer.invoke('test-groq-api-key', apiKey),
   testOpenRouterApiKey: (apiKey: string) =>
     ipcRenderer.invoke('test-openrouter-api-key', apiKey),
+  testGoogleApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-google-api-key', apiKey),
+  testDeepgramApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-deepgram-api-key', apiKey),
+  testOpenaiApiKey: (apiKey: string) =>
+    ipcRenderer.invoke('test-openai-api-key', apiKey),
+  getProviderFailure: (provider: 'openrouter' | 'deepgram') =>
+    ipcRenderer.invoke('get-provider-failure', provider),
+
+  modes: {
+    getAll: () => ipcRenderer.invoke('modes:get-all'),
+    create: (preset: string, name: string) =>
+      ipcRenderer.invoke('modes:create', preset, name),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('modes:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('modes:delete', id),
+    duplicate: (id: string) => ipcRenderer.invoke('modes:duplicate', id),
+    setActive: (id: string) => ipcRenderer.invoke('modes:set-active', id),
+    getActive: () => ipcRenderer.invoke('modes:get-active'),
+    examples: {
+      get: (modeId: string) => ipcRenderer.invoke('modes:examples:get', modeId),
+      add: (modeId: string, spokenInput: string, aiOutput: string) =>
+        ipcRenderer.invoke('modes:examples:add', modeId, spokenInput, aiOutput),
+      update: (id: string, spokenInput: string, aiOutput: string) =>
+        ipcRenderer.invoke('modes:examples:update', id, spokenInput, aiOutput),
+      delete: (id: string) => ipcRenderer.invoke('modes:examples:delete', id),
+    },
+  },
 
   // Check if the local server is healthy and accessible
   checkServerHealth: () => {

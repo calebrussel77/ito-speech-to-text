@@ -1,4 +1,4 @@
-import { ItoMode } from '@/app/generated/ito_pb'
+import { clipboard } from 'electron'
 import { voiceInputService } from './voiceInputService'
 import { recordingStateNotifier } from './recordingStateNotifier'
 import {
@@ -8,6 +8,7 @@ import {
 import { TextInserter } from './text/TextInserter'
 import { interactionManager } from './interactions/InteractionManager'
 import { contextGrabber } from './context/ContextGrabber'
+import { rememberInsertedText } from './context/ClipboardContext'
 import { GrammarRulesService } from './grammar/GrammarRulesService'
 import store, { getAdvancedSettings } from './store'
 import log from 'electron-log'
@@ -16,6 +17,9 @@ import { LocalTranscriptionError } from './transcription/LocalTranscriptionServi
 import { UNRECOVERABLE_CODES } from '../constants/transcription'
 import { STORE_KEYS } from '../constants/store-keys'
 import { playInteractionCompletionSound } from './soundFeedback'
+import { showNotification } from './notifications'
+import { resolveMode, resolveActiveMode } from './modes/activeMode'
+import type { Mode } from './sqlite/models'
 
 export type SessionState = 'idle' | 'starting' | 'recording' | 'processing'
 
@@ -29,12 +33,14 @@ export class ItoSessionManager {
   // interleaved start/complete/cancel calls safe without callers awaiting.
   private state: SessionState = 'idle'
   private startPromise: Promise<string | null> | null = null
+  private currentMode: Mode | null = null
 
   public getState(): SessionState {
     return this.state
   }
 
-  public async startSession(mode: ItoMode): Promise<string | null> {
+  /** `modeId` absent = le mode actif. */
+  public async startSession(modeId?: string): Promise<string | null> {
     if (this.state !== 'idle') {
       console.log(
         `[itoSessionManager] Ignoring startSession while ${this.state}`,
@@ -43,7 +49,7 @@ export class ItoSessionManager {
     }
 
     this.state = 'starting'
-    this.startPromise = this.doStartSession(mode)
+    this.startPromise = this.doStartSession(modeId)
     try {
       return await this.startPromise
     } finally {
@@ -51,43 +57,73 @@ export class ItoSessionManager {
     }
   }
 
-  private async doStartSession(mode: ItoMode): Promise<string | null> {
-    console.log('[itoSessionManager] Starting session with mode:', mode)
+  private async doStartSession(modeId?: string): Promise<string | null> {
+    // Tracks whether the microphone was actually started, so the catch
+    // below knows whether there is anything to stop.
+    let audioRecordingStarted = false
+    try {
+      const mode = modeId
+        ? await resolveMode(modeId)
+        : await resolveActiveMode()
+      console.log(`[itoSessionManager] Starting session in mode "${mode.name}"`)
+      this.currentMode = mode
 
-    let interactionId = interactionManager.getCurrentInteractionId()
-    if (interactionId) {
-      console.log(
-        '[itoSessionManager] Reusing existing interaction ID:',
-        interactionId,
-      )
-      interactionManager.adoptInteractionId(interactionId)
-    } else {
-      interactionId = interactionManager.initialize()
-    }
+      let interactionId = interactionManager.getCurrentInteractionId()
+      if (interactionId) {
+        console.log(
+          '[itoSessionManager] Reusing existing interaction ID:',
+          interactionId,
+        )
+        interactionManager.adoptInteractionId(interactionId)
+      } else {
+        interactionId = interactionManager.initialize()
+      }
 
-    const started = await itoStreamController.initialize(mode)
-    if (!started) {
-      log.error('[itoSessionManager] Failed to initialize itoStreamController')
+      const started = await itoStreamController.initialize(mode)
+      if (!started) {
+        log.error(
+          '[itoSessionManager] Failed to initialize itoStreamController',
+        )
+        this.state = 'idle'
+        // Keep the UI in sync: nothing is recording.
+        recordingStateNotifier.notifyRecordingStopped()
+        return null
+      }
+
+      voiceInputService.startAudioRecording(mode)
+      audioRecordingStarted = true
+      itoStreamController.setMode(mode)
+      recordingStateNotifier.notifyRecordingStarted(mode)
+
+      // Grammar context is NOT gathered here: it simulates keystrokes, and the
+      // push-to-talk keys are still physically held at this point (held Alt +
+      // simulated Ctrl+C = "©" typed into the focused app). It runs during
+      // completeSession instead, in parallel with the transcription call.
+
+      timingCollector.startInteraction()
+      timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
+
+      this.state = 'recording'
+      return interactionId
+    } catch (error) {
+      // resolveMode/resolveActiveMode throw when no mode can be resolved at
+      // all (e.g. the seeder never ran for this user). Left uncaught, this
+      // leaves `state` stuck at 'starting' forever — every later shortcut
+      // press would be silently ignored until the app restarts. Fail the
+      // same way the `!started` branch above already does.
+      console.error('[itoSessionManager] Failed to start session:', error)
       this.state = 'idle'
-      // Keep the UI in sync: nothing is recording.
+      if (audioRecordingStarted) {
+        // The throw landed after the mic was already capturing (e.g.
+        // itoStreamController.setMode or the notifier threw) — resetting
+        // `state` alone would leave the recorder running while the state
+        // machine reports idle. Mirror cancelSession's cleanup.
+        itoStreamController.cancelTranscription()
+        await voiceInputService.stopAudioRecording()
+      }
       recordingStateNotifier.notifyRecordingStopped()
       return null
     }
-
-    voiceInputService.startAudioRecording()
-    itoStreamController.setMode(mode)
-    recordingStateNotifier.notifyRecordingStarted(mode)
-
-    // Grammar context is NOT gathered here: it simulates keystrokes, and the
-    // push-to-talk keys are still physically held at this point (held Alt +
-    // simulated Ctrl+C = "©" typed into the focused app). It runs during
-    // completeSession instead, in parallel with the transcription call.
-
-    timingCollector.startInteraction()
-    timingCollector.startTiming(TimingEventName.INTERACTION_ACTIVE)
-
-    this.state = 'recording'
-    return interactionId
   }
 
   private async prepareGrammarContext() {
@@ -102,13 +138,28 @@ export class ItoSessionManager {
     }
   }
 
-  public setMode(mode: ItoMode) {
+  /** `modeId` absent = le mode actif, comme pour `startSession`. */
+  public async setMode(modeId?: string) {
     if (this.state !== 'starting' && this.state !== 'recording') {
       console.log(`[itoSessionManager] Ignoring setMode while ${this.state}`)
       return
     }
-    itoStreamController.setMode(mode)
-    recordingStateNotifier.notifyRecordingStarted(mode)
+    try {
+      // Pas `resolveMode(modeId)` seul : sans id, il replie sur le PREMIER
+      // mode, pas sur le mode actif. Basculer sur le raccourci par défaut en
+      // cours de dictée aurait donc changé de mode sans prévenir.
+      const mode = modeId
+        ? await resolveMode(modeId)
+        : await resolveActiveMode()
+      this.currentMode = mode
+      itoStreamController.setMode(mode)
+      recordingStateNotifier.notifyRecordingStarted(mode)
+    } catch (error) {
+      // lib/media/keyboard.ts fires this as `void itoSessionManager.setMode(...)`:
+      // an uncaught throw here would be an unhandled rejection, not just a
+      // failure to switch modes mid-recording.
+      console.error('[itoSessionManager] Failed to switch mode:', error)
+    }
   }
 
   public async cancelSession() {
@@ -196,15 +247,29 @@ export class ItoSessionManager {
     }
 
     if (transcript) {
+      const mode = this.currentMode
       let textToInsert = transcript
       const { grammarServiceEnabled } = getAdvancedSettings()
       if (grammarServiceEnabled) {
-        textToInsert = this.grammarRulesService.setCaseFirstWord(textToInsert)
+        if (mode?.autocapitalize !== false) {
+          textToInsert = this.grammarRulesService.setCaseFirstWord(textToInsert)
+        }
         textToInsert =
           this.grammarRulesService.addLeadingSpaceIfNeeded(textToInsert)
       }
 
-      this.textInserter.insertText(textToInsert)
+      // Auto-paste off : le presse-papier plutôt que le curseur, avec une
+      // notification — aucune fenêtre supplémentaire (décision D13).
+      if (mode?.autoPaste !== false) {
+        this.textInserter.insertText(textToInsert)
+      } else {
+        clipboard.writeText(textToInsert)
+        showNotification(
+          'Ito — copié',
+          'Le résultat est dans le presse-papier.',
+        )
+      }
+      rememberInsertedText(textToInsert)
 
       await interactionManager.createInteraction(
         transcript,
@@ -213,7 +278,14 @@ export class ItoSessionManager {
         undefined,
         undefined,
         durationMs,
-        result.asrEngine,
+        {
+          engine: result.asrEngine,
+          fallback: result.asrFallback,
+          modeId: result.modeId,
+          modeName: result.modeName,
+          rawTranscript: result.rawTranscript,
+          speakers: result.speakerSegments,
+        },
       )
       this.playInteractionCompletionSoundIfEnabled()
       console.log(

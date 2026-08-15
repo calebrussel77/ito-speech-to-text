@@ -12,9 +12,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_INSERT, VK_SHIFT,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 fn paste_ctrl_v(enigo: &mut Enigo) -> Result<(), String> {
     // Ctrl + V (default Windows paste)
@@ -180,7 +178,10 @@ fn detect_combo_from_foreground() -> PasteCombo {
         if name.contains("mintty") || name.contains("git-bash") {
             return PasteCombo::CtrlShiftV;
         }
-        if name.contains("wt.exe") || name.contains("windowsterminal") || name.contains("windows terminal") {
+        if name.contains("wt.exe")
+            || name.contains("windowsterminal")
+            || name.contains("windows terminal")
+        {
             return PasteCombo::CtrlShiftV;
         }
         if name.contains("conhost") || name.contains("bash.exe") || name.contains("bash") {

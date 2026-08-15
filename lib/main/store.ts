@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import { DEFAULT_ADVANCED_SETTINGS } from '../constants/generated-defaults.js'
 import { STORE_KEYS } from '../constants/store-keys'
-import { LONG_DICTATION_THRESHOLD_MS } from '../constants/transcription'
 import {
   DEFAULT_LONG_VOICE_KEY,
   DEFAULT_SHORT_VOICE_KEY,
@@ -9,22 +8,36 @@ import {
   findModelBySlug,
 } from '../constants/modelCatalog'
 import type { LlmSettings } from '@/app/store/useAdvancedSettingsStore'
-import { ItoMode } from '@/app/generated/ito_pb.js'
-import { ITO_MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
+import { MODE_SHORTCUT_DEFAULTS } from '../constants/keyboard-defaults.js'
 import { KeyName, normalizeLegacyKey } from '../types/keyboard.js'
 import { KeyValueStore } from './sqlite/repo'
+import type { Provider, ProviderFailure } from './transcription/providerHealth'
 import * as electron from 'electron'
 
 const safeStorageApi: any = (electron as any).safeStorage
 
 // API keys stored inside advancedSettings that are encrypted at rest via
 // safeStorage (persisted as `<field>Encrypted`, decrypted back on load).
-const ENCRYPTED_API_KEY_FIELDS = ['groqApiKey', 'openRouterApiKey'] as const
+export const ENCRYPTED_API_KEY_FIELDS = [
+  'groqApiKey',
+  'openRouterApiKey',
+  'deepgramApiKey',
+  'googleApiKey',
+  'openaiApiKey',
+] as const
 
 export interface KeyboardShortcutConfig {
   id: string
   keys: KeyName[]
-  mode: ItoMode
+  /**
+   * Id d'une ligne de la table `modes`, ou `null` pour « le mode actif ».
+   *
+   * `null` est le raccourci de dictée par défaut : il ne nomme aucun mode et
+   * suit celui que la page Modes désigne comme actif. Sans lui, le mode actif
+   * ne pilotait que le clic sur la pill — tout raccourci imposait son propre
+   * mode, et changer de mode actif ne changeait aucune dictée au clavier.
+   */
+  modeId: string | null
 }
 
 export type InteractionSoundTheme = 'pop' | 'marimba' | 'custom'
@@ -51,6 +64,10 @@ export interface SettingsStore {
   microphoneName: string
   isShortcutGloballyEnabled: boolean
   keyboardShortcuts: KeyboardShortcutConfig[]
+  /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
+  cycleModeShortcut: KeyName[]
+  /** Id du mode utilisé quand aucun raccourci dédié ne l'a court-circuité. */
+  activeModeId?: string
   firstName: string
   lastName: string
   email: string
@@ -92,16 +109,32 @@ export interface AdvancedSettings {
   macosAccessibilityContextEnabled: boolean
   groqApiKey?: string
   openRouterApiKey?: string
-  // Catalogue keys (see lib/constants/modelCatalog.ts), never raw model
-  // slugs: the catalogue owns which provider serves a model and how it is
-  // routed, so those cannot drift out of sync with the stored choice.
-  shortVoiceModelKey?: string
-  longVoiceModelKey?: string
+  deepgramApiKey?: string
+  googleApiKey?: string
+  openaiApiKey?: string
+  /**
+   * Modèle texte par défaut des modes créés ensuite. Le modèle réellement
+   * utilisé est celui du mode ; celui-ci ne sert qu'à préremplir.
+   */
   textModelKey?: string
-  // Route dictations at or above the threshold to the dedicated long-form
-  // engine. Off means Groq transcribes everything.
-  longDictationEnabled?: boolean
-  longDictationThresholdMs?: number
+  /**
+   * Modèle qui transcrit un fichier importé. Ce chemin n'a pas de mode — il
+   * lui faut donc son propre réglage, et pas celui d'un mode qui n'a rien à
+   * voir avec le fichier ouvert.
+   */
+  fileTranscriptionModelKey?: string
+  /**
+   * Ancienne forme du réglage, d'avant que Deepgram ne devienne un second
+   * fournisseur pouvant refuser une clé. Conservée en lecture seule pour ne
+   * pas perdre le dossier d'une installation existante — voir
+   * `providerHealth.ts`, qui la retombe dessus pour OpenRouter tant qu'elle
+   * n'a pas été remplacée par `providerFailures.openrouter`.
+   */
+  openRouterFailure?: ProviderFailure | null
+  // Why the last long dictation could not use a given provider. Written by
+  // the transcription pipeline, never by the settings UI — see
+  // main/transcription/providerHealth.ts.
+  providerFailures?: Partial<Record<Provider, ProviderFailure>>
 }
 
 interface AppStore {
@@ -156,19 +189,23 @@ export const defaultValues: AppStore = {
     keyboardShortcuts: [
       {
         id: crypto.randomUUID(),
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.TRANSCRIBE].map(
+        keys: MODE_SHORTCUT_DEFAULTS['voice-to-text'].map(
           normalizeLegacyKey,
         ) as KeyName[],
-        mode: ItoMode.TRANSCRIBE,
+        modeId: 'voice-to-text',
       },
       {
         id: crypto.randomUUID(),
-        keys: ITO_MODE_SHORTCUT_DEFAULTS[ItoMode.EDIT].map(
+        keys: MODE_SHORTCUT_DEFAULTS.intelligent.map(
           normalizeLegacyKey,
         ) as KeyName[],
-        mode: ItoMode.EDIT,
+        modeId: 'intelligent',
       },
     ],
+    // Ships unbound: registering a chord with the global key grabber by
+    // default would silently take it away from every other app on first
+    // launch, for a feature nobody asked to opt into.
+    cycleModeShortcut: [] as KeyName[],
     firstName: '',
     lastName: '',
     email: '',
@@ -181,22 +218,17 @@ export const defaultValues: AppStore = {
     llm: {
       asrProvider: DEFAULT_ADVANCED_SETTINGS.asrProvider,
       asrModel: DEFAULT_ADVANCED_SETTINGS.asrModel,
-      asrPrompt: DEFAULT_ADVANCED_SETTINGS.asrPrompt,
-      asrLanguage: DEFAULT_ADVANCED_SETTINGS.asrLanguage,
       llmProvider: DEFAULT_ADVANCED_SETTINGS.llmProvider,
       llmTemperature: DEFAULT_ADVANCED_SETTINGS.llmTemperature,
       llmModel: DEFAULT_ADVANCED_SETTINGS.llmModel,
-      transcriptionPrompt: DEFAULT_ADVANCED_SETTINGS.transcriptionPrompt,
-      editingPrompt: DEFAULT_ADVANCED_SETTINGS.editingPrompt,
       noSpeechThreshold: DEFAULT_ADVANCED_SETTINGS.noSpeechThreshold,
     },
     groqApiKey: '',
     openRouterApiKey: '',
-    shortVoiceModelKey: DEFAULT_SHORT_VOICE_KEY,
-    longVoiceModelKey: DEFAULT_LONG_VOICE_KEY,
+    deepgramApiKey: '',
+    googleApiKey: '',
+    openaiApiKey: '',
     textModelKey: DEFAULT_TEXT_KEY,
-    longDictationEnabled: true,
-    longDictationThresholdMs: LONG_DICTATION_THRESHOLD_MS,
   },
   openMic: false,
   selectedAudioInput: null,
@@ -350,7 +382,7 @@ const migrations: Migration[] = [
           {
             id: crypto.randomUUID(),
             keys: legacy,
-            mode: ItoMode.TRANSCRIBE,
+            modeId: 'voice-to-text',
           },
         ])
       }
@@ -406,14 +438,9 @@ const migrations: Migration[] = [
       // in the catalogue keeps the user's choice.
       const advanced: any = s.get(STORE_KEYS.ADVANCED_SETTINGS) || {}
 
-      if (advanced.longDictationEnabled === undefined) {
-        // 'openrouter' forced the precise engine on every dictation. Mapping
-        // it to the toggle's on state keeps OpenRouter for long dictations and
-        // hands short ones back to Groq — faster and far cheaper, never worse.
-        advanced.longDictationEnabled =
-          advanced.transcriptionEngineMode !== 'groq'
-      }
-      advanced.longDictationThresholdMs ??= LONG_DICTATION_THRESHOLD_MS
+      // Le seuil court/long a disparu (décision D16) : cette migration ne
+      // conserve que la traduction des slugs en clés de catalogue, que la
+      // migration des modes consomme juste après.
 
       advanced.shortVoiceModelKey ??=
         findModelBySlug('voice', advanced.llm?.asrModel, 'groq')?.key ??
@@ -635,6 +662,28 @@ export async function initializeStore() {
   // 4) Run migrations (idempotent) unless tests explicitly skip
   if (process.env.NODE_ENV !== 'test') {
     runMigrations(store, migrations)
+  }
+
+  // 5) Sème les modes. Après les migrations : la migration des raccourcis
+  //    référence les ids semés, donc les modes doivent exister d'abord.
+  if (process.env.NODE_ENV !== 'test') {
+    const { seedModes, seedMeetingMode } = await import('./modes/modeSeeder')
+    const userId = getCurrentUserId() || 'self-hosted'
+    await seedModes(userId)
+    // Meeting arrive après coup : son moteur (le chemin fichier Deepgram)
+    // n'existait pas au premier semis, donc les installations déjà semées ne
+    // l'ont jamais reçu. Son propre drapeau le sème une fois et une seule.
+    await seedMeetingMode(userId)
+
+    const { migrateSettingsIntoModes } = await import(
+      './modes/modeSettingsMigration'
+    )
+    await migrateSettingsIntoModes()
+
+    const { migrateShortcutsToModeIds } = await import(
+      './modes/shortcutMigration'
+    )
+    migrateShortcutsToModeIds()
   }
 }
 

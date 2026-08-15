@@ -351,6 +351,104 @@ describe('InteractionManager', () => {
     })
   })
 
+  describe('Raw transcript', () => {
+    test('stores the raw transcript alongside the rewritten one', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'Reminders:\n- Milk\n- Cheese',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        5000,
+        {
+          engine: 'whisper-large-v3-turbo',
+          modeId: 'intelligent',
+          modeName: 'Intelligent',
+          rawTranscript: 'buy milk eggs no not eggs cheese',
+        },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.transcript).toBe('Reminders:\n- Milk\n- Cheese')
+      expect(row.asr_output.rawTranscript).toBe(
+        'buy milk eggs no not eggs cheese',
+      )
+    })
+
+    test('a mode that does not rewrite stores no raw transcript — it would be a duplicate', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'same text',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        5000,
+        { engine: 'whisper-large-v3-turbo', rawTranscript: 'same text' },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.rawTranscript).toBeNull()
+    })
+  })
+
+  describe('Speaker segments', () => {
+    test('stores the speaker segments when the mode identifies speakers', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'summary',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        600_000,
+        {
+          engine: 'deepgram/nova-3',
+          modeId: 'meeting',
+          modeName: 'Meeting',
+          rawTranscript: 'bonjour tout le monde salut',
+          speakers: [
+            {
+              speaker: 0,
+              label: 'Speaker 1',
+              startMs: 0,
+              endMs: 900,
+              text: 'bonjour tout le monde',
+            },
+            {
+              speaker: 1,
+              label: 'Speaker 2',
+              startMs: 1200,
+              endMs: 1600,
+              text: 'salut',
+            },
+          ],
+        },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.speakers).toHaveLength(2)
+      expect(row.asr_output.speakers[1].label).toBe('Speaker 2')
+    })
+
+    test('a dictation without diarization stores no speakers array', async () => {
+      interactionManager.initialize()
+      await interactionManager.createInteraction(
+        'text',
+        Buffer.alloc(0),
+        16000,
+        undefined,
+        undefined,
+        5000,
+        { engine: 'whisper-large-v3-turbo' },
+      )
+
+      const [row] = mockUpsert.mock.calls.at(-1)! as [any]
+      expect(row.asr_output.speakers).toBeNull()
+    })
+  })
+
   describe('Error Handling', () => {
     test('should handle database insertion errors gracefully', async () => {
       mockUpsert.mockRejectedValueOnce(new Error('Database error'))

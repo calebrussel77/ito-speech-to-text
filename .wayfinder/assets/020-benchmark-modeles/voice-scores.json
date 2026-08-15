@@ -1,5 +1,28 @@
 [
   {
+    "key": "gpt-transcribe-openai",
+    "avgWer": 0.013584626755358464,
+    "avgRtf": 3.2166440475831353,
+    "perClip": {
+      "code": {
+        "wer": 0.016260162601626018,
+        "latency": 21.354,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 122,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.01090909090909091,
+        "latency": 54.237,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 276,
+        "error": null
+      }
+    }
+  },
+  {
     "key": "gpt-transcribe",
     "avgWer": 0.015402808573540282,
     "avgRtf": 7.718525342690731,
@@ -23,6 +46,29 @@
     }
   },
   {
+    "key": "gpt-4o-mini-transcribe-openai",
+    "avgWer": 0.01903917220990392,
+    "avgRtf": 4.861660562455163,
+    "perClip": {
+      "code": {
+        "wer": 0.016260162601626018,
+        "latency": 19.733,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 123,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.02181818181818182,
+        "latency": 26.001,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 273,
+        "error": null
+      }
+    }
+  },
+  {
     "key": "qwen3-asr-flash",
     "avgWer": 0.028987435328898747,
     "avgRtf": 5.298409726137472,
@@ -41,6 +87,29 @@
         "seconds": 149.21,
         "cost": 0.005215,
         "words": 274,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "gpt-4o-transcribe-openai",
+    "avgWer": 0.03764966740576497,
+    "avgRtf": 2.712514613547385,
+    "perClip": {
+      "code": {
+        "wer": 0.024390243902439025,
+        "latency": 24.795,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 123,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.05090909090909091,
+        "latency": 66.203,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 269,
         "error": null
       }
     }
@@ -202,6 +271,29 @@
         "seconds": 149.21,
         "cost": null,
         "words": 110,
+        "error": null
+      }
+    }
+  },
+  {
+    "key": "gpt-4o-transcribe-diarize-openai",
+    "avgWer": 0.5844641537324464,
+    "avgRtf": 1.5525384058440443,
+    "perClip": {
+      "code": {
+        "wer": 0.7398373983739838,
+        "latency": 62.205,
+        "seconds": 78.63,
+        "cost": null,
+        "words": 138,
+        "error": null
+      },
+      "feature": {
+        "wer": 0.4290909090909091,
+        "latency": 81.047,
+        "seconds": 149.21,
+        "cost": null,
+        "words": 299,
         "error": null
       }
     }
