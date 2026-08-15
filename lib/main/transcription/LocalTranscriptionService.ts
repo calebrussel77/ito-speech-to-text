@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk'
 import { toFile } from 'groq-sdk/uploads'
+import { stripReasoning } from './reasoning'
 export type TranscriptionOptions = {
   asrModel?: string
   vocabulary?: string[]
@@ -305,7 +306,9 @@ class LocalTranscriptionService {
     })
 
     const content = (result as any)?.choices?.[0]?.message?.content
-    return typeof content === 'string' ? content.trim() : ''
+    // Même filet que le chemin OpenRouter : un hôte qui inline son
+    // raisonnement dans `content` ne doit pas le dicter dans le document.
+    return typeof content === 'string' ? stripReasoning(content) : ''
   }
 
   async testConnection(apiKey: string): Promise<ApiTestResult> {
