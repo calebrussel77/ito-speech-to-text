@@ -1,42 +1,34 @@
 import fs from 'fs'
-import { basename } from 'path'
 import { deepgramTranscriptionService } from './DeepgramTranscriptionService'
 import { googleTranscriptionService } from './GoogleTranscriptionService'
 import { openaiTranscriptionService } from './OpenAITranscriptionService'
+import { openRouterAudioService } from './OpenRouterAudioService'
+import { polishDialogue, polishPlainText } from './dialoguePolish'
 import { interactionManager } from '../interactions/InteractionManager'
 import { resolveActiveMode } from '../modes/activeMode'
-import { getAdvancedSettings } from '../store'
+import { getAdvancedSettings, type AdvancedSettings } from '../store'
 import { asrLanguageHint } from '../../constants/modeLanguages'
-import { findModel } from '../../constants/modelCatalog'
+import { findModel, type CatalogModel } from '../../constants/modelCatalog'
 import {
   collapseMinorSpeakers,
   formatSpeakerTranscript,
 } from '../../transcription/speakerTranscript'
 import { contextGrabber } from '../context/ContextGrabber'
-import { wavToMp3 } from '../audio/wavToMp3'
+import { prepareUploadAudio } from '../audio/transcodeForUpload'
+import type { SpeakerSegment } from './DeepgramTranscriptionService'
 
-const CONTENT_TYPES: Record<string, string> = {
-  wav: 'audio/wav',
-  mp3: 'audio/mpeg',
-  m4a: 'audio/mp4',
-  mp4: 'video/mp4',
-  ogg: 'audio/ogg',
-  flac: 'audio/flac',
-  webm: 'audio/webm',
-}
+type FileProvider = 'deepgram' | 'openrouter' | 'google' | 'openai'
 
-function contentTypeFor(filePath: string): string {
-  const extension = filePath.split('.').pop()?.toLowerCase() ?? ''
-  return CONTENT_TYPES[extension] ?? 'audio/wav'
-}
+/** Le modèle multimodal par défaut chez OpenRouter, quand aucun n'est choisi. */
+const DEFAULT_OPENROUTER_AUDIO_KEY = 'gemini-3-7-flash-openrouter-audio'
 
 /**
- * Traite un enregistrement fait ailleurs (Teams, OBS, un dictaphone).
+ * Traite un enregistrement fait ailleurs (Teams, OBS, un dictaphone, un
+ * appel de prospection enregistré au téléphone).
  *
  * C'est le filet du mode Meeting : la première réunion qu'on veut résumer est
  * toujours celle qu'on a oublié de lancer dans Ito. Le fichier n'est jamais
- * touché — on le lit, on l'envoie tel quel à Deepgram avec le bon type MIME,
- * et on ne le déplace ni ne le supprime.
+ * touché — on le lit, on l'envoie, et on ne le déplace ni ne le supprime.
  *
  * **Aucun mode ne s'applique ici, et c'est délibéré.** Ce chemin passait par le
  * mode actif : importer l'enregistrement d'une réunion pendant que le mode
@@ -45,27 +37,28 @@ function contentTypeFor(filePath: string): string {
  * rapport avec le fichier. Un fichier importé n'a pas d'intention : il a un
  * contenu. On le transcrit, on ne l'interprète pas.
  *
- * Ce que le fichier contient décide donc de la forme du résultat : la
- * diarisation tourne toujours, et si elle trouve **plusieurs locuteurs** le
- * transcript est rendu nommé et horodaté, prêt à être relu ou donné à un mode
- * qui lit le presse-papier. Un seul locuteur — un mémo, un monologue — et c'est
- * le texte simple, sans étiquette « Speaker 1 » qui n'apprendrait rien.
+ * Ce que le fichier contient décide de la forme du résultat : plusieurs
+ * voix, et le transcript est rendu en dialogue nommé et horodaté ; une seule,
+ * et c'est le texte simple, sans étiquette « Speaker 1 » qui n'apprendrait
+ * rien. Quel que soit le fournisseur, le pipeline est le même :
+ *
+ * 1. l'audio est allégé avant l'envoi (mono, 48 kbit/s) quand la machine
+ *    sait le décoder — un m4a de réunion de 45 Mo en devient 17 ;
+ * 2. le dictionnaire de l'utilisateur sert de vocabulaire au moteur ;
+ * 3. les voix marginales (un « oui » de fond, un bruit de micro) sont
+ *    rendues à leur voisin avant de compter les locuteurs ;
+ * 4. un transcript d'ASR (Deepgram, OpenAI) est relu par le modèle texte,
+ *    qui corrige les mots mal entendus, les noms et la ponctuation sans
+ *    toucher au reste — un modèle multimodal (Gemini) l'a déjà fait en
+ *    écoutant l'audio avec le même brief.
  *
  * Seule chose empruntée au mode actif : **la langue parlée**. Elle décrit
- * l'utilisateur, pas le traitement, et sans indice `nova-3` retombe sur
- * l'anglais — ce qui casserait toutes les réunions françaises.
+ * l'utilisateur, pas le traitement.
  *
- * Un fichier importé n'a pas été enregistré par Ito : pas de WAV, pas de
- * filet de récupération, donc pas de sens à emprunter les chemins courts
- * (Groq/OpenRouter) qu'utilise `chooseTranscriptionPath` pour une dictée en
- * direct. On l'exigeait déjà en pratique en forçant ses paramètres pour
- * qu'il ne rende que "Deepgram" ou un refus — mais ce refus recyclait le
- * message du routeur ("trop long"), qui mentait pour un mémo de dix
- * secondes : le vrai motif n'a jamais été la durée, faute de la connaître
- * sans décoder le fichier. On l'exprime donc directement ici : ce chemin
- * exige la clé du fournisseur choisi dans Models → « Imported file
- * transcription » — Deepgram par défaut, Google ou OpenAI si le réglage
- * désigne un de leurs modèles.
+ * Le fournisseur vient de Models → « Imported file transcription ». Sans
+ * choix explicite : Deepgram si sa clé est là, sinon Gemini via OpenRouter,
+ * sinon Google, sinon OpenAI — dans l'ordre de ce que l'utilisateur a le
+ * plus probablement configuré.
  */
 export async function transcribeExistingFile(filePath: string): Promise<{
   ok: boolean
@@ -78,123 +71,98 @@ export async function transcribeExistingFile(filePath: string): Promise<{
   }
 
   const advancedSettings = getAdvancedSettings()
-
-  // Le modèle choisi pour ce chemin, ou Deepgram comme avant. `findModel`
-  // rend `undefined` sur une clé disparue du catalogue : on retombe alors sur
-  // Deepgram plutôt que de refuser un fichier à cause d'un réglage périmé.
-  const chosen = advancedSettings.fileTranscriptionModelKey
-    ? findModel(advancedSettings.fileTranscriptionModelKey)
-    : undefined
-  const useGoogle = chosen?.provider === 'google'
-  const useOpenAI = chosen?.provider === 'openai'
-
-  const deepgramApiKey = advancedSettings.deepgramApiKey?.trim()
-  const googleApiKey = advancedSettings.googleApiKey?.trim()
-  const openaiApiKey = advancedSettings.openaiApiKey?.trim()
-
-  if (useGoogle && !googleApiKey) {
-    return {
-      ok: false,
-      error: `${chosen?.label} needs a Google API key. Add one in Models.`,
-    }
-  }
-  if (useOpenAI && !openaiApiKey) {
-    return {
-      ok: false,
-      error: `${chosen?.label} needs an OpenAI API key. Add one in Models.`,
-    }
-  }
-  if (!useGoogle && !useOpenAI && !deepgramApiKey) {
-    return {
-      ok: false,
-      error:
-        'Transcribing an imported file needs a Deepgram API key. Add one in Models.',
-    }
-  }
+  const route = chooseFileProvider(advancedSettings)
+  if ('error' in route) return { ok: false, error: route.error }
+  const { provider, model } = route
 
   const startedAt = performance.now()
   try {
     const activeMode = await resolveActiveMode()
+    const language = asrLanguageHint(activeMode.language)
     const original = fs.readFileSync(filePath)
     // Le dictionnaire est la seule chose que l'utilisateur ait dite sur son
     // vocabulaire : noms de produits, de clients, d'outils. Il vaut pour un
     // appel de prospection autant que pour une dictée.
     const { vocabularyWords } = await contextGrabber.getVocabulary()
 
-    // Un WAV importé est encodé en MP3 avant l'envoi : dix fois moins
-    // d'octets à pousser, pour un transcript identique. Les autres
-    // conteneurs (m4a, mp3, ogg…) sont déjà compressés et partent tels quels.
-    let audio: Buffer = original
-    let contentType = contentTypeFor(filePath)
-    let fileName = basename(filePath)
-    if (contentType === 'audio/wav') {
-      const mp3 = await wavToMp3(original)
-      if (mp3) {
-        audio = mp3
-        contentType = 'audio/mpeg'
-        fileName = fileName.replace(/\.wav$/i, '') + '.mp3'
-        console.log(
-          `[fileTranscription] WAV re-encoded to MP3: ${original.length} -> ${mp3.length} bytes`,
-        )
-      }
+    const upload = await prepareUploadAudio(filePath, original)
+    if (upload.transcoded) {
+      console.log(
+        `[fileTranscription] ${upload.fileName}: ${original.length} -> ${upload.bytes.length} bytes before upload`,
+      )
     }
+    const audioFormat = upload.contentType === 'audio/wav' ? 'wav' : 'mp3'
+
     const asrStartedAt = performance.now()
-    // Toujours diariser : c'est le seul moyen de SAVOIR combien de personnes
-    // parlent. Le décider d'après un réglage de mode revenait à demander à
-    // l'utilisateur une réponse qu'il n'a pas encore — il vient d'ouvrir le
-    // fichier, pas de l'écouter.
-    //
-    // Le type MIME est annoncé dans les deux cas : annoncer audio/wav sur un
-    // .m4a fait échouer le décodage côté Deepgram comme côté Google.
-    const { text, segments: rawSegments } = useGoogle
-      ? await googleTranscriptionService.transcribeAudio(audio, {
-          apiKey: googleApiKey!,
-          model: chosen!.slug,
-          language: asrLanguageHint(activeMode.language),
-          diarize: true,
-          contentType,
-          displayName: fileName,
-          vocabulary: vocabularyWords,
-          thinking: 'low',
-        })
-      : useOpenAI
-        ? await openaiTranscriptionService.transcribeAudio(audio, {
-            apiKey: openaiApiKey!,
-            model: chosen!.slug,
-            language: asrLanguageHint(activeMode.language),
+    const { text, segments: rawSegments } =
+      provider === 'google'
+        ? await googleTranscriptionService.transcribeAudio(upload.bytes, {
+            apiKey: advancedSettings.googleApiKey!,
+            model: model!.slug,
+            language,
             diarize: true,
-            contentType,
-            fileName,
+            contentType: upload.contentType,
+            displayName: upload.fileName,
+            vocabulary: vocabularyWords,
+            thinking: 'low',
           })
-        : await deepgramTranscriptionService.transcribeAudio(audio, {
-            apiKey: deepgramApiKey!,
-            model: 'nova-3',
-            language: asrLanguageHint(activeMode.language),
-            diarize: true,
-            contentType,
-          })
+        : provider === 'openrouter'
+          ? await openRouterAudioService.transcribeAudio(upload.bytes, {
+              apiKey: advancedSettings.openRouterApiKey!,
+              model: model!.slug,
+              language,
+              vocabulary: vocabularyWords,
+              format: audioFormat,
+            })
+          : provider === 'openai'
+            ? await openaiTranscriptionService.transcribeAudio(upload.bytes, {
+                apiKey: advancedSettings.openaiApiKey!,
+                model: model!.slug,
+                language,
+                diarize: true,
+                contentType: upload.contentType,
+                fileName: upload.fileName,
+                vocabulary: vocabularyWords,
+              })
+            : await deepgramTranscriptionService.transcribeAudio(upload.bytes, {
+                apiKey: advancedSettings.deepgramApiKey!,
+                model: 'nova-3',
+                language,
+                diarize: true,
+                contentType: upload.contentType,
+              })
     const asrMs = Math.round(performance.now() - asrStartedAt)
 
     // Un ASR qui diarise (Deepgram, OpenAI) coupe volontiers une voix en
-    // deux ou attribue un « oui » de fond à un tiers : ces miettes sont
+    // deux ou attribue un « oui » de fond à un tiers ; un modèle multimodal
+    // étiquette un bruit de micro comme une personne. Ces miettes sont
     // rendues au locuteur voisin avant de compter les voix.
     const segments = collapseMinorSpeakers(rawSegments ?? [])
     const speakerCount = new Set(segments.map(s => s.speaker)).size
-    const isConversation = speakerCount >= 2
-    const finalText =
-      isConversation && segments.length
-        ? formatSpeakerTranscript(segments)
+    const isConversation = speakerCount >= 2 && segments.length > 0
+
+    // Relecture par le modèle texte, pour les moteurs qui n'ont fait
+    // qu'entendre. Gemini a déjà reçu le brief et le vocabulaire.
+    const polishStartedAt = performance.now()
+    const heardOnly = provider === 'deepgram' || provider === 'openai'
+    const polishedSegments =
+      heardOnly && isConversation
+        ? await polishDialogue(segments, vocabularyWords, advancedSettings)
+        : segments
+    const polishedText =
+      heardOnly && !isConversation
+        ? await polishPlainText(text, vocabularyWords, advancedSettings)
         : text
+    const polishMs = heardOnly
+      ? Math.round(performance.now() - polishStartedAt)
+      : 0
 
-    // Le slug OpenAI est stocké nu : `EngineBadge` retrouve alors l'entrée
-    // `provider: 'openai'` du catalogue (les slugs préfixés `openai/…`
-    // désignent, eux, les mêmes modèles servis par OpenRouter).
-    const engine = useGoogle
-      ? `google/${chosen!.slug}`
-      : useOpenAI
-        ? chosen!.slug
-        : 'deepgram/nova-3'
+    const finalText = isConversation
+      ? formatSpeakerTranscript(polishedSegments)
+      : polishedText
+    const rawText = isConversation ? formatSpeakerTranscript(segments) : text
 
+    const engine = engineName(provider, model)
     const interactionId = await interactionManager.createRecoveredInteraction(
       finalText,
       16000,
@@ -202,25 +170,24 @@ export async function transcribeExistingFile(filePath: string): Promise<{
       undefined,
       engine,
       {
-        rawTranscript: text,
+        rawTranscript: rawText,
         // Aucun mode n'a traité ce fichier : lui en attribuer un ferait
         // remonter dans l'historique une ligne « dictée en mode X » qui n'a
         // jamais eu lieu.
-        speakers: isConversation ? segments : undefined,
+        speakers: isConversation ? polishedSegments : undefined,
         latency: {
           asrMs,
+          adjustMs: polishMs,
           totalMs: Math.round(performance.now() - startedAt),
-          uploadBytes: audio.length,
+          uploadBytes: upload.bytes.length,
         },
       },
     )
 
     // `createRecoveredInteraction` avale ses propres erreurs de base de
-    // données et rend `undefined` plutôt que de lever (comportement
-    // pré-existant, à ne pas changer ici) : un identifiant manquant EST
-    // l'échec — sans quoi une écriture ratée après une transcription de
-    // plusieurs minutes se rapporterait comme un succès, et rien
-    // n'apparaîtrait dans l'historique.
+    // données et rend `undefined` plutôt que de lever : un identifiant
+    // manquant EST l'échec — sans quoi une écriture ratée après une
+    // transcription de plusieurs minutes se rapporterait comme un succès.
     if (!interactionId) {
       console.error(
         `[fileTranscription] Transcribed ${filePath} but failed to save it to history`,
@@ -232,7 +199,7 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     }
 
     console.log(
-      `[fileTranscription] Transcribed ${filePath} with ${engine} — ${
+      `[fileTranscription] Transcribed ${filePath} with ${engine} in ${Math.round((performance.now() - startedAt) / 1000)} s — ${
         isConversation ? `${speakerCount} speakers` : 'single speaker'
       }`,
     )
@@ -242,3 +209,78 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     return { ok: false, error: error?.message || 'Transcription failed' }
   }
 }
+
+/**
+ * Le fournisseur et le modèle d'un import, d'après le réglage et les clés
+ * présentes. Un réglage qui désigne un fournisseur sans clé est une erreur
+ * explicite, qui nomme le modèle ; sans réglage, le premier fournisseur
+ * dont la clé existe prend le fichier.
+ */
+export function chooseFileProvider(
+  advancedSettings: AdvancedSettings,
+): { provider: FileProvider; model?: CatalogModel } | { error: string } {
+  const keys: Record<FileProvider, string | undefined> = {
+    deepgram: advancedSettings.deepgramApiKey?.trim(),
+    openrouter: advancedSettings.openRouterApiKey?.trim(),
+    google: advancedSettings.googleApiKey?.trim(),
+    openai: advancedSettings.openaiApiKey?.trim(),
+  }
+  const keyLabel: Record<FileProvider, string> = {
+    deepgram: 'Deepgram',
+    openrouter: 'OpenRouter',
+    google: 'Google',
+    openai: 'OpenAI',
+  }
+
+  // `findModel` rend `undefined` sur une clé disparue du catalogue : on
+  // retombe alors sur le choix automatique plutôt que de refuser un fichier
+  // à cause d'un réglage périmé.
+  const chosen = advancedSettings.fileTranscriptionModelKey
+    ? findModel(advancedSettings.fileTranscriptionModelKey)
+    : undefined
+  if (chosen) {
+    const provider = chosen.provider as FileProvider
+    if (!keys[provider]) {
+      return {
+        error: `${chosen.label} needs a${provider === 'openai' || provider === 'openrouter' ? 'n' : ''} ${keyLabel[provider]} API key. Add one in Models.`,
+      }
+    }
+    return { provider, model: chosen }
+  }
+
+  if (keys.deepgram) return { provider: 'deepgram' }
+  if (keys.openrouter) {
+    return {
+      provider: 'openrouter',
+      model: findModel(DEFAULT_OPENROUTER_AUDIO_KEY),
+    }
+  }
+  if (keys.google) {
+    return { provider: 'google', model: findModel('gemini-3-7-flash-audio') }
+  }
+  if (keys.openai) {
+    return {
+      provider: 'openai',
+      model: findModel('gpt-4o-transcribe-diarize-openai'),
+    }
+  }
+  return {
+    error:
+      'Transcribing an imported file needs a Deepgram, OpenRouter, Google or OpenAI API key. Add one in Models.',
+  }
+}
+
+/**
+ * Ce que l'historique affiche. Le slug OpenAI est stocké nu : `EngineBadge`
+ * retrouve alors l'entrée `provider: 'openai'` du catalogue. Les modèles
+ * servis par OpenRouter sont préfixés pour ne pas être confondus avec le
+ * même modèle servi par Google directement.
+ */
+function engineName(provider: FileProvider, model?: CatalogModel): string {
+  if (provider === 'deepgram') return 'deepgram/nova-3'
+  if (provider === 'google') return `google/${model?.slug}`
+  if (provider === 'openrouter') return `openrouter/${model?.slug}`
+  return model?.slug ?? 'openai'
+}
+
+export type { SpeakerSegment }

@@ -251,6 +251,32 @@ export const VOICE_MODELS: CatalogModel[] = [
     price: '$0.75 / $3.75 per M',
     note: 'Multimodal, not measured',
   },
+  // Les mêmes Gemini, servis par OpenRouter : pour ceux qui n'ont qu'une clé
+  // OpenRouter. L'audio passe en base64 dans un message chat, avec le brief
+  // de transcription en dialogue. Mesuré sur une réunion de prospection de
+  // 46 minutes : 299 tours à six voix en 3 min 48 s pour 0,10 $.
+  {
+    key: 'gemini-3-7-flash-openrouter-audio',
+    kind: 'voice',
+    label: 'Gemini 3.7 Flash',
+    slug: 'google/gemini-3.7-flash',
+    provider: 'openrouter',
+    lab: 'google',
+    price: '~$0.13 per hour',
+    note: 'Multimodal, files only',
+    fileOnly: true,
+  },
+  {
+    key: 'gemini-2-5-flash-openrouter-audio',
+    kind: 'voice',
+    label: 'Gemini 2.5 Flash',
+    slug: 'google/gemini-2.5-flash',
+    provider: 'openrouter',
+    lab: 'google',
+    price: '~$0.14 per hour',
+    note: 'Multimodal, files only',
+    fileOnly: true,
+  },
   {
     key: 'gemini-3-5-flash-lite-audio',
     kind: 'voice',
@@ -478,7 +504,10 @@ export const TEXT_MODELS: CatalogModel[] = [
     lab: 'google',
     price: '$0.38 / $1.88 per M',
     speed: 2,
-    reasoning: 'none',
+    // Vérifié le 2026-09-06 : OpenRouter répond 400 « Reasoning is mandatory
+    // for this endpoint and cannot be disabled » à `none` — chaque réécriture
+    // par ce modèle échouait et rendait le transcript brut. `low` passe.
+    reasoning: 'low',
   },
   {
     key: 'gemini-3-5-flash-lite',
@@ -533,6 +562,8 @@ export const FILE_TRANSCRIPTION_KEYS = [
   'gpt-4o-mini-transcribe-openai',
   'gemini-3-7-flash-audio',
   'gemini-3-5-flash-lite-audio',
+  'gemini-3-7-flash-openrouter-audio',
+  'gemini-2-5-flash-openrouter-audio',
 ] as const
 
 export const DEFAULT_SHORT_VOICE_KEY = 'whisper-large-v3'

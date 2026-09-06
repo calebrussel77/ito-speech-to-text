@@ -43,6 +43,8 @@ export type OpenAIOptions = {
   contentType?: string
   /** Nom envoyé en multipart — OpenAI déduit le format de son extension. */
   fileName?: string
+  /** Termes à orthographier exactement, passés dans le `prompt` du modèle. */
+  vocabulary?: string[]
 }
 
 /** Le seul modèle du catalogue qui sait séparer les locuteurs. */
@@ -141,46 +143,74 @@ class OpenAITranscriptionService {
 
     const diarize = options.diarize && options.model === DIARIZE_MODEL
 
-    const form = new FormData()
-    form.append(
-      'file',
-      new Blob([new Uint8Array(audio)], {
-        type: options.contentType || 'audio/wav',
-      }),
-      options.fileName || 'audio.wav',
-    )
-    form.append('model', options.model)
-    if (options.language) {
-      // gpt-transcribe attend `languages[]`, la famille gpt-4o `language` —
-      // et la doc interdit d'envoyer les deux à la fois.
-      const plural = options.model.startsWith('gpt-transcribe')
-      form.append(plural ? 'languages[]' : 'language', options.language)
-    }
-    if (diarize) {
-      form.append('response_format', 'diarized_json')
-      // Obligatoire dès que l'audio dépasse 30 s ; inoffensif en deçà.
-      form.append('chunking_strategy', 'auto')
-    }
-
-    let res: Response
-    try {
-      res = await fetch(TRANSCRIPTIONS_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      })
-    } catch (error: any) {
-      const timedOut =
-        error?.name === 'AbortError' || error?.name === 'TimeoutError'
-      throw new LocalTranscriptionError(
-        timedOut
-          ? 'OpenAI request timed out'
-          : error?.message || 'OpenAI request failed',
-        'NETWORK',
+    const buildForm = (withPrompt: boolean) => {
+      const form = new FormData()
+      form.append(
+        'file',
+        new Blob([new Uint8Array(audio)], {
+          type: options.contentType || 'audio/wav',
+        }),
+        options.fileName || 'audio.wav',
       )
+      form.append('model', options.model)
+      if (options.language) {
+        // gpt-transcribe attend `languages[]`, la famille gpt-4o `language` —
+        // et la doc interdit d'envoyer les deux à la fois.
+        const plural = options.model.startsWith('gpt-transcribe')
+        form.append(plural ? 'languages[]' : 'language', options.language)
+      }
+      if (diarize) {
+        form.append('response_format', 'diarized_json')
+        // Obligatoire dès que l'audio dépasse 30 s ; inoffensif en deçà.
+        form.append('chunking_strategy', 'auto')
+      }
+      const vocabulary = (options.vocabulary ?? []).filter(v => v.trim())
+      if (withPrompt && vocabulary.length > 0) {
+        // Le `prompt` d'OpenAI guide l'orthographe, pas le contenu : une liste
+        // de noms propres est exactement ce pour quoi il existe.
+        form.append('prompt', `Vocabulaire : ${vocabulary.join(', ')}.`)
+      }
+      return form
     }
 
+    // Le `prompt` n'est pas documenté pour tous les modèles de la famille ;
+    // s'il est refusé, on renvoie la même requête sans lui plutôt que de
+    // perdre la transcription pour une liste de noms.
+    let res: Response
+    let withPrompt = true
+    for (;;) {
+      try {
+        res = await fetch(TRANSCRIPTIONS_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: buildForm(withPrompt),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+      } catch (error: any) {
+        const timedOut =
+          error?.name === 'AbortError' || error?.name === 'TimeoutError'
+        throw new LocalTranscriptionError(
+          timedOut
+            ? 'OpenAI request timed out'
+            : error?.message || 'OpenAI request failed',
+          'NETWORK',
+        )
+      }
+      if (res.status === 400 && withPrompt) {
+        const detail = await res
+          .clone()
+          .text()
+          .catch(() => '')
+        if (/prompt/i.test(detail)) {
+          console.warn(
+            '[OpenAITranscriptionService] prompt refused, retrying without it',
+          )
+          withPrompt = false
+          continue
+        }
+      }
+      break
+    }
     if (!res.ok) throw await mapHttpError(res)
 
     const payload: any = await res.json()

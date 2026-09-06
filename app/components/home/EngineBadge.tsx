@@ -49,8 +49,15 @@ export default function EngineBadge({ engine }: { engine?: string | null }) {
 
   // Groq slugs are bare ("whisper-large-v3-turbo") and OpenRouter's are
   // namespaced ("openai/whisper-large-v3-turbo"), so the same model served by
-  // both is never ambiguous here.
-  const model = findModelBySlug('voice', engine)
+  // both is never ambiguous here. Imported files add a provider prefix for
+  // the models listed twice: "google/gemini-3.7-flash" is Google directly,
+  // "openrouter/google/gemini-3.7-flash" the same model through OpenRouter.
+  const model = engine.startsWith('openrouter/')
+    ? findModelBySlug('voice', engine.slice('openrouter/'.length), 'openrouter')
+    : (findModelBySlug('voice', engine) ??
+      (engine.startsWith('google/')
+        ? findModelBySlug('voice', engine.slice('google/'.length), 'google')
+        : undefined))
 
   // A row from before this catalogue, or an engine since removed from it.
   if (!model) {

@@ -62,10 +62,44 @@ mock.module('../context/ContextGrabber', () => ({
   contextGrabber: { getVocabulary: mockGetVocabulary },
 }))
 
-let mp3Result: Buffer | null = null
-const mockWavToMp3 = mock(async () => mp3Result)
-mock.module('../audio/wavToMp3', () => ({
-  wavToMp3: mockWavToMp3,
+const mockOpenRouterAudio = mock(async () => ({
+  text: 'openrouter transcript',
+  segments: [] as Segment[],
+}))
+mock.module('./OpenRouterAudioService', () => ({
+  openRouterAudioService: { transcribeAudio: mockOpenRouterAudio },
+}))
+
+const mockPolishDialogue = mock(async (segments: Segment[]) =>
+  segments.map(s => ({ ...s, text: `polished ${s.text}` })),
+)
+const mockPolishPlainText = mock(async (text: string) => `polished ${text}`)
+mock.module('./dialoguePolish', () => ({
+  polishDialogue: mockPolishDialogue,
+  polishPlainText: mockPolishPlainText,
+}))
+
+let uploadResult: {
+  bytes: Buffer
+  contentType: string
+  fileName: string
+  transcoded: boolean
+} | null = null
+const mockPrepareUpload = mock(
+  async (filePath: string, original: Buffer) =>
+    uploadResult ?? {
+      bytes: original,
+      contentType: filePath.endsWith('.wav')
+        ? 'audio/wav'
+        : filePath.endsWith('.m4a')
+          ? 'audio/mp4'
+          : 'audio/mpeg',
+      fileName: filePath.split('/').pop()!,
+      transcoded: false,
+    },
+)
+mock.module('../audio/transcodeForUpload', () => ({
+  prepareUploadAudio: mockPrepareUpload,
 }))
 
 const mockAdjust = mock(async (text: string) => `rewritten: ${text}`)
@@ -91,12 +125,14 @@ mock.module('fs', () => ({
 let deepgramApiKey = 'dg-test'
 let googleApiKey = ''
 let openaiApiKey = ''
+let openRouterApiKey = ''
 let fileTranscriptionModelKey = ''
 mock.module('../store', () => ({
   getAdvancedSettings: () => ({
     deepgramApiKey,
     googleApiKey,
     openaiApiKey,
+    openRouterApiKey,
     fileTranscriptionModelKey,
   }),
   getCurrentUserId: () => 'self-hosted',
@@ -116,6 +152,12 @@ const segment = (speaker: number, text: string): Segment => ({
 
 describe('transcribeExistingFile', () => {
   beforeEach(() => {
+    openRouterApiKey = ''
+    uploadResult = null
+    mockOpenRouterAudio.mockClear()
+    mockPolishDialogue.mockClear()
+    mockPolishPlainText.mockClear()
+    mockPrepareUpload.mockClear()
     mockDeepgram.mockClear()
     mockCreateRecovered.mockClear()
     mockResolveMode.mockClear()
@@ -157,7 +199,11 @@ describe('transcribeExistingFile', () => {
 
     expect(result.ok).toBe(true)
     expect(mockAdjust).not.toHaveBeenCalled()
-    expect((mockCreateRecovered.mock.calls[0] as any[])[0]).toBe('transcript')
+    // Seule la relecture d'ASR (mots, ponctuation) touche au texte — jamais
+    // les instructions d'un mode.
+    expect((mockCreateRecovered.mock.calls[0] as any[])[0]).toBe(
+      'polished transcript',
+    )
   })
 
   test('attributes the import to no mode at all', async () => {
@@ -178,11 +224,14 @@ describe('transcribeExistingFile', () => {
 
     expect(result.speakerCount).toBe(2)
     const [text, , , , , extra] = mockCreateRecovered.mock.calls[0] as any[]
+    // Relu par le modèle texte (le mock préfixe chaque tour), puis nommé.
     expect(text).toBe(
+      '[00:00-00:01] Speaker 1: polished bonjour\n[00:01-00:02] Speaker 2: polished salut',
+    )
+    // Le transcript brut du moteur reste à côté du transcript relu.
+    expect(extra.rawTranscript).toBe(
       '[00:00-00:01] Speaker 1: bonjour\n[00:01-00:02] Speaker 2: salut',
     )
-    // Le transcript brut reste à côté du transcript nommé.
-    expect(extra.rawTranscript).toBe('bonjour salut')
     expect(extra.speakers).toHaveLength(2)
   })
 
@@ -198,7 +247,7 @@ describe('transcribeExistingFile', () => {
 
     expect(result.speakerCount).toBe(1)
     const [text, , , , , extra] = mockCreateRecovered.mock.calls[0] as any[]
-    expect(text).toBe('note pour moi-même')
+    expect(text).toBe('polished note pour moi-même')
     expect(extra.speakers).toBeUndefined()
   })
 
@@ -231,27 +280,86 @@ describe('transcribeExistingFile', () => {
     ])
   })
 
-  test('a WAV is re-encoded to MP3 before the upload, other containers go as they are', async () => {
-    mp3Result = Buffer.from('mp3')
-    await transcribeExistingFile('C:/memo.wav')
-    let options = (mockDeepgram.mock.calls[0] as any[])[1]
-    expect((mockDeepgram.mock.calls[0] as any[])[0]).toEqual(Buffer.from('mp3'))
-    expect(options.contentType).toBe('audio/mpeg')
-
-    mockDeepgram.mockClear()
-    mockWavToMp3.mockClear()
+  test('the upload is prepared once, and what it yields is what the engine gets', async () => {
+    uploadResult = {
+      bytes: Buffer.from('mp3'),
+      contentType: 'audio/mpeg',
+      fileName: 'meeting.mp3',
+      transcoded: true,
+    }
     await transcribeExistingFile('C:/meeting.m4a')
-    options = (mockDeepgram.mock.calls[0] as any[])[1]
-    expect(mockWavToMp3).not.toHaveBeenCalled()
-    expect(options.contentType).toBe('audio/mp4')
+    expect(mockPrepareUpload).toHaveBeenCalledTimes(1)
+    expect((mockDeepgram.mock.calls[0] as any[])[0]).toEqual(Buffer.from('mp3'))
+    expect((mockDeepgram.mock.calls[0] as any[])[1].contentType).toBe(
+      'audio/mpeg',
+    )
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.latency.uploadBytes).toBe(3)
   })
 
-  test('a WAV the encoder cannot handle is sent untouched', async () => {
-    mp3Result = null
-    await transcribeExistingFile('C:/memo.wav')
-    expect((mockDeepgram.mock.calls[0] as any[])[1].contentType).toBe(
-      'audio/wav',
+  test('an ASR transcript is proofread by the text model, a multimodal one is not', async () => {
+    deepgramResult = {
+      text: 'x',
+      segments: [
+        segment(0, 'on a testé influence zoo hier et ça marche bien'),
+        segment(1, "d'accord très bien on regarde ça ensemble"),
+      ],
+    }
+    await transcribeExistingFile('C:/call.m4a')
+    expect(mockPolishDialogue).toHaveBeenCalledTimes(1)
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.speakers[0].text).toBe(
+      'polished on a testé influence zoo hier et ça marche bien',
     )
+    // The raw engine output is kept next to it.
+    expect(extra.rawTranscript).toContain('on a testé influence zoo hier')
+
+    mockPolishDialogue.mockClear()
+    mockCreateRecovered.mockClear()
+    deepgramApiKey = ''
+    openRouterApiKey = 'or-test'
+    await transcribeExistingFile('C:/call.m4a')
+    expect(mockOpenRouterAudio).toHaveBeenCalledTimes(1)
+    expect(mockPolishDialogue).not.toHaveBeenCalled()
+    expect(mockPolishPlainText).not.toHaveBeenCalled()
+    deepgramApiKey = 'dg-test'
+  })
+
+  test('a single-voice ASR memo is proofread as plain text', async () => {
+    deepgramResult = { text: 'un mémo', segments: [segment(0, 'un mémo')] }
+    await transcribeExistingFile('C:/memo.m4a')
+    expect(mockPolishPlainText).toHaveBeenCalledWith(
+      'un mémo',
+      ['Nfluenzo'],
+      expect.anything(),
+    )
+    expect((mockCreateRecovered.mock.calls[0] as any[])[0]).toBe(
+      'polished un mémo',
+    )
+  })
+
+  test('without a chosen model, the first provider with a key takes the file', async () => {
+    deepgramApiKey = ''
+    openRouterApiKey = 'or-test'
+    const result = await transcribeExistingFile('C:/call.m4a')
+    expect(result.ok).toBe(true)
+    expect(mockOpenRouterAudio).toHaveBeenCalledTimes(1)
+    const options = (mockOpenRouterAudio.mock.calls[0] as any[])[1]
+    expect(options.model).toBe('google/gemini-3.7-flash')
+    expect(options.vocabulary).toEqual(['Nfluenzo'])
+    expect(options.format).toBe('mp3')
+    const engine = (mockCreateRecovered.mock.calls[0] as any[])[4]
+    expect(engine).toBe('openrouter/google/gemini-3.7-flash')
+    deepgramApiKey = 'dg-test'
+  })
+
+  test('a chosen OpenRouter model without an OpenRouter key is refused by name', async () => {
+    fileTranscriptionModelKey = 'gemini-3-7-flash-openrouter-audio'
+    const result = await transcribeExistingFile('C:/call.m4a')
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Gemini 3.7 Flash')
+    expect(result.error).toContain('OpenRouter')
+    fileTranscriptionModelKey = ''
   })
 
   test('a stray voice with two words does not turn a memo into a dialogue', async () => {

@@ -162,7 +162,7 @@ export default function ModelsSettingsContent() {
 
         <SettingsRow
           title="Imported file transcription"
-          description="Used by “Transcribe a file”. That path has no mode, so it has its own model. Default sends the file to Deepgram."
+          description="Used by “Transcribe a file”. That path has no mode, so it has its own model. Default picks the first provider with a key: Deepgram, then Gemini via OpenRouter, then Google, then OpenAI."
         >
           <ModelSelect
             kind="voice"
