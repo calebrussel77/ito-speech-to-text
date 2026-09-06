@@ -22,7 +22,9 @@ mock.module('./LocalTranscriptionService', () => ({
   LocalTranscriptionError: class extends Error {},
 }))
 
-const { polishDialogue, polishPlainText } = await import('./dialoguePolish')
+const { polishDialogue, polishPlainText, inferSpeakersFromText } = await import(
+  './dialoguePolish'
+)
 
 const settings = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -112,5 +114,96 @@ describe('polishPlainText', () => {
     expect(await polishPlainText(text, ['Nfluenzo'], settings())).toBe(
       'On a vu Nfluenzo. Ensuite on a parlé prix.',
     )
+  })
+})
+
+describe('inferSpeakersFromText', () => {
+  const call = Array.from({ length: 30 }, (_, i) =>
+    i % 2 === 0
+      ? `Bonjour, je vous appelle au sujet de votre clinique numéro ${i}.`
+      : `D'accord, dites-moi ce que vous proposez pour le point ${i}.`,
+  )
+  const flat = call.join(' ')
+
+  beforeEach(() => {
+    openRouterCalls.length = 0
+  })
+
+  test('a flat transcript the model recognises as a call becomes a two-voice dialogue', async () => {
+    openRouterReply = () =>
+      call
+        .map(
+          (line, i) =>
+            `Locuteur ${(i % 2) + 1}${i < 2 ? (i === 0 ? ' (commercial)' : ' (client)') : ''} : ${line}`,
+        )
+        .join('\n')
+
+    const result = await inferSpeakersFromText(
+      flat,
+      { vocabulary: ['Nfluenzo'], language: 'fr' },
+      settings(),
+    )
+
+    expect(result.isConversation).toBe(true)
+    expect(new Set(result.segments.map(s => s.speaker)).size).toBe(2)
+    expect(result.segments).toHaveLength(30)
+    expect(result.segments[0].label).toBe('Locuteur 1 (commercial)')
+    const system = openRouterCalls[0].messages[0].content
+    expect(system).toContain('Locuteur 1')
+    expect(system).toContain('Nfluenzo')
+  })
+
+  test('a monologue comes back as text, without speakers', async () => {
+    openRouterReply = () => flat
+    const result = await inferSpeakersFromText(
+      flat,
+      { vocabulary: [], language: 'fr' },
+      settings(),
+    )
+    expect(result.isConversation).toBe(false)
+    expect(result.segments).toEqual([])
+    expect(result.text).toBe(flat)
+  })
+
+  test('an answer that lost a third of the words is refused, the original kept', async () => {
+    openRouterReply = () =>
+      call
+        .slice(0, 20)
+        .map((line, i) => `Locuteur ${(i % 2) + 1} : ${line}`)
+        .join('\n')
+    const result = await inferSpeakersFromText(
+      flat,
+      { vocabulary: [], language: 'fr' },
+      settings(),
+    )
+    expect(result.isConversation).toBe(false)
+    expect(result.text).toBe(flat)
+  })
+
+  test('a transient failure is retried once, a persistent one keeps the original', async () => {
+    let calls = 0
+    openRouterReply = () => {
+      calls++
+      if (calls === 1) throw new Error('upstream')
+      return flat
+    }
+    const result = await inferSpeakersFromText(
+      flat,
+      { vocabulary: [], language: 'fr' },
+      settings(),
+    )
+    expect(calls).toBe(2)
+    expect(result.text).toBe(flat)
+
+    openRouterReply = () => {
+      throw new Error('down')
+    }
+    const failed = await inferSpeakersFromText(
+      flat,
+      { vocabulary: [], language: 'fr' },
+      settings(),
+    )
+    expect(failed.isConversation).toBe(false)
+    expect(failed.text).toBe(flat)
   })
 })

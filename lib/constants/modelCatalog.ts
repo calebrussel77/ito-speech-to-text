@@ -102,6 +102,12 @@ export interface CatalogModel {
    */
   fileOnly?: boolean
   /**
+   * Sait séparer les voix d'un enregistrement (diarisation). Un modèle qui
+   * ne le sait pas rend un texte plat ; pour un fichier importé, ce sont
+   * alors les locuteurs qu'on déduit du texte avec le modèle texte.
+   */
+  diarizes?: boolean
+  /**
    * Ce que la requête demande au raisonnement du modèle. Réécrire une dictée
    * est du formatage : chaque seconde de « thinking » est de la latence pure
    * entre la fin de la dictée et le collage du texte.
@@ -217,6 +223,7 @@ export const VOICE_MODELS: CatalogModel[] = [
   // `nova-3`, écrit en dur dans les deux chemins qui l'appellent.
   {
     key: 'nova-3',
+    diarizes: true,
     kind: 'voice',
     label: 'Nova 3',
     slug: 'deepgram/nova-3',
@@ -240,6 +247,7 @@ export const VOICE_MODELS: CatalogModel[] = [
   // mesurés.
   {
     key: 'gemini-3-7-flash-audio',
+    diarizes: true,
     kind: 'voice',
     label: 'Gemini 3.7 Flash',
     slug: 'gemini-3.7-flash',
@@ -257,6 +265,7 @@ export const VOICE_MODELS: CatalogModel[] = [
   // 46 minutes : 299 tours à six voix en 3 min 48 s pour 0,10 $.
   {
     key: 'gemini-3-7-flash-openrouter-audio',
+    diarizes: true,
     kind: 'voice',
     label: 'Gemini 3.7 Flash',
     slug: 'google/gemini-3.7-flash',
@@ -268,6 +277,7 @@ export const VOICE_MODELS: CatalogModel[] = [
   },
   {
     key: 'gemini-2-5-flash-openrouter-audio',
+    diarizes: true,
     kind: 'voice',
     label: 'Gemini 2.5 Flash',
     slug: 'google/gemini-2.5-flash',
@@ -279,6 +289,7 @@ export const VOICE_MODELS: CatalogModel[] = [
   },
   {
     key: 'gemini-3-5-flash-lite-audio',
+    diarizes: true,
     kind: 'voice',
     label: 'Gemini 3.5 Flash Lite',
     slug: 'gemini-3.5-flash-lite',
@@ -322,6 +333,7 @@ export const VOICE_MODELS: CatalogModel[] = [
     // WAV 16 kHz il déraille en traduisant des passages en anglais (58 % de
     // WER) — c'est ce qui le maintient `fileOnly`, avec sa lenteur (1,5×).
     key: 'gpt-4o-transcribe-diarize-openai',
+    diarizes: true,
     kind: 'voice',
     label: 'GPT-4o Transcribe Diarize',
     slug: 'gpt-4o-transcribe-diarize',

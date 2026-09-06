@@ -26,6 +26,12 @@ export type OpenRouterChatOptions = {
    * pas peut rejeter le champ.
    */
   reasoningEffort?: 'none' | 'low'
+  /**
+   * Délai maximal. 30 s par défaut, taillé pour la réécriture d'une dictée ;
+   * relire ou structurer le transcript d'une réunion entière en demande
+   * plusieurs minutes.
+   */
+  timeoutMs?: number
 }
 
 const CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -130,7 +136,7 @@ class OpenRouterChatService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
       })
     } catch (error: any) {
       throw mapFetchError(error)
@@ -157,7 +163,20 @@ class OpenRouterChatService {
       )
     }
 
-    const content = json?.choices?.[0]?.message?.content
+    // Un hôte peut tomber en cours de génération : OpenRouter rend alors un
+    // 200 avec `finish_reason: "error"` et un début de réponse. Le
+    // prendre pour la réponse collerait un transcript tronqué ; c'est une
+    // panne réseau comme une autre, à réessayer.
+    const choice = json?.choices?.[0]
+    if (choice?.error || choice?.finish_reason === 'error') {
+      throw new LocalTranscriptionError(
+        `OpenRouter upstream error: ${choice?.error?.message ?? 'generation failed'}`,
+        'NETWORK',
+        res.status,
+      )
+    }
+
+    const content = choice?.message?.content
     return typeof content === 'string' ? stripReasoning(content) : ''
   }
 }

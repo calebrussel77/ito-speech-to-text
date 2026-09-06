@@ -74,9 +74,19 @@ const mockPolishDialogue = mock(async (segments: Segment[]) =>
   segments.map(s => ({ ...s, text: `polished ${s.text}` })),
 )
 const mockPolishPlainText = mock(async (text: string) => `polished ${text}`)
+let inferResult: {
+  isConversation: boolean
+  segments: Segment[]
+  text: string
+} | null = null
+const mockInferSpeakers = mock(
+  async (text: string) =>
+    inferResult ?? { isConversation: false, segments: [], text },
+)
 mock.module('./dialoguePolish', () => ({
   polishDialogue: mockPolishDialogue,
   polishPlainText: mockPolishPlainText,
+  inferSpeakersFromText: mockInferSpeakers,
 }))
 
 let uploadResult: {
@@ -157,6 +167,8 @@ describe('transcribeExistingFile', () => {
     mockOpenRouterAudio.mockClear()
     mockPolishDialogue.mockClear()
     mockPolishPlainText.mockClear()
+    mockInferSpeakers.mockClear()
+    inferResult = null
     mockPrepareUpload.mockClear()
     mockDeepgram.mockClear()
     mockCreateRecovered.mockClear()
@@ -323,6 +335,64 @@ describe('transcribeExistingFile', () => {
     expect(mockPolishDialogue).not.toHaveBeenCalled()
     expect(mockPolishPlainText).not.toHaveBeenCalled()
     deepgramApiKey = 'dg-test'
+  })
+
+  test('an engine that cannot separate voices gets its speakers inferred from the text', async () => {
+    fileTranscriptionModelKey = 'gpt-transcribe-openai'
+    openaiApiKey = 'sk-test'
+    const flat = Array.from({ length: 80 }, (_, i) => `mot${i}`).join(' ')
+    mockOpenAI.mockResolvedValueOnce({ text: flat, segments: [] })
+    inferResult = {
+      isConversation: true,
+      segments: [
+        segment(0, 'bonjour, je vous appelle'),
+        segment(1, "d'accord"),
+      ],
+      text: "bonjour, je vous appelle d'accord",
+    }
+
+    const result = await transcribeExistingFile('C:/call.m4a')
+
+    expect(result.ok).toBe(true)
+    expect(result.speakerCount).toBe(2)
+    expect(mockInferSpeakers).toHaveBeenCalledWith(
+      flat,
+      expect.objectContaining({ vocabulary: ['Nfluenzo'], language: 'fr' }),
+      expect.anything(),
+    )
+    // Already proofread in the same pass: no second rewrite.
+    expect(mockPolishDialogue).not.toHaveBeenCalled()
+    expect(mockPolishPlainText).not.toHaveBeenCalled()
+    const [text, , , , , extra] = mockCreateRecovered.mock.calls[0] as any[]
+    expect(text).toContain("Speaker 2: d'accord")
+    expect(extra.speakers).toHaveLength(2)
+    // The flat engine output stays as the original.
+    expect(extra.rawTranscript).toBe(flat)
+    fileTranscriptionModelKey = ''
+    openaiApiKey = ''
+  })
+
+  test('a flat transcript the text model sees as one voice stays plain, already proofread', async () => {
+    fileTranscriptionModelKey = 'gpt-transcribe-openai'
+    openaiApiKey = 'sk-test'
+    const flat = Array.from({ length: 80 }, (_, i) => `mot${i}`).join(' ')
+    mockOpenAI.mockResolvedValueOnce({ text: flat, segments: [] })
+    inferResult = { isConversation: false, segments: [], text: `relu ${flat}` }
+
+    const result = await transcribeExistingFile('C:/memo.m4a')
+
+    expect(result.speakerCount).toBe(0)
+    expect(mockPolishPlainText).not.toHaveBeenCalled()
+    expect((mockCreateRecovered.mock.calls[0] as any[])[0]).toBe(`relu ${flat}`)
+    fileTranscriptionModelKey = ''
+    openaiApiKey = ''
+  })
+
+  test('a short flat transcript is not worth a speaker inference', async () => {
+    deepgramResult = { text: 'trois mots seulement', segments: [] }
+    await transcribeExistingFile('C:/memo.m4a')
+    expect(mockInferSpeakers).not.toHaveBeenCalled()
+    expect(mockPolishPlainText).toHaveBeenCalled()
   })
 
   test('a single-voice ASR memo is proofread as plain text', async () => {

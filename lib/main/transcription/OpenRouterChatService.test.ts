@@ -62,6 +62,20 @@ describe('openRouterChatService.complete', () => {
     })
   })
 
+  test('a 200 whose choice failed upstream is a network error, not a truncated answer', async () => {
+    responder = () =>
+      respondJson({
+        choices: [{ finish_reason: 'error', message: { content: 'Locuteur' } }],
+      })
+    await expect(
+      openRouterChatService.complete({
+        apiKey: 'k',
+        model: 'google/gemini-3.7-flash',
+        messages: [{ role: 'user', content: 'x' }],
+      }),
+    ).rejects.toMatchObject({ code: 'NETWORK' })
+  })
+
   test('strips an inline think block that the host leaked anyway', async () => {
     // La fuite du 2026-08-15 : certains hôtes Qwen ignorent `exclude` et
     // collent le monologue dans `content` — il finissait DICTÉ dans le

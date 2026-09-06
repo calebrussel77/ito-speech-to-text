@@ -3,7 +3,11 @@ import { deepgramTranscriptionService } from './DeepgramTranscriptionService'
 import { googleTranscriptionService } from './GoogleTranscriptionService'
 import { openaiTranscriptionService } from './OpenAITranscriptionService'
 import { openRouterAudioService } from './OpenRouterAudioService'
-import { polishDialogue, polishPlainText } from './dialoguePolish'
+import {
+  inferSpeakersFromText,
+  polishDialogue,
+  polishPlainText,
+} from './dialoguePolish'
 import { interactionManager } from '../interactions/InteractionManager'
 import { resolveActiveMode } from '../modes/activeMode'
 import { getAdvancedSettings, type AdvancedSettings } from '../store'
@@ -137,20 +141,42 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     // deux ou attribue un « oui » de fond à un tiers ; un modèle multimodal
     // étiquette un bruit de micro comme une personne. Ces miettes sont
     // rendues au locuteur voisin avant de compter les voix.
-    const segments = collapseMinorSpeakers(rawSegments ?? [])
+    let segments = collapseMinorSpeakers(rawSegments ?? [])
+    const heardOnly = provider === 'deepgram' || provider === 'openai'
+    const polishStartedAt = performance.now()
+
+    // Le moteur n'a pas séparé les voix (gpt-transcribe, Whisper, ou une
+    // diarisation qui n'a rien trouvé) : le modèle texte relit le transcript
+    // à plat et le structure en dialogue s'il reconnaît une conversation —
+    // en corrigeant les mots mal entendus au passage.
+    let inferred: { text: string } | null = null
+    if (
+      heardOnly &&
+      segments.length === 0 &&
+      text.split(/\s+/).filter(Boolean).length >= 60
+    ) {
+      const result = await inferSpeakersFromText(
+        text,
+        { vocabulary: vocabularyWords, language },
+        advancedSettings,
+      )
+      if (result.isConversation) segments = result.segments
+      inferred = result
+    }
+
     const speakerCount = new Set(segments.map(s => s.speaker)).size
     const isConversation = speakerCount >= 2 && segments.length > 0
 
     // Relecture par le modèle texte, pour les moteurs qui n'ont fait
-    // qu'entendre. Gemini a déjà reçu le brief et le vocabulaire.
-    const polishStartedAt = performance.now()
-    const heardOnly = provider === 'deepgram' || provider === 'openai'
+    // qu'entendre. Gemini a déjà reçu le brief et le vocabulaire ; un
+    // transcript structuré ci-dessus a déjà été relu dans le même passage.
     const polishedSegments =
-      heardOnly && isConversation
+      heardOnly && isConversation && !inferred
         ? await polishDialogue(segments, vocabularyWords, advancedSettings)
         : segments
-    const polishedText =
-      heardOnly && !isConversation
+    const polishedText = inferred
+      ? inferred.text
+      : heardOnly && !isConversation
         ? await polishPlainText(text, vocabularyWords, advancedSettings)
         : text
     const polishMs = heardOnly
@@ -160,7 +186,8 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     const finalText = isConversation
       ? formatSpeakerTranscript(polishedSegments)
       : polishedText
-    const rawText = isConversation ? formatSpeakerTranscript(segments) : text
+    const rawText =
+      isConversation && !inferred ? formatSpeakerTranscript(segments) : text
 
     const engine = engineName(provider, model)
     const interactionId = await interactionManager.createRecoveredInteraction(
