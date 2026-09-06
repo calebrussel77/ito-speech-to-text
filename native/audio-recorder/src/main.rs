@@ -376,19 +376,21 @@ impl CommandProcessor {
         // latency. The cache key must include the source: without it, a Meeting-mode
         // dictation would silently reuse the microphone stream prepared at startup
         // (see `prepare_stream`) and record silence instead of the call.
-        if self.active_stream.is_some()
+        let reusable = self.active_stream.is_some()
             && can_reuse_stream(
                 self.current_device_name.as_deref(),
                 self.current_audio_source,
                 device_name.as_deref(),
                 source,
-            )
-        {
-            let stream = self.active_stream.as_ref().unwrap();
-            let flag = self.is_recording.as_ref().unwrap();
-            flag.store(true, Ordering::Release);
-            if let Err(e) = stream.play() {
-                eprintln!("[audio-recorder] Failed to resume audio stream: {}", e);
+            );
+        if reusable {
+            if let (Some(stream), Some(flag)) =
+                (self.active_stream.as_ref(), self.is_recording.as_ref())
+            {
+                flag.store(true, Ordering::Release);
+                if let Err(e) = stream.play() {
+                    eprintln!("[audio-recorder] Failed to resume audio stream: {}", e);
+                }
             }
             if let Some(loopback) = &self.active_loopback {
                 if let Err(e) = loopback.stream.play() {
