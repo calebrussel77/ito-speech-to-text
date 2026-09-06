@@ -13,8 +13,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Pinned to the version the app is developed and tested with. The
+      # latest Bun (1.4.2, 2026-09-06) crashes on macOS at process exit after
+      # a test that opened the native sqlite3 module (NAPI fatal error), with
+      # every test green — a Bun bug, not ours.
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
 
       - name: Set ITO_ENV based on branch
         run: |
