@@ -14,8 +14,16 @@
  */
 
 const KNOWN_HALLUCINATIONS = [
+  // Le classique des silences en français : le générique de Radio-Canada,
+  // appris sur des milliers d'heures de télévision sous-titrée.
+  /sous-?titrage\s+(par\s+|de\s+la\s+)?soci[ée]t[ée]\s+radio-?canada/i,
+  /sous-?titrage\s+st'?\s*\d+/i,
   /sous-?titres? (réalisés?|faits?) par (la communauté d'?)?amara\.org/i,
   /sous-?titrage (par|de) (la )?(société|communauté)/i,
+  /sous-?titres? par [\p{L}\s.]+/iu,
+  /merci de votre attention/i,
+  /merci d'avoir suivi/i,
+  /à (bientôt|la prochaine)\s*!?$/i,
   /merci d'avoir regardé( cette vidéo)?/i,
   /n'oubliez pas de (vous )?abonner/i,
   /abonnez-vous( à la chaîne)?/i,

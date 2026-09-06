@@ -20,6 +20,7 @@ export class StreamingMp3Encoder {
   private worker: Worker | null = null
   private failed = false
   private done: Promise<Buffer | null> | null = null
+  private settle: ((result: Buffer | null) => void) | null = null
 
   start(sampleRate: number): void {
     try {
@@ -27,6 +28,19 @@ export class StreamingMp3Encoder {
       this.worker.on('error', error => this.fail(error))
       this.worker.on('exit', code => {
         if (code !== 0 && !this.done) this.fail(new Error(`exit ${code}`))
+      })
+      // Écouté dès le départ : une erreur au démarrage du worker (module
+      // absent, par exemple) arrive bien avant `finish`, et doit dès lors
+      // basculer la dictée sur le WAV plutôt que d'être perdue.
+      this.worker.on('message', (message: any) => {
+        if (message?.type === 'done') {
+          const mp3 = Buffer.from(message.mp3 as ArrayBuffer)
+          this.settle?.(mp3.length > 0 ? mp3 : null)
+        } else if (message?.type === 'error') {
+          console.warn('[StreamingMp3Encoder] worker error:', message.message)
+          if (this.settle) this.settle(null)
+          else this.fail(new Error(message.message))
+        }
       })
       this.worker.postMessage({ type: 'start', sampleRate, kbps: MP3_KBPS })
     } catch (error) {
@@ -62,17 +76,11 @@ export class StreamingMp3Encoder {
       }, FINISH_TIMEOUT_MS)
       const settle = (result: Buffer | null) => {
         clearTimeout(timeout)
+        this.settle = null
         this.terminate()
         resolve(result)
       }
-      worker.on('message', (message: any) => {
-        if (message?.type === 'done') {
-          settle(Buffer.from(message.mp3 as ArrayBuffer))
-        } else if (message?.type === 'error') {
-          console.warn('[StreamingMp3Encoder] worker error:', message.message)
-          settle(null)
-        }
-      })
+      this.settle = settle
       worker.once('error', () => settle(null))
       try {
         worker.postMessage({ type: 'finish' })

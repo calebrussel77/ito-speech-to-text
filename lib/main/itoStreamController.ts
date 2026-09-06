@@ -326,9 +326,10 @@ export class ItoStreamController {
     const encodeStartedAt = performance.now()
     const mp3 = await this.finishEncoder()
     const encodeMs = Math.round(performance.now() - encodeStartedAt)
-    const payload: AudioPayload = mp3
-      ? { bytes: mp3, format: 'mp3', contentType: 'audio/mpeg' }
-      : wavPayload(wavAudio)
+    const payload: AudioPayload =
+      mp3 && mp3.length > 0
+        ? { bytes: mp3, format: 'mp3', contentType: 'audio/mpeg' }
+        : wavPayload(wavAudio)
 
     // Écriture disque en arrière-plan : elle n'est nécessaire qu'en cas
     // d'échec, où elle est attendue avant de lier la ligne d'historique.

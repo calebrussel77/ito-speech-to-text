@@ -13,6 +13,13 @@ describe('hallucinationFilter', () => {
     expect(sanitizeTranscript('Thank you for watching.')).toBe('')
   })
 
+  test("Whisper's French-silence credits are recognised", () => {
+    expect(sanitizeTranscript('Sous-titrage Société Radio-Canada')).toBe('')
+    expect(sanitizeTranscript("Sous-titrage ST' 501")).toBe('')
+    expect(sanitizeTranscript('Sous-titres par Jean Dupont')).toBe('')
+    expect(sanitizeTranscript('Merci de votre attention.')).toBe('')
+  })
+
   test('a credit tacked onto real speech is dropped, the speech kept', () => {
     expect(
       stripKnownHallucinations(

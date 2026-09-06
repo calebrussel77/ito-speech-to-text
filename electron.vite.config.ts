@@ -8,10 +8,7 @@ export default defineConfig({
     build: {
       sourcemap: true,
       rollupOptions: {
-        external: [
-          'sqlite3',
-          'bindings',
-        ],
+        external: ['sqlite3', 'bindings'],
         input: {
           main: resolve(__dirname, 'lib/main/main.ts'),
         },
@@ -24,7 +21,10 @@ export default defineConfig({
         '@/resources': resolve(__dirname, 'resources'),
       },
     },
-    plugins: [externalizeDepsPlugin()],
+    // `@breezystack/lamejs` is ESM-only; its `main` is an IIFE that sets a
+    // global instead of exporting, so a runtime `require` from the MP3
+    // worker yields nothing. Bundling it makes the worker self-contained.
+    plugins: [externalizeDepsPlugin({ exclude: ['@breezystack/lamejs'] })],
   },
 
   preload: {
@@ -63,9 +63,6 @@ export default defineConfig({
         '@/resources': resolve(__dirname, 'resources'),
       },
     },
-    plugins: [
-      tailwindcss(),
-      react(),
-    ],
+    plugins: [tailwindcss(), react()],
   },
 })

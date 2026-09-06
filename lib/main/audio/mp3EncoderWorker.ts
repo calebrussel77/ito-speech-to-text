@@ -27,9 +27,15 @@ let total = 0
 let filterA = 0
 let prevX = 0
 let prevY = 0
+/** Première erreur rencontrée : elle invalide toute la dictée en cours. */
+let failure: string | null = null
 
 function reset(sampleRate: number, kbps: number) {
+  failure = null
   encoder = new Mp3Encoder(1, sampleRate, kbps)
+  if (typeof encoder.encodeBuffer !== 'function') {
+    throw new Error('Mp3Encoder unavailable in this build')
+  }
   parts = []
   total = 0
   filterA = Math.exp((-2 * Math.PI * 80) / sampleRate)
@@ -84,15 +90,18 @@ parentPort?.on('message', (message: InMessage) => {
     if (message.type === 'start') {
       reset(message.sampleRate, message.kbps)
     } else if (message.type === 'chunk') {
-      encodeChunk(message.pcm)
+      if (!failure) encodeChunk(message.pcm)
     } else if (message.type === 'finish') {
+      // Une erreur survenue avant que le processus principal n'écoute (au
+      // démarrage, typiquement) ne doit jamais se solder par un fichier
+      // vide envoyé à un moteur : c'est la reprise en WAV qui prend.
+      if (failure) throw new Error(failure)
       const mp3 = finish()
+      if (mp3.byteLength === 0) throw new Error('encoder produced no audio')
       parentPort?.postMessage({ type: 'done', mp3: mp3.buffer }, [mp3.buffer])
     }
   } catch (error: any) {
-    parentPort?.postMessage({
-      type: 'error',
-      message: error?.message || String(error),
-    })
+    failure = error?.message || String(error)
+    parentPort?.postMessage({ type: 'error', message: failure })
   }
 })
