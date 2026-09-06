@@ -44,9 +44,27 @@ describe('toSpeakerSegments', () => {
     ])
 
     expect(segments).toEqual([
-      { speaker: 0, label: 'Speaker 1', startMs: 100, endMs: 650, text: 'Bonjour,' },
-      { speaker: 1, label: 'Speaker 2', startMs: 5000, endMs: 6600, text: 'Salut.' },
-      { speaker: 0, label: 'Speaker 1', startMs: 7000, endMs: 8000, text: 'Encore moi.' },
+      {
+        speaker: 0,
+        label: 'Speaker 1',
+        startMs: 100,
+        endMs: 650,
+        text: 'Bonjour,',
+      },
+      {
+        speaker: 1,
+        label: 'Speaker 2',
+        startMs: 5000,
+        endMs: 6600,
+        text: 'Salut.',
+      },
+      {
+        speaker: 0,
+        label: 'Speaker 1',
+        startMs: 7000,
+        endMs: 8000,
+        text: 'Encore moi.',
+      },
     ])
   })
 
@@ -123,8 +141,22 @@ describe('openaiTranscriptionService.transcribeAudio', () => {
       respondJson({
         text: 'Bonjour, salut.',
         segments: [
-          { type: 'transcript.text.segment', text: ' Bonjour,', speaker: 'A', start: 0.1, end: 0.65, id: 'seg_0' },
-          { type: 'transcript.text.segment', text: ' salut.', speaker: 'B', start: 1.0, end: 2.0, id: 'seg_1' },
+          {
+            type: 'transcript.text.segment',
+            text: ' Bonjour,',
+            speaker: 'A',
+            start: 0.1,
+            end: 0.65,
+            id: 'seg_0',
+          },
+          {
+            type: 'transcript.text.segment',
+            text: ' salut.',
+            speaker: 'B',
+            start: 1.0,
+            end: 2.0,
+            id: 'seg_1',
+          },
         ],
       })
 

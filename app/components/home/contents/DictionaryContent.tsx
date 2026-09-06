@@ -51,10 +51,13 @@ export default function DictionaryContent() {
   const addInputRef = useRef<HTMLInputElement>(null)
   const addFromRef = useRef<HTMLInputElement>(null)
 
-  // Reload entries every time the component mounts (e.g., when switching back to dictionary tab)
+  // Reload entries every time the component mounts (e.g., when switching back
+  // to the dictionary tab). Mount-only on purpose: `loadEntries` reads the
+  // store, it is not an input of this effect.
   useEffect(() => {
     loadEntries()
-  }, []) // Empty dependency array ensures this runs on every mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Handle scroll events
   useEffect(() => {

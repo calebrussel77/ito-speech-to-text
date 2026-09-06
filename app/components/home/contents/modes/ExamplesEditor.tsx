@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/app/components/ui/button'
 import { Textarea } from '@/app/components/ui/textarea'
 import { SettingsCard, SettingsNote } from '@/app/components/ui/settings'
@@ -20,7 +20,7 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
   >({})
   const [error, setError] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setError('')
     try {
       const list = await window.api.modes.examples.get(modeId)
@@ -43,11 +43,11 @@ export default function ExamplesEditor({ modeId }: { modeId: string }) {
       console.error('Failed to load examples', err)
       setError('Could not load the examples.')
     }
-  }
+  }, [modeId])
 
   useEffect(() => {
     void load()
-  }, [modeId])
+  }, [load])
 
   const add = async () => {
     setError('')

@@ -2,6 +2,12 @@ import { mock, afterEach, beforeEach } from 'bun:test'
 import { promises as fs } from 'fs'
 
 // Simple, direct electron mock following Bun documentation pattern
+// The gRPC client reads VITE_GRPC_BASE_URL at construction and disables
+// itself without it. Developers have it in `.env` (which bun loads), CI has
+// no `.env`: give the tests a stable placeholder so they exercise the same
+// code path everywhere. Nothing is ever contacted at this address.
+process.env.VITE_GRPC_BASE_URL ||= 'http://localhost:0'
+
 mock.module('electron', () => {
   let userDataPath = '/tmp/test-ito-app'
   let appName = 'Ito'

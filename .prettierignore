@@ -62,3 +62,6 @@ resources/binaries/
 native/**/.build/**
 native/**/build/**
 native/**/*.json
+
+# Data assets, not code
+app/assets/dicebear-blobs.json
