@@ -23,6 +23,7 @@ const {
   LocalTranscriptionError,
   createTranscriptionPrompt,
   filterSpeechSegments,
+  lowConfidenceSegments,
 } = await import('./LocalTranscriptionService')
 
 beforeEach(() => {
@@ -59,6 +60,26 @@ describe('createTranscriptionPrompt', () => {
     const bigVocab = Array.from({ length: 500 }, (_, i) => `motTechnique${i}`)
     const prompt = createTranscriptionPrompt(bigVocab)
     expect(Math.ceil(prompt.length / 4)).toBeLessThanOrEqual(224)
+  })
+})
+
+describe('lowConfidenceSegments', () => {
+  test('keeps only spoken segments Whisper was unsure about, in order, capped', () => {
+    const segments = [
+      { text: ' clair ', no_speech_prob: 0.01, avg_logprob: -0.2 },
+      { text: ' satingues ', no_speech_prob: 0.02, avg_logprob: -0.9 },
+      { text: ' silence ', no_speech_prob: 0.9, avg_logprob: -1.5 },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        text: ` flou${i} `,
+        no_speech_prob: 0.05,
+        avg_logprob: -0.7,
+      })),
+    ]
+    const result = lowConfidenceSegments(segments, 0.6)
+    expect(result[0]).toBe('satingues')
+    expect(result).not.toContain('clair')
+    expect(result).not.toContain('silence')
+    expect(result.length).toBe(8)
   })
 })
 

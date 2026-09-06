@@ -12,6 +12,7 @@ export const STORE_KEYS = {
   OPEN_MIC: 'openMic',
   SELECTED_AUDIO_INPUT: 'selectedAudioInput',
   INTERACTION_SOUNDS: 'interactionSounds',
+  DICTIONARY_USAGE: 'dictionaryUsage',
 } as const
 
 export type StoreKey = (typeof STORE_KEYS)[keyof typeof STORE_KEYS]

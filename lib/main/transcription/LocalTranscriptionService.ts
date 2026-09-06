@@ -100,6 +100,28 @@ type TranscriptionSegment = {
 // probably not speech AND has low confidence in the tokens it produced
 // (classic silence hallucinations like "Sous-titres réalisés par Amara.org").
 const HALLUCINATION_AVG_LOGPROB = -0.5
+/**
+ * En dessous, Whisper a hésité : un mot technique mal entendu, un nom propre,
+ * une bouillie. Un discours net se situe entre -0.1 et -0.35.
+ */
+const LOW_CONFIDENCE_AVG_LOGPROB = -0.55
+const MAX_LOW_CONFIDENCE_SEGMENTS = 8
+
+/** Les segments gardés dont la confiance est basse, dans l'ordre, plafonnés. */
+export function lowConfidenceSegments(
+  segments: TranscriptionSegment[],
+  noSpeechThreshold: number,
+): string[] {
+  return segments
+    .filter(
+      s =>
+        (s.no_speech_prob ?? 0) <= noSpeechThreshold &&
+        (s.avg_logprob ?? 0) < LOW_CONFIDENCE_AVG_LOGPROB &&
+        (s.text ?? '').trim().length > 0,
+    )
+    .slice(0, MAX_LOW_CONFIDENCE_SEGMENTS)
+    .map(s => (s.text as string).trim())
+}
 
 export function filterSpeechSegments(
   segments: TranscriptionSegment[],
@@ -258,6 +280,14 @@ class LocalTranscriptionService {
     audioBuffer: Buffer,
     options: TranscriptionOptions,
   ): Promise<string> {
+    return (await this.transcribeAudioDetailed(audioBuffer, options)).text
+  }
+
+  /** Comme `transcribeAudio`, plus les passages dont Whisper doutait. */
+  async transcribeAudioDetailed(
+    audioBuffer: Buffer,
+    options: TranscriptionOptions,
+  ): Promise<{ text: string; lowConfidence: string[] }> {
     const client = this.ensureClient()
 
     const asrModel = options.asrModel
@@ -299,10 +329,14 @@ class LocalTranscriptionService {
         )
       }
 
+      const lowConfidence = lowConfidenceSegments(segments, noSpeechThreshold)
       if (filteredText !== null) {
-        return filteredText
+        return { text: filteredText, lowConfidence }
       }
-      return (transcription as any)?.text?.trim?.() || ''
+      return {
+        text: (transcription as any)?.text?.trim?.() || '',
+        lowConfidence,
+      }
     } catch (error: any) {
       if (error instanceof LocalTranscriptionError) throw error
       throw mapGroqError(error, 'Failed to transcribe audio')

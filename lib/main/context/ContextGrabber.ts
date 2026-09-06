@@ -16,6 +16,7 @@ import { macOSAccessibilityContextProvider } from '../../media/macOSAccessibilit
 import { readClipboardText } from './ClipboardContext'
 import type { DictionaryTerm } from '../transcription/DictionaryCorrector'
 import type { Mode } from '../sqlite/models'
+import { sortByUsage } from './vocabularyUsage'
 
 export interface ContextData {
   // Correct spellings only — used to prime the ASR prompt
@@ -29,6 +30,12 @@ export interface ContextData {
   /** Contenu du presse-papier, quand le mode l'a demandé. */
   clipboardText: string
   advancedSettings: ReturnType<typeof getAdvancedSettings>
+  /**
+   * Segments que le moteur vocal a rendus avec une faible confiance
+   * (Whisper chez Groq seulement). Montrés au modèle texte comme des
+   * endroits à réparer en priorité, sans jamais toucher au texte lui-même.
+   */
+  lowConfidenceSegments?: string[]
 }
 
 /**
@@ -90,8 +97,11 @@ export class ContextGrabber {
       // A non-empty `pronunciation` marks a replacement entry: `word` is the
       // misspelling the ASR produces, `pronunciation` the wanted spelling.
       // The ASR prompt must only ever see the wanted spelling.
-      const vocabularyWords = activeItems.map(
-        item => item.pronunciation?.trim() || item.word,
+      // Les termes réellement dictés passent en premier : l'amorce Whisper
+      // est plafonnée à 224 tokens et tronque la fin de la liste.
+      const vocabularyWords = sortByUsage(
+        activeItems.map(item => item.pronunciation?.trim() || item.word),
+        word => word,
       )
       const dictionaryEntries: DictionaryTerm[] = activeItems.map(item =>
         item.pronunciation?.trim()

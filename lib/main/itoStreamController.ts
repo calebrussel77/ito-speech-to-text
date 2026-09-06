@@ -1,5 +1,10 @@
 import log from 'electron-log'
 import { AudioStreamManager } from './audio/AudioStreamManager'
+import {
+  createStreamingEncoder,
+  type StreamingMp3Encoder,
+} from './audio/streamingEncoder'
+import { recordUsage } from './context/vocabularyUsage'
 import { localAudioProcessor } from './transcription/LocalAudioProcessor'
 import {
   localTranscriptionService,
@@ -80,7 +85,25 @@ interface AsrOutcome {
   asrEngine: string
   asrFallback?: AsrFallback
   speakerSegments: SpeakerSegment[]
+  /** Passages dont Whisper doutait (Groq seulement, vide ailleurs). */
+  lowConfidence: string[]
 }
+
+/**
+ * L'audio tel qu'il part vers un moteur : MP3 encodé pendant la dictée
+ * quand l'encodeur a tenu, sinon le WAV. Les deux décrivent le même signal.
+ */
+export interface AudioPayload {
+  bytes: Buffer
+  format: 'wav' | 'mp3'
+  contentType: 'audio/wav' | 'audio/mpeg'
+}
+
+const wavPayload = (bytes: Buffer): AudioPayload => ({
+  bytes,
+  format: 'wav',
+  contentType: 'audio/wav',
+})
 
 /**
  * Why a dictation that should have gone to the precise engine came back from
@@ -131,6 +154,10 @@ export interface TranscriptionLatency {
   asrMs: number
   /** Réécriture par le modèle texte du mode (0 sans LLM). */
   adjustMs: number
+  /** Fin de l'encodage MP3 au relâchement (0 quand le WAV est parti). */
+  encodeMs: number
+  /** Poids réellement envoyé au moteur, en octets. */
+  uploadBytes: number
 }
 
 /**
@@ -140,6 +167,8 @@ export interface TranscriptionLatency {
 export class ItoStreamController {
   private audioStreamManager = new AudioStreamManager()
   private currentMode: Mode | null = null
+  private encoder: StreamingMp3Encoder | null = null
+  private detachEncoder: (() => void) | null = null
 
   public async initialize(mode: Mode): Promise<boolean> {
     if (this.audioStreamManager.isCurrentlyStreaming()) {
@@ -149,10 +178,53 @@ export class ItoStreamController {
 
     this.audioStreamManager.initialize()
     this.currentMode = mode
+    this.startEncoder()
     console.log(
       `[ItoStreamController] Starting new interaction stream in mode "${mode.name}"`,
     )
     return true
+  }
+
+  // L'encodeur MP3 suit l'enregistrement bloc par bloc : au relâchement,
+  // le fichier compressé est prêt. Toute défaillance rend le chemin WAV.
+  private startEncoder() {
+    this.discardEncoder()
+    try {
+      const encoder = createStreamingEncoder()
+      encoder.start(this.audioStreamManager.getCurrentSampleRate())
+      this.detachEncoder = this.audioStreamManager.onChunk(chunk =>
+        encoder.push(chunk),
+      )
+      this.encoder = encoder
+    } catch (error) {
+      console.warn(
+        '[ItoStreamController] Streaming encoder unavailable:',
+        error,
+      )
+      this.encoder = null
+    }
+  }
+
+  private discardEncoder() {
+    this.detachEncoder?.()
+    this.detachEncoder = null
+    this.encoder?.abort()
+    this.encoder = null
+  }
+
+  /** Le MP3 de la dictée en cours, ou null si l'encodage n'a pas tenu. */
+  private async finishEncoder(): Promise<Buffer | null> {
+    const encoder = this.encoder
+    this.detachEncoder?.()
+    this.detachEncoder = null
+    this.encoder = null
+    if (!encoder) return null
+    try {
+      return await encoder.finish()
+    } catch (error) {
+      console.warn('[ItoStreamController] Streaming encoder failed:', error)
+      return null
+    }
   }
 
   public getCurrentMode(): Mode | null {
@@ -182,6 +254,7 @@ export class ItoStreamController {
 
     console.log('[ItoStreamController] Cancelling transcription')
     this.stopStreaming()
+    this.discardEncoder()
     this.audioStreamManager.clearInteractionAudio()
   }
 
@@ -231,12 +304,31 @@ export class ItoStreamController {
     const rawAudio = this.audioStreamManager.getAllAudio()
     const sampleRate = this.audioStreamManager.getCurrentSampleRate()
 
-    const { wavAudio, durationMs } =
-      localAudioProcessor.prepareAudioForTranscription(rawAudio, { sampleRate })
+    let wavAudio: Buffer
+    let durationMs: number
+    try {
+      ;({ wavAudio, durationMs } =
+        localAudioProcessor.prepareAudioForTranscription(rawAudio, {
+          sampleRate,
+        }))
+    } catch (error) {
+      // Silence ou clip trop court : l'encodeur n'a plus rien à produire.
+      this.discardEncoder()
+      throw error
+    }
     const prepareMs = Math.round(performance.now() - startedAt)
 
     const mode = this.currentMode
     if (!mode) throw new Error('No mode set on the stream controller')
+
+    // Le MP3 a été encodé pendant qu'on parlait : il ne reste que la
+    // dernière trame à vider. Le WAV reste la référence sur disque.
+    const encodeStartedAt = performance.now()
+    const mp3 = await this.finishEncoder()
+    const encodeMs = Math.round(performance.now() - encodeStartedAt)
+    const payload: AudioPayload = mp3
+      ? { bytes: mp3, format: 'mp3', contentType: 'audio/mpeg' }
+      : wavPayload(wavAudio)
 
     // Écriture disque en arrière-plan : elle n'est nécessaire qu'en cas
     // d'échec, où elle est attendue avant de lier la ligne d'historique.
@@ -283,7 +375,7 @@ export class ItoStreamController {
     try {
       const decision = this.decidePath(
         mode,
-        wavAudio,
+        payload.bytes,
         durationMs,
         advancedSettings,
       )
@@ -306,7 +398,7 @@ export class ItoStreamController {
         : TimingEventName.LOCAL_TRANSCRIBE
       const asrStartedAt = performance.now()
       asr = await timingCollector.timeAsync(timingEvent, () =>
-        this.runAsr(path, wavAudio, mode, vocabulary, advancedSettings),
+        this.runAsr(path, payload, mode, vocabulary, advancedSettings),
       )
       asrMs = Math.round(performance.now() - asrStartedAt)
     } catch (error: any) {
@@ -348,10 +440,14 @@ export class ItoStreamController {
     const adjusted = await transcriptAdjuster.adjust(
       asr.rawTranscript,
       mode,
-      context,
+      { ...context, lowConfidenceSegments: asr.lowConfidence },
       advancedSettings,
     )
     const adjustMs = Math.round(performance.now() - adjustStartedAt)
+
+    // Les termes du dictionnaire réellement dictés remontent en tête de
+    // l'amorce Whisper la prochaine fois.
+    recordUsage(adjusted, context.vocabularyWords)
 
     return {
       transcript: adjusted,
@@ -364,7 +460,14 @@ export class ItoStreamController {
       modeId: mode.id,
       modeName: mode.name,
       rawTranscript: asr.rawTranscript,
-      latency: { prepareMs, contextMs, asrMs, adjustMs },
+      latency: {
+        prepareMs,
+        contextMs,
+        asrMs,
+        adjustMs,
+        encodeMs,
+        uploadBytes: payload.bytes.length,
+      },
     }
   }
 
@@ -401,7 +504,7 @@ export class ItoStreamController {
   // l'audio : la durée, la taille et la diarisation demandée sont connues.
   private decidePath(
     mode: Mode,
-    wavAudio: Buffer,
+    audio: Buffer,
     durationMs: number,
     advancedSettings: AdvancedSettings,
   ) {
@@ -409,7 +512,7 @@ export class ItoStreamController {
     return chooseTranscriptionPath({
       voiceModelProvider: voiceModel.provider,
       durationMs,
-      wavBytes: wavAudio.length,
+      wavBytes: audio.length,
       identifySpeakers: mode.identifySpeakers,
       hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
       hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
@@ -426,7 +529,7 @@ export class ItoStreamController {
    */
   private async runAsr(
     path: TranscriptionPath,
-    wavAudio: Buffer,
+    audio: AudioPayload,
     mode: Mode,
     context: AsrContext,
     advancedSettings: AdvancedSettings,
@@ -443,7 +546,7 @@ export class ItoStreamController {
       asrModel: groqModel.slug,
       vocabulary: context.vocabularyWords,
       noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-      fileType: 'wav',
+      fileType: audio.format,
       language: languageHint,
       customPrompt: mode.asrPrompt,
     }
@@ -493,46 +596,51 @@ export class ItoStreamController {
           async () => {
             if (path === 'deepgram') {
               const result = await deepgramTranscriptionService.transcribeAudio(
-                wavAudio,
+                audio.bytes,
                 {
                   apiKey,
                   model: 'nova-3',
                   language: languageHint,
                   diarize: mode.identifySpeakers,
+                  contentType: audio.contentType,
                 },
               )
               speakerSegments = result.segments
               return result.text
             }
             if (path === 'openrouter') {
-              return openRouterTranscriptionService.transcribeAudio(wavAudio, {
-                apiKey,
-                model,
-                vocabulary: context.vocabularyWords,
-                language: languageHint,
-                customPrompt: mode.asrPrompt,
-              })
+              return openRouterTranscriptionService.transcribeAudio(
+                audio.bytes,
+                {
+                  apiKey,
+                  model,
+                  vocabulary: context.vocabularyWords,
+                  language: languageHint,
+                  customPrompt: mode.asrPrompt,
+                  fileType: audio.format,
+                },
+              )
             }
             if (path === 'openai') {
               const result = await openaiTranscriptionService.transcribeAudio(
-                wavAudio,
+                audio.bytes,
                 {
                   apiKey,
                   model,
                   language: languageHint,
-                  contentType: 'audio/wav',
-                  fileName: 'dictation.wav',
+                  contentType: audio.contentType,
+                  fileName: `dictation.${audio.format}`,
                 },
               )
               return result.text
             }
             const result = await googleTranscriptionService.transcribeAudio(
-              wavAudio,
+              audio.bytes,
               {
                 apiKey,
                 model,
                 language: languageHint,
-                contentType: 'audio/wav',
+                contentType: audio.contentType,
               },
             )
             return result.text
@@ -553,11 +661,18 @@ export class ItoStreamController {
       }
     }
 
+    let lowConfidence: string[] = []
     const engineText =
       (await precise()) ??
-      (await this.withRetry('Groq', groqRetry, () =>
-        localTranscriptionService.transcribeAudio(wavAudio, groqOptions),
-      ))
+      (await this.withRetry('Groq', groqRetry, async () => {
+        const detailed =
+          await localTranscriptionService.transcribeAudioDetailed(
+            audio.bytes,
+            groqOptions,
+          )
+        lowConfidence = detailed.lowConfidence ?? []
+        return detailed.text
+      }))
 
     // Filet commun à tous les moteurs : Groq filtre déjà par segment, les
     // autres n'ont rien. Un texte qui n'est qu'une hallucination classique
@@ -579,7 +694,13 @@ export class ItoStreamController {
       context.dictionaryEntries,
     )
 
-    return { rawTranscript, asrEngine, asrFallback, speakerSegments }
+    return {
+      rawTranscript,
+      asrEngine,
+      asrFallback,
+      speakerSegments,
+      lowConfidence,
+    }
   }
 
   /**
@@ -733,7 +854,7 @@ export class ItoStreamController {
 
           const asr = await this.runAsr(
             decision.path,
-            wavAudio,
+            wavPayload(wavAudio),
             mode,
             context,
             advancedSettings,
@@ -742,7 +863,7 @@ export class ItoStreamController {
           const transcript = await transcriptAdjuster.adjust(
             asr.rawTranscript,
             mode,
-            context,
+            { ...context, lowConfidenceSegments: asr.lowConfidence },
             advancedSettings,
           )
 

@@ -208,6 +208,20 @@ export const createMockTimingCollector = () => ({
 const pathMod = await import('path')
 mock.module('node:path', () => ({ join: (pathMod as any).join }))
 
+// The streaming MP3 encoder imports its worker through electron-vite's
+// `?nodeWorker` query, which only the bundler understands. Any test that
+// loads the stream controller for real gets an encoder that yields nothing,
+// so the WAV path is exercised; the controller's own suite mocks it in full.
+mock.module('../main/audio/streamingEncoder', () => ({
+  createStreamingEncoder: () => ({
+    start: () => {},
+    push: () => {},
+    finish: async () => null,
+    abort: () => {},
+  }),
+  StreamingMp3Encoder: class {},
+}))
+
 const shouldSkipDbInit = process.argv.some(arg => {
   const normalized = String(arg).replaceAll('\\', '/').toLowerCase()
   return (

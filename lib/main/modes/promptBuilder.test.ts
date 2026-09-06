@@ -46,20 +46,34 @@ describe('buildMessages', () => {
   })
 
   test('an explicit language is imposed on the output', async () => {
-    const messages = await buildMessages('x', mode({ language: 'es' }), context())
+    const messages = await buildMessages(
+      'x',
+      mode({ language: 'es' }),
+      context(),
+    )
     expect(messages[0].content).toContain('Always write the result in Spanish')
   })
 
   test('automatic imposes nothing and asks for the dictated language', async () => {
-    const messages = await buildMessages('x', mode({ language: 'auto' }), context())
+    const messages = await buildMessages(
+      'x',
+      mode({ language: 'auto' }),
+      context(),
+    )
     expect(messages[0].content).not.toContain('Always write the result in')
     expect(messages[0].content).toContain('same language as the user message')
   })
 
   test('examples become real conversation turns, in order, before the dictation', async () => {
     examples = [
-      { spokenInput: 'buy milk eggs no not eggs cheese', aiOutput: '- Milk\n- Cheese' },
-      { spokenInput: 'write an article no an essay', aiOutput: 'Write an essay.' },
+      {
+        spokenInput: 'buy milk eggs no not eggs cheese',
+        aiOutput: '- Milk\n- Cheese',
+      },
+      {
+        spokenInput: 'write an article no an essay',
+        aiOutput: 'Write an essay.',
+      },
     ]
 
     const messages = await buildMessages('x', mode(), context())
@@ -121,6 +135,21 @@ describe('buildMessages', () => {
     expect(last.trimEnd().endsWith('continue this')).toBe(true)
   })
 
+  test('low-confidence passages are a labelled context block, never a mark in the dictation', async () => {
+    const messages = await buildMessages(
+      'du coup le composant satingues',
+      mode(),
+      context({ lowConfidenceSegments: ['satingues', ' '] }),
+    )
+    const user = messages[messages.length - 1].content
+    expect(user).toContain('<low_confidence_segments>')
+    expect(user).toContain('- satingues')
+    expect(user.endsWith('du coup le composant satingues')).toBe(true)
+
+    const plain = await buildMessages('x', mode(), context())
+    expect(plain[plain.length - 1].content).toBe('x')
+  })
+
   test('a context that is switched on but empty adds no block', async () => {
     const messages = await buildMessages(
       'x',
@@ -131,7 +160,11 @@ describe('buildMessages', () => {
   })
 
   test('empty instructions fall back rather than sending an empty system message', async () => {
-    const messages = await buildMessages('x', mode({ instructions: '' }), context())
+    const messages = await buildMessages(
+      'x',
+      mode({ instructions: '' }),
+      context(),
+    )
     expect(messages[0].content.length).toBeGreaterThan(20)
   })
 })

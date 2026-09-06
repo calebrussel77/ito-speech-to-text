@@ -224,6 +224,7 @@ const mockAudioStreamManager = {
   getCurrentSampleRate: mock(() => 16000),
   clearInteractionAudio: mock(),
   getAudioDurationMs: mock(() => 200),
+  onChunk: mock(() => () => {}),
 }
 mock.module('./audio/AudioStreamManager', () => ({
   AudioStreamManager: class MockAudioStreamManager {
@@ -234,6 +235,7 @@ mock.module('./audio/AudioStreamManager', () => ({
     getCurrentSampleRate = mockAudioStreamManager.getCurrentSampleRate
     clearInteractionAudio = mockAudioStreamManager.clearInteractionAudio
     getAudioDurationMs = mockAudioStreamManager.getAudioDurationMs
+    onChunk = mockAudioStreamManager.onChunk
   },
 }))
 
@@ -251,7 +253,9 @@ mock.module('./transcription/LocalAudioProcessor', () => ({
 
 const mockPendingDictationStore = {
   save: mock(() => 'C:/pending/dictation-1.wav'),
-  saveAsync: mock(() => Promise.resolve('C:/pending/dictation-1.wav')),
+  saveAsync: mock((_wav?: Buffer) =>
+    Promise.resolve('C:/pending/dictation-1.wav'),
+  ),
   delete: mock(),
   read: mock(() => Buffer.from('wav')),
   readMeta: mock((): any => null),
@@ -304,9 +308,34 @@ mock.module('./context/ContextGrabber', () => ({
   contextGrabber: mockContextGrabber,
 }))
 
+// L'encodeur MP3 au fil de l'eau : `null` = WAV, sinon les octets encodés.
+const mockEncoder = {
+  start: mock(),
+  push: mock(),
+  finish: mock((): Promise<Buffer | null> => Promise.resolve(null)),
+  abort: mock(),
+}
+mock.module('./audio/streamingEncoder', () => ({
+  createStreamingEncoder: () => mockEncoder,
+}))
+
+const mockRecordUsage = mock()
+mock.module('./context/vocabularyUsage', () => ({
+  recordUsage: mockRecordUsage,
+  sortByUsage: (items: unknown[]) => items,
+}))
+
 const mockLocalTranscriptionService = {
   initialize: mock(() => {}),
-  transcribeAudio: mock(() => Promise.resolve('raw transcript')),
+  transcribeAudio: mock((_audio?: Buffer, _options?: any) =>
+    Promise.resolve('raw transcript'),
+  ),
+  // Le contrôleur passe par la variante détaillée ; elle délègue à
+  // `transcribeAudio` pour que les tests existants gardent leurs réglages.
+  transcribeAudioDetailed: mock(async (audio: Buffer, options: any) => ({
+    text: await mockLocalTranscriptionService.transcribeAudio(audio, options),
+    lowConfidence: [] as string[],
+  })),
   complete: mock(() => Promise.resolve('adjusted transcript')),
 }
 mock.module('./transcription/LocalTranscriptionService', () => ({
@@ -479,6 +508,9 @@ describe('ItoStreamController (local)', () => {
     )
     mockPendingDictationStore.list.mockReturnValue([])
     mockPendingDictationStore.readMeta.mockReturnValue(null)
+    Object.values(mockEncoder).forEach(fn => fn.mockClear())
+    mockEncoder.finish.mockResolvedValue(null)
+    mockRecordUsage.mockClear()
     mockResolveModeOrActive.mockClear()
     mockResolveModeOrActive.mockImplementation(async () => testMode())
     mockTranscriptAdjuster.adjust.mockClear()
@@ -1146,6 +1178,113 @@ describe('ItoStreamController (local)', () => {
     })
   })
 
+  describe('upload payload: MP3 encoded during the dictation, WAV when it failed', () => {
+    test('the MP3 goes to Groq with its format, and the row records its size', async () => {
+      const mp3 = Buffer.from('mp3-bytes')
+      mockEncoder.finish.mockResolvedValue(mp3)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      const result = await controller.processLocalTranscription()
+
+      expect(mockEncoder.start).toHaveBeenCalledWith(16000)
+      expect(
+        mockLocalTranscriptionService.transcribeAudioDetailed,
+      ).toHaveBeenCalledWith(mp3, expect.objectContaining({ fileType: 'mp3' }))
+      expect(result.latency.uploadBytes).toBe(mp3.length)
+      expect(result.latency.encodeMs).toEqual(expect.any(Number))
+      // The safety copy on disk stays the lossless WAV.
+      expect(mockPendingDictationStore.saveAsync).toHaveBeenCalledWith(
+        expect.any(Buffer),
+      )
+      const savedWav = (
+        mockPendingDictationStore.saveAsync.mock.calls as any[]
+      )[0][0]
+      expect(savedWav).not.toBe(mp3)
+    })
+
+    test('the MP3 reaches the precise engines with the right content type', async () => {
+      const mp3 = Buffer.from('mp3-bytes')
+      mockEncoder.finish.mockResolvedValue(mp3)
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        openRouterApiKey: 'or-test',
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode({ voiceModelKey: 'gpt-transcribe' }))
+      await controller.processLocalTranscription()
+
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledWith(
+        mp3,
+        expect.objectContaining({ fileType: 'mp3' }),
+      )
+    })
+
+    test('an encoder that did not hold falls back to the WAV, silently', async () => {
+      mockEncoder.finish.mockResolvedValue(null)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      const result = await controller.processLocalTranscription()
+
+      const sent = mockLocalTranscriptionService.transcribeAudioDetailed.mock
+        .calls[0] as any[]
+      expect(sent[1]).toEqual(expect.objectContaining({ fileType: 'wav' }))
+      expect(result.latency.uploadBytes).toBe(Buffer.from('wav').length)
+    })
+
+    test('cancelling a dictation discards the encoder', async () => {
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      mockAudioStreamManager.isCurrentlyStreaming.mockReturnValue(true)
+      controller.cancelTranscription()
+
+      expect(mockEncoder.abort).toHaveBeenCalled()
+      expect(mockEncoder.finish).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('what the rewrite learns from the engine', () => {
+    test("Whisper's low-confidence passages reach the LLM context, and dictated terms are counted", async () => {
+      mockLocalTranscriptionService.transcribeAudioDetailed.mockResolvedValueOnce(
+        {
+          text: 'du coup le composant satingues',
+          lowConfidence: ['satingues'],
+        },
+      )
+      mockContextGrabber.gatherContext.mockResolvedValueOnce({
+        windowTitle: '',
+        appName: '',
+        contextText: '',
+        clipboardText: '',
+        vocabularyWords: ['Settings', 'Ito'],
+        dictionaryEntries: [],
+        advancedSettings: baseAdvancedSettings(),
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+      await controller.processLocalTranscription()
+
+      expect(mockTranscriptAdjuster.adjust).toHaveBeenCalledWith(
+        'du coup le composant satingues',
+        expect.anything(),
+        expect.objectContaining({ lowConfidenceSegments: ['satingues'] }),
+        expect.anything(),
+      )
+      expect(mockRecordUsage).toHaveBeenCalledWith('adjusted transcript', [
+        'Settings',
+        'Ito',
+      ])
+    })
+  })
+
   describe('flushPendingDictations replays the original dictation, not a degraded one', () => {
     const savedMeta = () => ({
       modeId: 'email',
@@ -1261,6 +1400,9 @@ describe('ItoStreamController (local)', () => {
     test('a WAV from before sidecars falls back to the active mode and the current dictionary', async () => {
       mockPendingDictationStore.list.mockReturnValue(['C:/pending/old.wav'])
       mockPendingDictationStore.readMeta.mockReturnValue(null)
+      Object.values(mockEncoder).forEach(fn => fn.mockClear())
+      mockEncoder.finish.mockResolvedValue(null)
+      mockRecordUsage.mockClear()
       mockContextGrabber.getVocabulary.mockResolvedValue({
         vocabularyWords: ['Caleb'],
         dictionaryEntries: ['Caleb'],

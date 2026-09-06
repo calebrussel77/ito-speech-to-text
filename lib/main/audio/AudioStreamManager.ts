@@ -5,6 +5,15 @@ export class AudioStreamManager {
   private audioChunks: Buffer[] = []
   private currentSampleRate: number = 16000
   private chunkWaiters: Array<() => void> = []
+  private chunkListeners: Array<(chunk: Buffer) => void> = []
+
+  /** Reçoit chaque bloc PCM au moment où il arrive (encodage au fil de l'eau). */
+  onChunk(listener: (chunk: Buffer) => void): () => void {
+    this.chunkListeners.push(listener)
+    return () => {
+      this.chunkListeners = this.chunkListeners.filter(l => l !== listener)
+    }
+  }
 
   private notifyChunkWaiters() {
     const waiters = this.chunkWaiters
@@ -56,6 +65,7 @@ export class AudioStreamManager {
       return
     }
     this.audioChunks.push(chunk)
+    for (const listener of this.chunkListeners) listener(chunk)
     this.notifyChunkWaiters()
   }
 

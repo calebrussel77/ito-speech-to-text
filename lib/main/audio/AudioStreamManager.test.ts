@@ -303,4 +303,17 @@ describe('AudioStreamManager', () => {
       expect(audioManager.getInteractionAudioBuffer().length).toBe(0)
     })
   })
+
+  test('chunk listeners see every block as it lands, and can detach', () => {
+    const audioManager = new AudioStreamManager()
+    audioManager.initialize()
+    const seen: Buffer[] = []
+    const detach = audioManager.onChunk(chunk => seen.push(chunk))
+
+    audioManager.addAudioChunk(Buffer.from('a'))
+    detach()
+    audioManager.addAudioChunk(Buffer.from('b'))
+
+    expect(seen.map(String)).toEqual(['a'])
+  })
 })

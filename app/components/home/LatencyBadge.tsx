@@ -6,13 +6,21 @@ import {
 
 type Latency = Partial<
   Record<
-    'prepareMs' | 'contextMs' | 'asrMs' | 'adjustMs' | 'pasteMs' | 'totalMs',
+    | 'prepareMs'
+    | 'encodeMs'
+    | 'contextMs'
+    | 'asrMs'
+    | 'adjustMs'
+    | 'pasteMs'
+    | 'totalMs'
+    | 'uploadBytes',
     number
   >
 >
 
 const STAGES: Array<[keyof Latency, string]> = [
   ['prepareMs', 'Audio'],
+  ['encodeMs', 'Encodage'],
   ['contextMs', 'Contexte'],
   ['asrMs', 'Transcription'],
   ['adjustMs', 'Réécriture'],
@@ -56,6 +64,11 @@ export default function LatencyBadge({
             )
           })}
         </div>
+        {typeof latency.uploadBytes === 'number' && (
+          <div className="mt-1 text-[var(--subtle-foreground)]">
+            Envoyé : {(latency.uploadBytes / 1024).toFixed(0)} Ko
+          </div>
+        )}
         {drainTruncated && (
           <div className="mt-1">
             Le micro n'a pas confirmé la vidange : la fin est peut-être

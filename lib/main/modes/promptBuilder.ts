@@ -48,7 +48,11 @@ function buildSystemMessage(mode: Mode): string {
     : `${instructions}\n\n${SAME_LANGUAGE_CLAUSE}`
 }
 
-function buildUserMessage(transcript: string, mode: Mode, context: ContextData) {
+function buildUserMessage(
+  transcript: string,
+  mode: Mode,
+  context: ContextData,
+) {
   let content = ''
 
   if (mode.contextApplication) {
@@ -69,6 +73,18 @@ function buildUserMessage(transcript: string, mode: Mode, context: ContextData) 
 
   if (mode.contextSelection) {
     content += block('selected_text', context.contextText)
+  }
+
+  // Ce que le moteur vocal lui-même n'était pas sûr d'avoir compris. Un bloc
+  // de contexte, pas un marquage dans la dictée : rien ne peut fuir dans le
+  // texte rendu, et le modèle sait où chercher les mots mal entendus.
+  const uncertain = (context.lowConfidenceSegments ?? []).filter(s => s.trim())
+  if (uncertain.length > 0) {
+    content += block(
+      'low_confidence_segments',
+      'The speech engine was unsure about these passages of the dictation; they are the most likely to contain misheard words:\n' +
+        uncertain.map(s => `- ${s.trim()}`).join('\n'),
+    )
   }
 
   return content + transcript
