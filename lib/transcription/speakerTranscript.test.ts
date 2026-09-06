@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import {
+  collapseMinorSpeakers,
   formatTimestamp,
   uniqueSpeakers,
   formatSpeakerTranscript,
@@ -102,5 +103,51 @@ describe('formatSpeakerTranscript', () => {
 
   test('an empty transcript formats to an empty string', () => {
     expect(formatSpeakerTranscript([])).toBe('')
+  })
+})
+
+describe('collapseMinorSpeakers', () => {
+  const words = (n: number) => Array.from({ length: n }, () => 'mot').join(' ')
+
+  test('a voice with a couple of words is folded into its neighbour', () => {
+    const segments = [
+      segment({ speaker: 0, label: 'Speaker 1', text: words(60) }),
+      segment({ speaker: 2, label: 'Speaker 3', text: 'oui' }),
+      segment({ speaker: 1, label: 'Speaker 2', text: words(40) }),
+    ]
+    const collapsed = collapseMinorSpeakers(segments)
+    expect(collapsed.map(s => s.speaker)).toEqual([0, 0, 1])
+    expect(collapsed[1].label).toBe('Speaker 1')
+  })
+
+  test('a quiet but real participant is kept', () => {
+    const segments = [
+      segment({ speaker: 0, text: words(50) }),
+      segment({ speaker: 1, label: 'Speaker 2', text: 'oui' }),
+      segment({ speaker: 0, text: words(50) }),
+      segment({ speaker: 1, label: 'Speaker 2', text: 'non' }),
+      segment({ speaker: 0, text: words(50) }),
+      segment({ speaker: 1, label: 'Speaker 2', text: 'peut-être' }),
+    ]
+    expect(collapseMinorSpeakers(segments)).toEqual(segments)
+  })
+
+  test('a single-voice memo split by the engine collapses to one voice', () => {
+    const segments = [
+      segment({ speaker: 0, text: words(30) }),
+      segment({ speaker: 1, label: 'Speaker 2', text: 'euh' }),
+      segment({ speaker: 0, text: words(30) }),
+    ]
+    const collapsed = collapseMinorSpeakers(segments)
+    expect(new Set(collapsed.map(s => s.speaker)).size).toBe(1)
+  })
+
+  test('a minor voice opening the recording joins the first real one', () => {
+    const segments = [
+      segment({ speaker: 3, label: 'Speaker 4', text: 'allo' }),
+      segment({ speaker: 0, text: words(40) }),
+      segment({ speaker: 1, label: 'Speaker 2', text: words(40) }),
+    ]
+    expect(collapseMinorSpeakers(segments)[0].speaker).toBe(0)
   })
 })

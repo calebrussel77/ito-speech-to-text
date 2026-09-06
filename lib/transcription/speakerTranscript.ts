@@ -39,6 +39,59 @@ export function uniqueSpeakers(
 }
 
 /**
+ * Un « locuteur » qui ne dit presque rien n'en est pas un : c'est un
+ * toussotement, un « oui » en fond, ou la diarisation qui a coupé une même
+ * voix en deux. Ses tours sont rendus au locuteur qui parle juste avant (ou
+ * après, en tout début), pour qu'un mémo à une voix ne devienne pas un
+ * dialogue à deux et qu'une réunion à deux n'en affiche pas quatre.
+ *
+ * Seuil : moins de 5 % des mots ET moins de trois tours. Un participant
+ * discret mais réel dépasse l'un des deux.
+ */
+export function collapseMinorSpeakers(
+  segments: SpeakerSegment[],
+): SpeakerSegment[] {
+  if (segments.length === 0) return segments
+  const words = new Map<number, number>()
+  const turns = new Map<number, number>()
+  let total = 0
+  for (const segment of segments) {
+    const count = segment.text.split(/\s+/).filter(Boolean).length
+    total += count
+    words.set(segment.speaker, (words.get(segment.speaker) ?? 0) + count)
+    turns.set(segment.speaker, (turns.get(segment.speaker) ?? 0) + 1)
+  }
+  const minor = new Set(
+    [...words.keys()].filter(
+      speaker =>
+        (words.get(speaker) ?? 0) < total * 0.05 &&
+        (turns.get(speaker) ?? 0) < 3,
+    ),
+  )
+  if (minor.size === 0 || minor.size === words.size) return segments
+
+  const labelOf = new Map<number, string>()
+  for (const segment of segments) {
+    if (!minor.has(segment.speaker) && !labelOf.has(segment.speaker)) {
+      labelOf.set(segment.speaker, segment.label)
+    }
+  }
+  const firstMajor = segments.find(s => !minor.has(s.speaker))!.speaker
+  let previous = firstMajor
+  return segments.map(segment => {
+    if (!minor.has(segment.speaker)) {
+      previous = segment.speaker
+      return segment
+    }
+    return {
+      ...segment,
+      speaker: previous,
+      label: labelOf.get(previous) ?? segment.label,
+    }
+  })
+}
+
+/**
  * Le transcript nommé et horodaté qui part dans le presse-papier — le
  * format qu'un mode avec le contexte « Copied text » lira pour produire un
  * compte-rendu par participant.

@@ -219,7 +219,14 @@ mock.module('../main/audio/streamingEncoder', () => ({
     finish: async () => null,
     abort: () => {},
   }),
-  StreamingMp3Encoder: class {},
+  StreamingMp3Encoder: class {
+    start() {}
+    push() {}
+    async finish() {
+      return null
+    }
+    abort() {}
+  },
 }))
 
 const shouldSkipDbInit = process.argv.some(arg => {

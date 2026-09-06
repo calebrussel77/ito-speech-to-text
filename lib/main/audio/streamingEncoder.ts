@@ -61,8 +61,12 @@ export class StreamingMp3Encoder {
     }
   }
 
-  /** Le MP3 complet, ou `null` si l'encodage a échoué en route. */
-  finish(): Promise<Buffer | null> {
+  /**
+   * Le MP3 complet, ou `null` si l'encodage a échoué en route. Une dictée
+   * est encodée au fil de l'eau et finit en quelques millisecondes ; un
+   * fichier importé est poussé d'un bloc et peut demander une minute.
+   */
+  finish(timeoutMs = FINISH_TIMEOUT_MS): Promise<Buffer | null> {
     if (this.done) return this.done
     const worker = this.worker
     if (!worker || this.failed) {
@@ -73,7 +77,7 @@ export class StreamingMp3Encoder {
       const timeout = setTimeout(() => {
         console.warn('[StreamingMp3Encoder] finish timed out, using WAV')
         settle(null)
-      }, FINISH_TIMEOUT_MS)
+      }, timeoutMs)
       const settle = (result: Buffer | null) => {
         clearTimeout(timeout)
         this.settle = null

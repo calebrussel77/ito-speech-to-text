@@ -8,7 +8,12 @@ import { resolveActiveMode } from '../modes/activeMode'
 import { getAdvancedSettings } from '../store'
 import { asrLanguageHint } from '../../constants/modeLanguages'
 import { findModel } from '../../constants/modelCatalog'
-import { formatSpeakerTranscript } from '../../transcription/speakerTranscript'
+import {
+  collapseMinorSpeakers,
+  formatSpeakerTranscript,
+} from '../../transcription/speakerTranscript'
+import { contextGrabber } from '../context/ContextGrabber'
+import { wavToMp3 } from '../audio/wavToMp3'
 
 const CONTENT_TYPES: Record<string, string> = {
   wav: 'audio/wav',
@@ -107,9 +112,33 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     }
   }
 
+  const startedAt = performance.now()
   try {
     const activeMode = await resolveActiveMode()
-    const audio = fs.readFileSync(filePath)
+    const original = fs.readFileSync(filePath)
+    // Le dictionnaire est la seule chose que l'utilisateur ait dite sur son
+    // vocabulaire : noms de produits, de clients, d'outils. Il vaut pour un
+    // appel de prospection autant que pour une dictée.
+    const { vocabularyWords } = await contextGrabber.getVocabulary()
+
+    // Un WAV importé est encodé en MP3 avant l'envoi : dix fois moins
+    // d'octets à pousser, pour un transcript identique. Les autres
+    // conteneurs (m4a, mp3, ogg…) sont déjà compressés et partent tels quels.
+    let audio: Buffer = original
+    let contentType = contentTypeFor(filePath)
+    let fileName = basename(filePath)
+    if (contentType === 'audio/wav') {
+      const mp3 = await wavToMp3(original)
+      if (mp3) {
+        audio = mp3
+        contentType = 'audio/mpeg'
+        fileName = fileName.replace(/\.wav$/i, '') + '.mp3'
+        console.log(
+          `[fileTranscription] WAV re-encoded to MP3: ${original.length} -> ${mp3.length} bytes`,
+        )
+      }
+    }
+    const asrStartedAt = performance.now()
     // Toujours diariser : c'est le seul moyen de SAVOIR combien de personnes
     // parlent. Le décider d'après un réglage de mode revenait à demander à
     // l'utilisateur une réponse qu'il n'a pas encore — il vient d'ouvrir le
@@ -117,14 +146,16 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     //
     // Le type MIME est annoncé dans les deux cas : annoncer audio/wav sur un
     // .m4a fait échouer le décodage côté Deepgram comme côté Google.
-    const { text, segments } = useGoogle
+    const { text, segments: rawSegments } = useGoogle
       ? await googleTranscriptionService.transcribeAudio(audio, {
           apiKey: googleApiKey!,
           model: chosen!.slug,
           language: asrLanguageHint(activeMode.language),
           diarize: true,
-          contentType: contentTypeFor(filePath),
-          displayName: basename(filePath),
+          contentType,
+          displayName: fileName,
+          vocabulary: vocabularyWords,
+          thinking: 'low',
         })
       : useOpenAI
         ? await openaiTranscriptionService.transcribeAudio(audio, {
@@ -132,21 +163,26 @@ export async function transcribeExistingFile(filePath: string): Promise<{
             model: chosen!.slug,
             language: asrLanguageHint(activeMode.language),
             diarize: true,
-            contentType: contentTypeFor(filePath),
-            fileName: basename(filePath),
+            contentType,
+            fileName,
           })
         : await deepgramTranscriptionService.transcribeAudio(audio, {
             apiKey: deepgramApiKey!,
             model: 'nova-3',
             language: asrLanguageHint(activeMode.language),
             diarize: true,
-            contentType: contentTypeFor(filePath),
+            contentType,
           })
+    const asrMs = Math.round(performance.now() - asrStartedAt)
 
-    const speakerCount = new Set((segments ?? []).map(s => s.speaker)).size
+    // Un ASR qui diarise (Deepgram, OpenAI) coupe volontiers une voix en
+    // deux ou attribue un « oui » de fond à un tiers : ces miettes sont
+    // rendues au locuteur voisin avant de compter les voix.
+    const segments = collapseMinorSpeakers(rawSegments ?? [])
+    const speakerCount = new Set(segments.map(s => s.speaker)).size
     const isConversation = speakerCount >= 2
     const finalText =
-      isConversation && segments?.length
+      isConversation && segments.length
         ? formatSpeakerTranscript(segments)
         : text
 
@@ -171,6 +207,11 @@ export async function transcribeExistingFile(filePath: string): Promise<{
         // remonter dans l'historique une ligne « dictée en mode X » qui n'a
         // jamais eu lieu.
         speakers: isConversation ? segments : undefined,
+        latency: {
+          asrMs,
+          totalMs: Math.round(performance.now() - startedAt),
+          uploadBytes: audio.length,
+        },
       },
     )
 

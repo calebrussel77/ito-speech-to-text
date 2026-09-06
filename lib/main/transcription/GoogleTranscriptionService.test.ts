@@ -120,28 +120,30 @@ describe('googleTranscriptionService.transcribeAudio', () => {
     expect(body.system_instruction).toMatch(/never (answer|summarise)/i)
   })
 
-  test('asks for structured JSON only when diarization is wanted', async () => {
+  test('asks for a labelled dialogue in free text when diarization is wanted', async () => {
     await googleTranscriptionService.transcribeAudio(audio, options)
     expect(bodyOf(calls[0]).response_format).toBeUndefined()
+    expect(bodyOf(calls[0]).system_instruction).not.toContain('SPEAKERS')
 
     await googleTranscriptionService.transcribeAudio(audio, {
       ...options,
       diarize: true,
+      language: 'fr',
+      vocabulary: ['Nfluenzo'],
     })
-    const format = bodyOf(calls[1]).response_format
-    expect(format.mime_type).toBe('application/json')
-    expect(format.schema.properties.segments).toBeDefined()
+    const body = bodyOf(calls[1])
+    expect(body.response_format).toBeUndefined()
+    expect(body.system_instruction).toContain('Locuteur 1')
+    expect(body.system_instruction).toContain('Nfluenzo')
+    // Keeping labels straight over an hour deserves a little planning.
+    expect(body.generation_config.thinking_level).toBe('low')
   })
 
-  test('turns the diarized JSON into speaker segments', async () => {
+  test('turns a labelled dialogue into speaker segments', async () => {
     responder = () =>
       respondJson({
-        output_text: JSON.stringify({
-          segments: [
-            { speaker: 0, start: '00:00', end: '00:03', text: 'bonjour' },
-            { speaker: 1, start: '00:03', end: '00:05', text: 'salut' },
-          ],
-        }),
+        output_text:
+          '[00:00:00] Locuteur 1 : bonjour\n[00:00:03] Locuteur 2 : salut',
       })
 
     const result = await googleTranscriptionService.transcribeAudio(audio, {
@@ -150,13 +152,13 @@ describe('googleTranscriptionService.transcribeAudio', () => {
     })
 
     expect(result.segments).toHaveLength(2)
+    expect(result.segments.map(s => s.speaker)).toEqual([0, 1])
     expect(result.text).toBe('bonjour salut')
   })
 
-  test('keeps free text when the model ignores the schema', async () => {
-    // Une sortie non conforme ne doit pas perdre la transcription : on rend ce
-    // qui a été dit, sans les locuteurs, plutôt que de lever après plusieurs
-    // minutes de traitement.
+  test('a single voice comes back as plain text, without speakers', async () => {
+    // Le modèle a jugé qu'une seule personne parlait et a rendu des
+    // paragraphes : on les garde tels quels, sans inventer de locuteur.
     responder = () => respondJson({ output_text: 'bonjour salut' })
 
     const result = await googleTranscriptionService.transcribeAudio(audio, {

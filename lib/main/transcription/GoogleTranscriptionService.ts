@@ -1,5 +1,12 @@
 import { LocalTranscriptionError } from './LocalTranscriptionService'
 import type { SpeakerSegment } from './DeepgramTranscriptionService'
+import { parseClock } from './clock'
+import {
+  buildDialogueInstruction,
+  parseDialogueTranscript,
+} from './dialogueTranscript'
+
+export { parseClock }
 
 /**
  * Gemini comme moteur de transcription de fichiers.
@@ -12,8 +19,9 @@ import type { SpeakerSegment } from './DeepgramTranscriptionService'
  *    sortie possible — c'est la seule protection, et elle vaut d'être lue
  *    avant de la modifier.
  * 2. **La diarisation n'est pas un drapeau mais un format de sortie.** On la
- *    demande en JSON structuré (`response_format`), parce qu'un transcript
- *    nommé en texte libre serait à re-parser à l'aveugle.
+ *    demande en dialogue étiqueté et horodaté, en texte libre, relu par
+ *    `parseDialogueTranscript` : le JSON contraint dégradait les longues
+ *    réunions et les modèles l'ignoraient parfois.
  * 3. **Les horodatages sont générés, pas mesurés.** Gemini les rend en MM:SS,
  *    parfois HH:MM:SS ; ils situent, ils ne synchronisent pas.
  *
@@ -50,6 +58,14 @@ export type GoogleOptions = {
   contentType?: string
   /** Nom affiché côté Google quand le fichier passe par le Files API. */
   displayName?: string
+  /** Termes à orthographier exactement (dictionnaire de l'utilisateur). */
+  vocabulary?: string[]
+  /**
+   * Budget de réflexion. `minimal` pour une dictée, où transcrire n'est pas
+   * raisonner ; `low` pour une réunion, où tenir des étiquettes de locuteur
+   * cohérentes sur une heure mérite un peu de planification.
+   */
+  thinking?: 'minimal' | 'low'
 }
 
 const TRANSCRIBE_INSTRUCTION = `You are a transcription engine. You transcribe audio verbatim.
@@ -58,52 +74,11 @@ You never add headings, notes, or any text that was not spoken.
 If a passage is inaudible, transcribe what you can and skip the rest — do not invent it.
 Transcribe in the language actually spoken.`
 
-/** Le schéma que Gemini doit remplir quand on veut les locuteurs séparés. */
-const DIARIZED_SCHEMA = {
-  type: 'object',
-  properties: {
-    segments: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          speaker: {
-            type: 'integer',
-            description: 'Zero-based index, stable across the recording',
-          },
-          start: { type: 'string', description: 'MM:SS' },
-          end: { type: 'string', description: 'MM:SS' },
-          text: { type: 'string' },
-        },
-        required: ['speaker', 'start', 'end', 'text'],
-      },
-    },
-  },
-  required: ['segments'],
-}
-
 type DiarizedSegment = {
   speaker: number
   start: string
   end: string
   text: string
-}
-
-/**
- * `MM:SS` ou `HH:MM:SS` en millisecondes. Rend 0 sur une valeur illisible
- * plutôt que `NaN` : un horodatage faux décale un segment, un `NaN` casse tout
- * l'affichage de l'historique.
- */
-export function parseClock(value: string): number {
-  const parts = String(value ?? '')
-    .trim()
-    .split(':')
-    .map(part => Number(part))
-  if (parts.some(part => !Number.isFinite(part))) return 0
-
-  const [hours, minutes, seconds] =
-    parts.length === 3 ? parts : [0, parts[0] ?? 0, parts[1] ?? 0]
-  return Math.max(0, (hours * 3600 + minutes * 60 + seconds) * 1000)
 }
 
 /** Les segments de Gemini, dans la forme que le reste de l'app manipule. */
@@ -277,25 +252,33 @@ class GoogleTranscriptionService {
     const languageClause = options.language
       ? ` The audio is in "${options.language}"; transcribe it in that language.`
       : ''
+    // Deux régimes. Une dictée : un transcript brut, sans étiquette. Un
+    // enregistrement importé (`diarize`) : le modèle écoute, compte les
+    // voix, et rend un dialogue étiqueté et horodaté s'il y en a plusieurs,
+    // du texte simple sinon — en texte libre, relu par
+    // `parseDialogueTranscript`. Le JSON contraint qu'on imposait avant
+    // dégradait nettement les longues réunions, et les modèles l'ignoraient
+    // parfois, perdant les locuteurs.
+    const systemInstruction = options.diarize
+      ? buildDialogueInstruction({
+          language: options.language,
+          vocabulary: options.vocabulary,
+        })
+      : TRANSCRIBE_INSTRUCTION
     const prompt = options.diarize
-      ? `Transcribe this recording and attribute every segment to its speaker.${languageClause} Number the speakers from 0 in the order they first speak, and keep that numbering stable for the whole recording.`
+      ? 'Transcribe this recording following the instructions exactly.'
       : `Generate a verbatim transcript of the speech in this recording.${languageClause}`
 
     const body: Record<string, unknown> = {
       model: options.model,
-      system_instruction: TRANSCRIBE_INSTRUCTION,
+      system_instruction: systemInstruction,
       input: [{ type: 'text', text: prompt }, audioPart],
-      // Transcrire n'est pas raisonner : les Gemini 3.x pensent par défaut,
-      // et chaque seconde de « thinking » retarde un transcript qui n'en a
-      // pas besoin. `minimal` est le plancher documenté de l'API.
-      generation_config: { thinking_level: 'minimal' },
-    }
-    if (options.diarize) {
-      body.response_format = {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: DIARIZED_SCHEMA,
-      }
+      // Les Gemini 3.x pensent par défaut, et chaque seconde de « thinking »
+      // retarde le transcript. `minimal` est le plancher documenté de l'API.
+      generation_config: {
+        thinking_level:
+          options.thinking ?? (options.diarize ? 'low' : 'minimal'),
+      },
     }
 
     let res: Response
@@ -334,23 +317,8 @@ class GoogleTranscriptionService {
 
     if (!options.diarize) return { text: output, segments: [] }
 
-    // La sortie structurée est une CHAÎNE JSON, pas un objet : un modèle qui
-    // rend malgré tout du texte libre ne doit pas faire échouer la
-    // transcription — on garde alors ce qu'il a dit, sans les locuteurs.
-    try {
-      const parsed = JSON.parse(output)
-      const segments = toSpeakerSegments(parsed?.segments ?? [])
-      if (!segments.length) return { text: output, segments: [] }
-      return {
-        text: segments.map(segment => segment.text).join(' '),
-        segments,
-      }
-    } catch {
-      console.warn(
-        '[GoogleTranscriptionService] Expected diarized JSON, got free text',
-      )
-      return { text: output, segments: [] }
-    }
+    const dialogue = parseDialogueTranscript(output)
+    return { text: dialogue.text, segments: dialogue.segments }
   }
 
   /** Vérifie qu'une clé répond, sans dépenser de transcription. */

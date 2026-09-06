@@ -54,6 +54,20 @@ mock.module('../modes/activeMode', () => ({
   resolveActiveMode: mockResolveActiveMode,
 }))
 
+const mockGetVocabulary = mock(async () => ({
+  vocabularyWords: ['Nfluenzo'],
+  dictionaryEntries: ['Nfluenzo'],
+}))
+mock.module('../context/ContextGrabber', () => ({
+  contextGrabber: { getVocabulary: mockGetVocabulary },
+}))
+
+let mp3Result: Buffer | null = null
+const mockWavToMp3 = mock(async () => mp3Result)
+mock.module('../audio/wavToMp3', () => ({
+  wavToMp3: mockWavToMp3,
+}))
+
 const mockAdjust = mock(async (text: string) => `rewritten: ${text}`)
 mock.module('./TranscriptAdjuster', () => ({
   transcriptAdjuster: { adjust: mockAdjust },
@@ -211,6 +225,57 @@ describe('transcribeExistingFile', () => {
       'gemini-3.7-flash',
     )
     expect((mockGoogle.mock.calls[0] as any[])[1].diarize).toBe(true)
+    // The user's dictionary is the only vocabulary hint there is.
+    expect((mockGoogle.mock.calls[0] as any[])[1].vocabulary).toEqual([
+      'Nfluenzo',
+    ])
+  })
+
+  test('a WAV is re-encoded to MP3 before the upload, other containers go as they are', async () => {
+    mp3Result = Buffer.from('mp3')
+    await transcribeExistingFile('C:/memo.wav')
+    let options = (mockDeepgram.mock.calls[0] as any[])[1]
+    expect((mockDeepgram.mock.calls[0] as any[])[0]).toEqual(Buffer.from('mp3'))
+    expect(options.contentType).toBe('audio/mpeg')
+
+    mockDeepgram.mockClear()
+    mockWavToMp3.mockClear()
+    await transcribeExistingFile('C:/meeting.m4a')
+    options = (mockDeepgram.mock.calls[0] as any[])[1]
+    expect(mockWavToMp3).not.toHaveBeenCalled()
+    expect(options.contentType).toBe('audio/mp4')
+  })
+
+  test('a WAV the encoder cannot handle is sent untouched', async () => {
+    mp3Result = null
+    await transcribeExistingFile('C:/memo.wav')
+    expect((mockDeepgram.mock.calls[0] as any[])[1].contentType).toBe(
+      'audio/wav',
+    )
+  })
+
+  test('a stray voice with two words does not turn a memo into a dialogue', async () => {
+    deepgramResult = {
+      text: 'un long mémo',
+      segments: [
+        {
+          ...segment(
+            0,
+            'un long mémo avec beaucoup de mots dedans vraiment beaucoup',
+          ),
+        },
+        { ...segment(1, 'euh') },
+        {
+          ...segment(0, 'et encore plus de mots pour finir ce mémo proprement'),
+        },
+      ],
+    }
+
+    const result = await transcribeExistingFile('C:/memo.m4a')
+
+    expect(result.speakerCount).toBe(1)
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.speakers).toBeUndefined()
   })
 
   test('sends the file to OpenAI when that is the chosen model', async () => {

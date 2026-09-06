@@ -278,6 +278,7 @@ export class InteractionManager {
       modeId?: string
       modeName?: string
       speakers?: SpeakerSegment[]
+      latency?: Record<string, number>
     },
   ): Promise<string | undefined> {
     try {
@@ -318,6 +319,7 @@ export class InteractionManager {
               ? extra.rawTranscript
               : null,
           speakers: extra?.speakers?.length ? extra.speakers : null,
+          latency: extra?.latency ?? null,
         },
         llm_output: {},
         raw_audio: null,
