@@ -29,6 +29,7 @@ import { createStereo48kWavFromMonoPCM } from '@/app/utils/audioUtils'
 import { KeyName } from '@/lib/types/keyboard'
 import { usePlatform } from '@/app/hooks/usePlatform'
 import EngineBadge from '@/app/components/home/EngineBadge'
+import LatencyBadge from '@/app/components/home/LatencyBadge'
 import { ProUpgradeDialog } from '../ProUpgradeDialog'
 import useBillingState from '@/app/hooks/useBillingState'
 import AddAsExampleDialog from './history/AddAsExampleDialog'
@@ -856,6 +857,12 @@ export default function HomeContent({
                             </span>
                             <EngineBadge
                               engine={interaction.asr_output?.engine}
+                            />
+                            <LatencyBadge
+                              latency={interaction.asr_output?.latency}
+                              drainTruncated={
+                                interaction.asr_output?.drainTruncated
+                              }
                             />
                             {interaction.asr_output?.modeName && (
                               <span className="text-[11px] text-muted-foreground/70">

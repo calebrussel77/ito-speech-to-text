@@ -64,6 +64,38 @@ function parseToken(raw: string): Token {
 // the misspelling the ASR tends to produce and `to` the wanted spelling.
 export type DictionaryTerm = string | { from: string; to: string }
 
+/**
+ * Borne inférieure de la distance d'édition à partir des histogrammes de
+ * caractères : une substitution change deux compteurs, une insertion ou une
+ * suppression un seul, donc `levenshtein >= ceil(sum |a_c - b_c| / 2)`. Le
+ * calcul est linéaire et élimine l'immense majorité des fenêtres avant la
+ * programmation dynamique, qui est quadratique.
+ */
+const HIST_SIZE = 37 // a-z, 0-9, et un seau pour le reste
+function histogram(text: string): Uint8Array {
+  const hist = new Uint8Array(HIST_SIZE)
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    let bucket = HIST_SIZE - 1
+    if (code >= 97 && code <= 122) bucket = code - 97
+    else if (code >= 48 && code <= 57) bucket = 26 + code - 48
+    if (hist[bucket] < 255) hist[bucket]++
+  }
+  return hist
+}
+function histogramLowerBound(a: Uint8Array, b: Uint8Array): number {
+  let sum = 0
+  for (let i = 0; i < HIST_SIZE; i++) sum += Math.abs(a[i] - b[i])
+  return Math.ceil(sum / 2)
+}
+
+type Window = {
+  start: number
+  size: number
+  normalized: string
+  hist: Uint8Array
+}
+
 export function applyDictionaryCorrections(
   transcript: string,
   vocabulary: DictionaryTerm[],
@@ -80,6 +112,25 @@ export function applyDictionaryCorrections(
       tokens.push(parseToken(raw))
     }
   })
+
+  // Normaliser chaque mot une seule fois : `normalize` (NFD + regex) était
+  // rappelé pour chaque fenêtre de chaque terme, ce qui dominait le coût.
+  const normalizedCores = tokens.map(token => normalize(token.core))
+  const windowCache = new Map<number, Window[]>()
+  const windowsOfSize = (size: number): Window[] => {
+    let windows = windowCache.get(size)
+    if (!windows) {
+      windows = []
+      for (let start = 0; start + size <= tokens.length; start++) {
+        let normalized = ''
+        for (let k = 0; k < size; k++) normalized += normalizedCores[start + k]
+        if (normalized.length === 0) continue
+        windows.push({ start, size, normalized, hist: histogram(normalized) })
+      }
+      windowCache.set(size, windows)
+    }
+    return windows
+  }
 
   const consumed = new Set<number>() // word positions already rewritten
 
@@ -108,6 +159,7 @@ export function applyDictionaryCorrections(
       const normalizedTerm = normalize(key)
       if (normalizedTerm.length < 3) continue // too short to correct safely
       const budget = maxDistanceFor(normalizedTerm)
+      const termHist = histogram(normalizedTerm)
       const termWordCount = key.trim().split(/\s+/).length
 
       const windowSizes = [
@@ -115,21 +167,19 @@ export function applyDictionaryCorrections(
       ].filter(size => size >= 1)
 
       for (const windowSize of windowSizes) {
-        for (let start = 0; start + windowSize <= tokens.length; start++) {
+        for (const window of windowsOfSize(windowSize)) {
+          const { start, normalized: candidate } = window
+          // Cheap pre-filters before the DP, cheapest first.
+          if (Math.abs(candidate.length - normalizedTerm.length) > budget) {
+            continue
+          }
+          if (histogramLowerBound(window.hist, termHist) > budget) continue
+
           const positions = Array.from(
             { length: windowSize },
             (_, k) => start + k,
           )
           if (positions.some(p => consumed.has(p))) continue
-
-          const candidate = normalize(
-            positions.map(p => tokens[p].core).join(''),
-          )
-          if (candidate.length === 0) continue
-          // Cheap pre-filter before the DP
-          if (Math.abs(candidate.length - normalizedTerm.length) > budget) {
-            continue
-          }
           if (levenshtein(candidate, normalizedTerm) > budget) continue
 
           // Rewrite the window with the canonical spelling, keeping outer

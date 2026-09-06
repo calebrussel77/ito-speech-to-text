@@ -235,7 +235,12 @@ const initializeDatabase = async (): Promise<void> => {
           reject(err)
         } else {
           console.info('Connected to SQLite database.')
-          runMigrations(db)
+          // WAL : les lectures ne bloquent plus derrière une écriture, et
+          // `synchronous=NORMAL` évite un fsync à chaque commit sur le chemin
+          // chaud (l'upsert de chaque dictée) tout en restant sûr en WAL.
+          exec(db, 'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+            .catch(e => console.warn('Could not set SQLite pragmas.', e))
+            .then(() => runMigrations(db))
             .then(resolve)
             .catch(e => {
               console.error('Failed to run migrations.', e)

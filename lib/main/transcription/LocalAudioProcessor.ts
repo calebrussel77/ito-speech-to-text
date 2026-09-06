@@ -65,6 +65,22 @@ export class LocalAudioProcessor {
   }
 
   /**
+   * Vue Int16 sans copie sur le PCM quand l'alignement le permet (un buffer
+   * issu de `Buffer.concat` l'est toujours), copie sinon. Lire les
+   * échantillons par `readInt16LE` coûtait un appel par échantillon : sur
+   * dix minutes d'audio, près de dix millions d'appels par passe.
+   */
+  private toInt16(pcm: Buffer): Int16Array {
+    const sampleCount = Math.floor(pcm.length / 2)
+    if (pcm.byteOffset % 2 === 0) {
+      return new Int16Array(pcm.buffer, pcm.byteOffset, sampleCount)
+    }
+    const copy = new Int16Array(sampleCount)
+    for (let i = 0; i < sampleCount; i++) copy[i] = pcm.readInt16LE(i * 2)
+    return copy
+  }
+
+  /**
    * Detects buffers with no audible speech. Whisper hallucinates on silence
    * ("Sous-titres réalisés par la communauté d'Amara.org"...), so silent
    * clips are rejected before any network call. Must run on the RAW pcm:
@@ -73,77 +89,71 @@ export class LocalAudioProcessor {
    * is rejected, a quiet voice passes.
    */
   isLikelySilence(pcm: Buffer): boolean {
-    const sampleCount = Math.floor(pcm.length / 2)
+    const samples = this.toInt16(pcm)
+    const sampleCount = samples.length
     if (sampleCount === 0) return true
 
     let sumSquares = 0
     let peak = 0
     for (let i = 0; i < sampleCount; i++) {
-      const v = pcm.readInt16LE(i * 2)
+      const v = samples[i]
       sumSquares += v * v
-      const abs = Math.abs(v)
-      if (abs > peak) peak = abs
+      const abs = v < 0 ? -v : v
+      if (abs > peak) {
+        peak = abs
+        // Passé le seuil de crête, le RMS ne peut plus qualifier le buffer
+        // de silence : inutile de finir la passe.
+        if (peak >= 500) return false
+      }
     }
 
     const rms = Math.sqrt(sumSquares / sampleCount)
     return rms < 100 && peak < 500
   }
 
+  /**
+   * Retire la composante continue, filtre les graves sous 80 Hz et
+   * normalise le gain. Deux passes au lieu de quatre : la moyenne est
+   * calculée sur la vue Int16, puis filtrage et recherche de crête se font
+   * dans la même boucle, et l'écriture finale applique le gain.
+   */
   enhancePcm16(pcm: Buffer, sampleRate: number): Buffer {
     if (!pcm || pcm.length < 2) return pcm
 
-    const sampleCount = Math.floor(pcm.length / 2)
+    const samples = this.toInt16(pcm)
+    const sampleCount = samples.length
     if (sampleCount <= 0) return pcm
-
-    const samples = new Int16Array(sampleCount)
-    for (let i = 0; i < sampleCount; i++) {
-      samples[i] = pcm.readInt16LE(i * 2)
-    }
 
     let sum = 0
     for (let i = 0; i < sampleCount; i++) sum += samples[i]
     const mean = Math.trunc(sum / sampleCount)
-    if (mean !== 0) {
-      for (let i = 0; i < sampleCount; i++) {
-        samples[i] = (samples[i] - mean) as Int16Array[number]
-      }
-    }
 
     const fc = 80
     const a = Math.exp((-2 * Math.PI * fc) / sampleRate)
     let prevX = 0
     let prevY = 0
+    let peak = 1
     const filtered = new Float32Array(sampleCount)
     for (let i = 0; i < sampleCount; i++) {
-      const x = samples[i]
+      const x = samples[i] - mean
       const y = a * (prevY + x - prevX)
       filtered[i] = y
       prevX = x
       prevY = y
+      const abs = y < 0 ? -y : y
+      if (abs > peak) peak = abs
     }
 
-    let peak = 1
-    for (let i = 0; i < sampleCount; i++) {
-      const v = Math.abs(filtered[i])
-      if (v > peak) peak = v
-    }
     const target = 0.707 * 32767
     const rawGain = target / peak
     const gain = Math.min(rawGain, 4.0)
+    const applied = gain > 1.05 ? gain : 1
 
     const out = Buffer.alloc(sampleCount * 2)
-    if (gain > 1.05) {
-      for (let i = 0; i < sampleCount; i++) {
-        const v = Math.round(filtered[i] * gain)
-        const clamped = Math.max(-32768, Math.min(32767, v))
-        out.writeInt16LE(clamped, i * 2)
-      }
-    } else {
-      for (let i = 0; i < sampleCount; i++) {
-        const v = Math.round(filtered[i])
-        const clamped = Math.max(-32768, Math.min(32767, v))
-        out.writeInt16LE(clamped, i * 2)
-      }
+    const outView = new Int16Array(out.buffer, out.byteOffset, sampleCount)
+    for (let i = 0; i < sampleCount; i++) {
+      const v = Math.round(filtered[i] * applied)
+      outView[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v
     }
 
     return out

@@ -8,6 +8,36 @@ import { timingCollector } from '../timing/TimingCollector'
 import type { AsrFallback } from '../itoStreamController'
 import type { SpeakerSegment } from '../transcription/DeepgramTranscriptionService'
 
+/**
+ * Proportion de mots différents entre deux textes, par sacs de mots
+ * normalisés : insensible à l'ordre, donc une simple reformulation compte
+ * moins qu'une réécriture. Rend un nombre entre 0 et 1.
+ */
+export function wordChangeRatio(before: string, after: string): number {
+  const words = (text: string) =>
+    text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean)
+  const a = words(before)
+  const b = words(after)
+  const longest = Math.max(a.length, b.length)
+  if (longest === 0) return 0
+  const counts = new Map<string, number>()
+  for (const w of a) counts.set(w, (counts.get(w) ?? 0) + 1)
+  let common = 0
+  for (const w of b) {
+    const n = counts.get(w) ?? 0
+    if (n > 0) {
+      common++
+      counts.set(w, n - 1)
+    }
+  }
+  return Math.round(((longest - common) / longest) * 100) / 100
+}
+
 export class InteractionManager {
   private currentInteractionId: string | null = null
   private interactionStartTime: number | null = null
@@ -47,6 +77,10 @@ export class InteractionManager {
       modeName?: string
       rawTranscript?: string
       speakers?: SpeakerSegment[]
+      /** Temps par étape, relâchement du raccourci → texte collé. */
+      latency?: Record<string, number>
+      /** La vidange du micro a dépassé son délai : fin peut-être tronquée. */
+      drainTruncated?: boolean
     },
   ) {
     if (!this.currentInteractionId) {
@@ -99,6 +133,14 @@ export class InteractionManager {
         // un tableau vide n'apprend rien de plus qu'un null, et casserait la
         // détection « cette interaction a des locuteurs » côté historique.
         speakers: asr?.speakers?.length ? asr.speakers : null,
+        latency: asr?.latency ?? null,
+        drainTruncated: asr?.drainTruncated ?? false,
+        // Part des mots que la réécriture a changés : 0 quand le LLM n'a
+        // rien touché, 1 quand il a tout réécrit. Un score comparable d'un
+        // modèle ou d'un prompt à l'autre, là où l'œil ne fait qu'estimer.
+        llmChangeRatio: asr?.rawTranscript
+          ? wordChangeRatio(asr.rawTranscript, transcript)
+          : 0,
       }
 
       // Generate a meaningful title from the transcript
@@ -302,10 +344,7 @@ export class InteractionManager {
 
   private async findPendingInteraction(userId: string, pendingPath: string) {
     try {
-      const interactions = await InteractionsTable.findAll(userId)
-      return interactions.find(
-        interaction => interaction.asr_output?.pendingPath === pendingPath,
-      )
+      return await InteractionsTable.findByPendingPath(pendingPath, userId)
     } catch (error) {
       log.warn('[InteractionManager] Pending interaction lookup failed:', error)
       return undefined

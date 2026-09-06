@@ -41,6 +41,7 @@ const mockItoStreamController = {
       sampleRate: number
       durationMs: number
       speakerSegments?: any[]
+      latency?: Record<string, number>
     }> =>
       Promise.resolve({
         transcript: 'test transcript',
@@ -284,6 +285,49 @@ describe('itoSessionManager (local mode)', () => {
       expect.anything(),
       expect.objectContaining({ speakers: speakerSegments }),
     )
+  })
+
+  test('the history row carries the per-stage latency, the paste time and the drain result', async () => {
+    mockItoStreamController.processLocalTranscription.mockResolvedValue({
+      transcript: 'test transcript',
+      audioBuffer: Buffer.alloc(0),
+      sampleRate: 16000,
+      durationMs: 500,
+      speakerSegments: [],
+      latency: { prepareMs: 12, contextMs: 300, asrMs: 900, adjustMs: 400 },
+    })
+    mockVoiceInputService.stopAudioRecording.mockResolvedValue({
+      drainTruncated: true,
+    } as any)
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('voice-to-text')
+    await session.completeSession()
+
+    expect(mockInteractionManager.createInteraction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      undefined,
+      expect.anything(),
+      expect.objectContaining({
+        drainTruncated: true,
+        latency: expect.objectContaining({
+          asrMs: 900,
+          adjustMs: 400,
+          pasteMs: expect.any(Number),
+          totalMs: expect.any(Number),
+        }),
+      }),
+    )
+    // The paste is awaited: the history row is written after the text is
+    // in the target app, so `pasteMs` is a real measurement.
+    const pasteOrder = mockTextInserter.insertText.mock.invocationCallOrder[0]
+    const rowOrder =
+      mockInteractionManager.createInteraction.mock.invocationCallOrder[0]
+    expect(pasteOrder).toBeLessThan(rowOrder)
   })
 
   test('what was inserted is remembered, so the clipboard context can skip it', async () => {

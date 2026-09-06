@@ -265,16 +265,23 @@ class AudioRecorderService extends EventEmitter {
     }
   }
 
-  public awaitDrainComplete(timeoutMs: number = 500): Promise<void> {
+  /** Combien de fois la vidange a dépassé son délai depuis le lancement. */
+  public drainTimeouts = 0
+
+  /**
+   * Résout `true` quand le recorder a confirmé la vidange, `false` quand le
+   * délai est tombé avant (la fin de la dictée est peut-être tronquée).
+   */
+  public awaitDrainComplete(timeoutMs: number = 500): Promise<boolean> {
     if (this.#pendingDrainComplete) {
       this.#pendingDrainComplete = false
-      return Promise.resolve()
+      return Promise.resolve(true)
     }
 
     // If someone is already waiting, just attach to the next drain-complete.
     if (this.#drainPromise) {
       return new Promise((resolve, reject) => {
-        this.once('drain-complete', resolve)
+        this.once('drain-complete', () => resolve(true))
         this.once('error', reject)
       })
     }
@@ -284,10 +291,11 @@ class AudioRecorderService extends EventEmitter {
         if (!settled) {
           settled = true
           this.#drainPromise = null
+          this.drainTimeouts++
           console.warn(
-            `[AudioService] Drain did not complete within ${timeoutMs}ms — tail audio may be truncated`,
+            `[AudioService] Drain did not complete within ${timeoutMs}ms — tail audio may be truncated (${this.drainTimeouts} so far)`,
           )
-          resolve() // fallback: do not hang the stop flow
+          resolve(false) // fallback: do not hang the stop flow
         }
       }, timeoutMs)
       this.#drainPromise = {
@@ -295,7 +303,7 @@ class AudioRecorderService extends EventEmitter {
           if (!settled) {
             settled = true
             clearTimeout(onTimeout)
-            resolve()
+            resolve(true)
           }
         },
         reject: (err?: any) => {

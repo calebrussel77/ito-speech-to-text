@@ -83,7 +83,14 @@ export class VoiceInputService {
    * Stops audio recording and handles system audio unmuting.
    * Waits for the audio recorder to drain before returning.
    */
-  public stopAudioRecording = async () => {
+  /**
+   * Arrête l'enregistrement et attend la vidange du recorder. Rend
+   * `drainTruncated: true` quand la vidange n'a pas confirmé à temps, pour
+   * que l'historique puisse dire si une fin de phrase a pu être perdue.
+   */
+  public stopAudioRecording = async (): Promise<{
+    drainTruncated: boolean
+  }> => {
     console.log('[VoiceInputService] Stopping audio recording')
     audioRecorderService.stopRecording()
     console.log(
@@ -91,8 +98,10 @@ export class VoiceInputService {
     )
 
     // Wait for explicit drain-complete signal from the recorder (with timeout fallback)
+    let drainTruncated = false
     try {
-      await (audioRecorderService as any).awaitDrainComplete?.(500)
+      const drained = await audioRecorderService.awaitDrainComplete(500)
+      drainTruncated = drained === false
       console.log('[VoiceInputService] Drain complete')
     } catch (e) {
       log.warn('[VoiceInputService] drain-complete wait failed, proceeding:', e)
@@ -108,6 +117,7 @@ export class VoiceInputService {
     }
 
     console.log('[VoiceInputService] Audio recording stopped')
+    return { drainTruncated }
   }
 
   public setUpAudioRecorderListeners = () => {

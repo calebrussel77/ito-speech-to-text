@@ -256,6 +256,29 @@ describe('InteractionsTable - Business Logic', () => {
   })
 })
 
+describe('InteractionsTable.findByPendingPath', () => {
+  test('asks SQLite for the one row, instead of loading the whole history', async () => {
+    mockGet.mockResolvedValueOnce({
+      id: 'row-1',
+      asr_output: '{"pendingPath":"C:/tmp/a.wav"}',
+      llm_output: '{}',
+    })
+
+    const row = await InteractionsTable.findByPendingPath(
+      'C:/tmp/a.wav',
+      'user-1',
+    )
+
+    expect(mockAll).not.toHaveBeenCalled()
+    expect(mockGet).toHaveBeenCalledWith(
+      expect.stringContaining("json_extract(asr_output, '$.pendingPath') = ?"),
+      ['C:/tmp/a.wav', 'user-1'],
+    )
+    expect(row?.id).toBe('row-1')
+    expect(row?.asr_output.pendingPath).toBe('C:/tmp/a.wav')
+  })
+})
+
 describe('NotesTable - Business Logic', () => {
   beforeEach(() => {
     mockRun.mockClear()

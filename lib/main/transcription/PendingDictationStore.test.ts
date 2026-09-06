@@ -33,6 +33,41 @@ describe('PendingDictationStore', () => {
     expect(listed).toEqual([first, second])
   })
 
+  test('the mode and context sidecar round-trips and disappears with its WAV', () => {
+    const store = makeStore()
+    const filePath = store.save(Buffer.from('wav'))
+    const meta = {
+      modeId: 'email',
+      modeName: 'Email',
+      durationMs: 4200,
+      context: {
+        vocabularyWords: ['Ito'],
+        dictionaryEntries: ['Ito', { from: 'Itto', to: 'Ito' }],
+        windowTitle: 'Inbox',
+        appName: 'Mail',
+        contextText: 'selected',
+        clipboardText: '',
+      },
+    }
+
+    store.writeMeta(filePath, meta)
+    expect(store.readMeta(filePath)).toEqual(meta)
+    // The sidecar is not a pending dictation of its own.
+    expect(store.list()).toEqual([filePath])
+
+    store.delete(filePath)
+    expect(fs.existsSync(filePath.replace(/\.wav$/, '.json'))).toBe(false)
+  })
+
+  test('a WAV from before sidecars, or a corrupt sidecar, reads as no meta', () => {
+    const store = makeStore()
+    const legacy = store.save(Buffer.from('wav'))
+    expect(store.readMeta(legacy)).toBeNull()
+
+    fs.writeFileSync(legacy.replace(/\.wav$/, '.json'), '{not json')
+    expect(store.readMeta(legacy)).toBeNull()
+  })
+
   test('delete is idempotent and list survives a missing directory', () => {
     const store = new PendingDictationStore(
       path.join(os.tmpdir(), 'ito-pending-does-not-exist'),

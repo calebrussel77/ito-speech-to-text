@@ -24,6 +24,7 @@ export type ChatCompletionOptions = {
 type ApiTestResult = { ok: boolean; message?: string }
 
 const DEFAULT_NO_SPEECH_THRESHOLD = 0.6
+const GROQ_REQUEST_TIMEOUT_MS = 90_000
 const DEFAULT_LLM_MODEL = 'openai/gpt-oss-20b'
 const DECOMMISSIONED_MODELS: Record<string, string> = {
   'llama3-8b-8192': DEFAULT_LLM_MODEL,
@@ -42,7 +43,9 @@ const normalizeModel = (model?: string) =>
 // The base deliberately DEMONSTRATES French/English code-switching with real
 // dev terms: Whisper mimics the prompt's style, so showing mixed-language
 // text primes it far better than describing it.
-const DEFAULT_PROMPT_BASE = `Voici une dictée en français, correctement ponctuée et accentuée. Je mélange souvent des termes techniques anglais : je viens de push un commit sur GitHub, le backend expose une API gRPC, et je teste la feature dans l'app Electron avec TypeScript.`
+// Court à dessein : l'amorce Whisper est plafonnée à 224 tokens, et chaque
+// token pris ici est un terme du dictionnaire qui ne sera pas envoyé.
+const DEFAULT_PROMPT_BASE = `Dictée en français, ponctuée et accentuée, avec des termes techniques anglais : GitHub, API, TypeScript, Electron.`
 
 export function createTranscriptionPrompt(
   vocabulary: string[],
@@ -71,6 +74,12 @@ export function createTranscriptionPrompt(
     vocabString = vocabString
       .substring(0, maxVocabLength)
       .replace(/,\s*[^,]*$/, '')
+    const sent = vocabString.split(',').filter(Boolean).length
+    // Silencieux jusqu'ici : un dictionnaire qui grossit perdait ses derniers
+    // termes sans que rien ne le dise.
+    console.warn(
+      `[LocalTranscriptionService] Whisper prompt budget exceeded: ${sent}/${vocabulary.length} dictionary terms sent`,
+    )
   }
 
   if (vocabString.trim() === '') {
@@ -220,7 +229,15 @@ class LocalTranscriptionService {
     }
 
     this.currentApiKey = apiKey
-    this.groqClient = new Groq({ apiKey })
+    // Pas de réessai interne au SDK : `withRetry` dans le contrôleur décide
+    // seul, sinon une panne coûte jusqu'à 3 × 3 uploads avant d'échouer. Le
+    // timeout par défaut du SDK est de dix minutes ; une dictée qui n'a pas
+    // de réponse après ce délai-ci doit partir en file d'attente, pas bloquer.
+    this.groqClient = new Groq({
+      apiKey,
+      maxRetries: 0,
+      timeout: GROQ_REQUEST_TIMEOUT_MS,
+    })
   }
 
   isAvailable(): boolean {

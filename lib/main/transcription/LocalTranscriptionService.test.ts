@@ -39,19 +39,19 @@ beforeEach(() => {
 describe('createTranscriptionPrompt', () => {
   test('uses the French default base without vocabulary', () => {
     const prompt = createTranscriptionPrompt([])
-    expect(prompt).toContain('dictée en français')
+    expect(prompt).toContain('Dictée en français')
   })
 
   test('appends vocabulary to the base prompt', () => {
     const prompt = createTranscriptionPrompt(['gRPC', 'Electron'])
-    expect(prompt).toContain('dictée en français')
+    expect(prompt).toContain('Dictée en français')
     expect(prompt).toContain('Vocabulaire : gRPC, Electron.')
   })
 
   test('a custom prompt replaces the base but keeps vocabulary', () => {
     const prompt = createTranscriptionPrompt(['bun'], 'Mon prompt à moi.')
     expect(prompt).toContain('Mon prompt à moi.')
-    expect(prompt).not.toContain('dictée en français')
+    expect(prompt).not.toContain('Dictée en français')
     expect(prompt).toContain('Vocabulaire : bun.')
   })
 

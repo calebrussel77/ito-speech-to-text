@@ -251,8 +251,11 @@ mock.module('./transcription/LocalAudioProcessor', () => ({
 
 const mockPendingDictationStore = {
   save: mock(() => 'C:/pending/dictation-1.wav'),
+  saveAsync: mock(() => Promise.resolve('C:/pending/dictation-1.wav')),
   delete: mock(),
   read: mock(() => Buffer.from('wav')),
+  readMeta: mock((): any => null),
+  writeMeta: mock(),
   list: mock((): string[] => []),
 }
 mock.module('./transcription/PendingDictationStore', () => ({
@@ -267,6 +270,10 @@ mock.module('./interactions/InteractionManager', () => ({
 }))
 
 const mockContextGrabber = {
+  getVocabulary: mock(
+    (): Promise<{ vocabularyWords: string[]; dictionaryEntries: string[] }> =>
+      Promise.resolve({ vocabularyWords: [], dictionaryEntries: [] }),
+  ),
   gatherContext: mock(() =>
     Promise.resolve({
       windowTitle: 'Win',
@@ -396,9 +403,11 @@ const testMode = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as any
 
+const mockResolveModeOrActive = mock(async (_modeId?: string) => testMode())
 mock.module('./modes/activeMode', () => ({
   resolveActiveMode: async () => testMode(),
   resolveMode: async () => testMode(),
+  resolveModeOrActive: mockResolveModeOrActive,
 }))
 
 const mockCreateNewAuthState = mock(() => ({
@@ -409,6 +418,15 @@ const mockCreateNewAuthState = mock(() => ({
   createdAt: new Date().toISOString(),
 }))
 const mockGetCurrentUserId = mock(() => 'self-hosted')
+
+// `notifications` and `recordingStateNotifier` both reach `./app`, whose
+// `icon.png?asset` import only the electron-vite bundler understands. Neither
+// window matters here.
+mock.module('./app', () => ({
+  getPillWindow: () => null,
+  mainWindow: null,
+  setPillBusy: () => {},
+}))
 
 mock.module('./store', () => ({
   createNewAuthState: mockCreateNewAuthState,
@@ -456,7 +474,15 @@ describe('ItoStreamController (local)', () => {
       segments: [],
     })
     mockPendingDictationStore.save.mockReturnValue('C:/pending/dictation-1.wav')
+    mockPendingDictationStore.saveAsync.mockResolvedValue(
+      'C:/pending/dictation-1.wav',
+    )
     mockPendingDictationStore.list.mockReturnValue([])
+    mockPendingDictationStore.readMeta.mockReturnValue(null)
+    mockResolveModeOrActive.mockClear()
+    mockResolveModeOrActive.mockImplementation(async () => testMode())
+    mockTranscriptAdjuster.adjust.mockClear()
+    mockTranscriptAdjuster.adjust.mockResolvedValue('adjusted transcript')
     mockPendingDictationStore.read.mockReturnValue(Buffer.from('wav'))
     mockLocalAudioProcessor.prepareAudioForTranscription.mockReturnValue({
       wavAudio: Buffer.from('wav'),
@@ -489,7 +515,9 @@ describe('ItoStreamController (local)', () => {
     await controller.initialize(testMode())
     await controller.processLocalTranscription()
 
-    expect(mockPendingDictationStore.save).toHaveBeenCalled()
+    // Written in the background (never on the main thread), deleted once
+    // the transcript is in hand.
+    expect(mockPendingDictationStore.saveAsync).toHaveBeenCalled()
     expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
       'C:/pending/dictation-1.wav',
     )
@@ -1019,6 +1047,263 @@ describe('ItoStreamController (local)', () => {
     ).not.toHaveBeenCalled()
   })
 
+  describe('latency: the engine upload never waits for the context capture', () => {
+    test('the ASR call starts before gatherContext resolves, and the LLM rewrite waits for it', async () => {
+      let releaseContext: (value: any) => void = () => {}
+      const contextOrder: string[] = []
+      mockContextGrabber.gatherContext.mockImplementation(
+        () =>
+          new Promise(resolve => {
+            releaseContext = (value: any) => {
+              contextOrder.push('context')
+              resolve(value)
+            }
+          }),
+      )
+      mockLocalTranscriptionService.transcribeAudio.mockImplementation(
+        async () => {
+          contextOrder.push('asr')
+          return 'raw transcript'
+        },
+      )
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+
+      const pending = controller.processLocalTranscription()
+      // Let the ASR fire while the context is still being captured.
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(contextOrder).toEqual(['asr'])
+      expect(mockTranscriptAdjuster.adjust).not.toHaveBeenCalled()
+
+      releaseContext({
+        windowTitle: 'Late',
+        appName: 'App',
+        contextText: '',
+        clipboardText: '',
+        vocabularyWords: [],
+        dictionaryEntries: [],
+        advancedSettings: baseAdvancedSettings(),
+      })
+      const result = await pending
+      // `mockClear` in beforeEach keeps implementations: restore the default
+      // context so the next tests are not left waiting on `releaseContext`.
+      mockContextGrabber.gatherContext.mockImplementation(() =>
+        Promise.resolve({
+          windowTitle: 'Win',
+          appName: 'App',
+          contextText: 'Ctx',
+          clipboardText: '',
+          vocabularyWords: [],
+          dictionaryEntries: [],
+          advancedSettings: baseAdvancedSettings(),
+        } as any),
+      )
+
+      expect(contextOrder).toEqual(['asr', 'context'])
+      expect(mockTranscriptAdjuster.adjust).toHaveBeenCalledWith(
+        'raw transcript',
+        expect.anything(),
+        expect.objectContaining({ windowTitle: 'Late' }),
+        expect.anything(),
+      )
+      expect(result.latency).toEqual(
+        expect.objectContaining({
+          prepareMs: expect.any(Number),
+          asrMs: expect.any(Number),
+          adjustMs: expect.any(Number),
+        }),
+      )
+    })
+
+    test('a transcript that is only a known hallucination is rejected as NO_SPEECH and its WAV dropped', async () => {
+      mockLocalTranscriptionService.transcribeAudio.mockResolvedValue(
+        "Sous-titres réalisés par la communauté d'Amara.org",
+      )
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+
+      await expect(
+        controller.processLocalTranscription(),
+      ).rejects.toMatchObject({ code: 'NO_SPEECH' })
+      expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
+        'C:/pending/dictation-1.wav',
+      )
+    })
+
+    test('a phrase the engine looped is collapsed before the dictionary pass', async () => {
+      mockLocalTranscriptionService.transcribeAudio.mockResolvedValue(
+        'je pense que oui je pense que oui je pense que oui je pense que oui',
+      )
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+      await controller.initialize(testMode())
+
+      const result = await controller.processLocalTranscription()
+      expect(result.rawTranscript).toBe('je pense que oui')
+    })
+  })
+
+  describe('flushPendingDictations replays the original dictation, not a degraded one', () => {
+    const savedMeta = () => ({
+      modeId: 'email',
+      modeName: 'Email',
+      durationMs: 5_000,
+      context: {
+        vocabularyWords: ['Ito'],
+        dictionaryEntries: ['Ito'],
+        windowTitle: 'Inbox',
+        appName: 'Mail',
+        contextText: 'Hi team',
+        clipboardText: '',
+      },
+    })
+
+    test('a live dictation writes its mode and context next to the WAV', async () => {
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      await controller.initialize(testMode({ id: 'email', name: 'Email' }))
+      await controller.processLocalTranscription()
+
+      expect(mockPendingDictationStore.writeMeta).toHaveBeenCalledWith(
+        'C:/pending/dictation-1.wav',
+        expect.objectContaining({
+          modeId: 'email',
+          modeName: 'Email',
+          durationMs: 500,
+          context: expect.objectContaining({ windowTitle: 'Win' }),
+        }),
+      )
+    })
+
+    test('the recovery pass uses the recorded mode, its saved context and the mode rewrite', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/a.wav'])
+      mockPendingDictationStore.readMeta.mockReturnValue(savedMeta())
+      const emailMode = testMode({ id: 'email', name: 'Email', useLlm: true })
+      mockResolveModeOrActive.mockImplementation(async () => emailMode)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(mockResolveModeOrActive).toHaveBeenCalledWith('email')
+      // The saved vocabulary primes the engine, as it did live.
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ vocabulary: ['Ito'] }),
+      )
+      // The mode's rewrite runs on the raw transcript with the saved context.
+      expect(mockTranscriptAdjuster.adjust).toHaveBeenCalledWith(
+        'raw transcript',
+        emailMode,
+        expect.objectContaining({
+          windowTitle: 'Inbox',
+          contextText: 'Hi team',
+        }),
+        expect.anything(),
+      )
+      expect(
+        mockInteractionManager.createRecoveredInteraction,
+      ).toHaveBeenCalledWith(
+        'adjusted transcript',
+        16000,
+        'C:/pending/a.wav',
+        5_000,
+        expect.any(String),
+        expect.objectContaining({
+          rawTranscript: 'raw transcript',
+          modeId: 'email',
+          modeName: 'Email',
+        }),
+      )
+    })
+
+    test('the recorded mode routes the recovery to its precise engine (OpenRouter), not Groq', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/a.wav'])
+      mockPendingDictationStore.readMeta.mockReturnValue(savedMeta())
+      mockResolveModeOrActive.mockImplementation(async () =>
+        testMode({ voiceModelKey: 'gpt-transcribe' }),
+      )
+      mockGetAdvancedSettings.mockReturnValue({
+        ...baseAdvancedSettings(),
+        openRouterApiKey: 'or-test',
+      } as any)
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(mockOpenRouterService.transcribeAudio).toHaveBeenCalledTimes(1)
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).not.toHaveBeenCalled()
+      expect(
+        mockInteractionManager.createRecoveredInteraction,
+      ).toHaveBeenCalledWith(
+        'adjusted transcript',
+        16000,
+        'C:/pending/a.wav',
+        5_000,
+        'openai/gpt-transcribe',
+        expect.objectContaining({ rawTranscript: 'openrouter transcript' }),
+      )
+    })
+
+    test('a WAV from before sidecars falls back to the active mode and the current dictionary', async () => {
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/old.wav'])
+      mockPendingDictationStore.readMeta.mockReturnValue(null)
+      mockContextGrabber.getVocabulary.mockResolvedValue({
+        vocabularyWords: ['Caleb'],
+        dictionaryEntries: ['Caleb'],
+      })
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      const recovered = await controller.flushPendingDictations()
+
+      expect(recovered).toBe(1)
+      expect(mockResolveModeOrActive).toHaveBeenCalledWith(undefined)
+      expect(mockContextGrabber.gatherContext).not.toHaveBeenCalled()
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ vocabulary: ['Caleb'] }),
+      )
+    })
+
+    test('the recovery pass does not retry inside a single pass: one NETWORK failure stops it immediately', async () => {
+      const { LocalTranscriptionError } = await import(
+        './transcription/LocalTranscriptionService'
+      )
+      mockPendingDictationStore.list.mockReturnValue(['C:/pending/a.wav'])
+      mockLocalTranscriptionService.transcribeAudio.mockRejectedValue(
+        Object.assign(new (LocalTranscriptionError as any)('offline'), {
+          code: 'NETWORK',
+        }),
+      )
+
+      const { ItoStreamController } = await import('./itoStreamController')
+      const controller = new ItoStreamController()
+
+      await controller.flushPendingDictations()
+
+      expect(
+        mockLocalTranscriptionService.transcribeAudio,
+      ).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('flushPendingDictations routing (the recovery pass must reach the file path too)', () => {
     // Too big for Groq's 25 MB ceiling: the only way `chooseTranscriptionPath`
     // accepts this WAV is through Deepgram's file path.
@@ -1049,14 +1334,17 @@ describe('ItoStreamController (local)', () => {
       expect(
         mockLocalTranscriptionService.transcribeAudio,
       ).not.toHaveBeenCalled()
+      // The recovered row goes through the mode's rewrite like a live
+      // dictation, and keeps the raw engine output next to it.
       expect(
         mockInteractionManager.createRecoveredInteraction,
       ).toHaveBeenCalledWith(
-        'deepgram transcript',
+        'adjusted transcript',
         16000,
         'C:/pending/big.wav',
         undefined,
         'deepgram/nova-3',
+        expect.objectContaining({ rawTranscript: 'deepgram transcript' }),
       )
       expect(mockPendingDictationStore.delete).toHaveBeenCalledWith(
         'C:/pending/big.wav',

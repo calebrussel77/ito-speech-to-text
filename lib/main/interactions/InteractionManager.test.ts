@@ -1,15 +1,24 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import { InteractionManager } from './InteractionManager'
+import { InteractionManager, wordChangeRatio } from './InteractionManager'
 import { STORE_KEYS } from '../../constants/store-keys'
 
 const mockUpsert = mock((_interaction: unknown) => Promise.resolve())
 const mockFindAll = mock(
   (_userId?: string): Promise<any[]> => Promise.resolve([]),
 )
+// La recherche de la ligne en attente passe par une requête ciblée sur le
+// chemin du WAV, plus par un chargement de tout l'historique.
+const mockFindByPendingPath = mock(
+  (pendingPath: string, _userId?: string): Promise<any | undefined> =>
+    mockFindAll().then(rows =>
+      rows.find(row => row.asr_output?.pendingPath === pendingPath),
+    ),
+)
 mock.module('../sqlite/repo', () => ({
   InteractionsTable: {
     upsert: mockUpsert,
     findAll: mockFindAll,
+    findByPendingPath: mockFindByPendingPath,
   },
 }))
 
@@ -33,6 +42,23 @@ mock.module('electron-log', () => ({
     error: mock(),
   },
 }))
+
+describe('wordChangeRatio', () => {
+  test('identical texts score 0, a full rewrite scores 1', () => {
+    expect(wordChangeRatio('bonjour le monde', 'Bonjour, le monde !')).toBe(0)
+    expect(wordChangeRatio('un deux trois', 'quatre cinq six')).toBe(1)
+  })
+
+  test('a partial edit scores the share of words that changed', () => {
+    expect(wordChangeRatio('un deux trois quatre', 'un deux trois cinq')).toBe(
+      0.25,
+    )
+  })
+
+  test('empty texts score 0', () => {
+    expect(wordChangeRatio('', '')).toBe(0)
+  })
+})
 
 describe('InteractionManager', () => {
   let interactionManager: InteractionManager

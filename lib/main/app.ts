@@ -201,8 +201,26 @@ export function startPillPositioner() {
   setInterval(updatePillPosition, intervalMs)
 }
 
+let pillBusy = false
+let pillTicks = 0
+// Quand le pill n'affiche rien (pas d'enregistrement, barre masquée), il n'a
+// pas à suivre le curseur à 750 ms : une fois sur huit suffit à le garder
+// sur le bon écran sans réveiller le processus principal pour rien.
+const IDLE_TICK_DIVISOR = 8
+
+/** Le pill affiche un état (enregistrement, traitement) : suivi rapproché. */
+export function setPillBusy(busy: boolean) {
+  pillBusy = busy
+  if (busy) updatePillPosition()
+}
+
 function updatePillPosition() {
   if (!pillWindow) return
+  const settings = store.get(STORE_KEYS.SETTINGS) as SettingsStore | undefined
+  const alwaysShown = settings?.showItoBarAlways !== false
+  if (!pillBusy && !alwaysShown && pillTicks++ % IDLE_TICK_DIVISOR !== 0) {
+    return
+  }
 
   try {
     // Get the display that the mouse cursor is currently on.

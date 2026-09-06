@@ -1,4 +1,4 @@
-import { getPillWindow, mainWindow } from './app'
+import { getPillWindow, mainWindow, setPillBusy } from './app'
 import {
   IPC_EVENTS,
   RecordingStatePayload,
@@ -20,6 +20,7 @@ export class RecordingStateNotifier {
     console.log('[RecordingStateNotifier] Notifying recording started:', {
       mode: mode.name,
     })
+    setPillBusy(true)
     this.sendToWindows(IPC_EVENTS.RECORDING_STATE_UPDATE, {
       isRecording: true,
       modeId: mode.id,
@@ -64,6 +65,7 @@ export class RecordingStateNotifier {
 
   public notifyProcessingStopped() {
     console.log('[RecordingStateNotifier] Notifying processing stopped')
+    setPillBusy(false)
     this.sendToWindows(IPC_EVENTS.PROCESSING_STATE_UPDATE, {
       isProcessing: false,
     })

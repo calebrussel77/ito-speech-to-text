@@ -31,6 +31,7 @@ const {
   setActiveModeId,
   resolveActiveMode,
   resolveMode,
+  resolveModeOrActive,
   cycleActiveMode,
 } = await import('./activeMode')
 
@@ -65,6 +66,15 @@ describe('activeMode', () => {
     expect((await resolveMode('meeting')).id).toBe('meeting')
     expect((await resolveMode('nope')).id).toBe('voice-to-text')
     expect((await resolveMode(undefined)).id).toBe('voice-to-text')
+  })
+
+  test('resolveModeOrActive returns the recorded mode, and the ACTIVE mode (not the first) once it is gone', async () => {
+    modes.push({ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c' })
+    setActiveModeId('b')
+
+    expect((await resolveModeOrActive('c')).id).toBe('c')
+    expect((await resolveModeOrActive('deleted')).id).toBe('b')
+    expect((await resolveModeOrActive(undefined)).id).toBe('b')
   })
 
   test('cycling walks the list and wraps around', async () => {

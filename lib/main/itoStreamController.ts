@@ -14,7 +14,7 @@ import {
 import { asrLanguageHint } from '../constants/modeLanguages'
 import { showNotification } from './notifications'
 import type { Mode } from './sqlite/models'
-import { resolveActiveMode } from './modes/activeMode'
+import { resolveModeOrActive } from './modes/activeMode'
 import { openRouterTranscriptionService } from './transcription/OpenRouterTranscriptionService'
 import { openaiTranscriptionService } from './transcription/OpenAITranscriptionService'
 import { googleTranscriptionService } from './transcription/GoogleTranscriptionService'
@@ -22,7 +22,10 @@ import {
   deepgramTranscriptionService,
   type SpeakerSegment,
 } from './transcription/DeepgramTranscriptionService'
-import { chooseTranscriptionPath } from './transcription/transcriptionRouter'
+import {
+  chooseTranscriptionPath,
+  type TranscriptionPath,
+} from './transcription/transcriptionRouter'
 import {
   clearProviderFailure,
   failureNotice,
@@ -31,12 +34,16 @@ import {
   type Provider,
 } from './transcription/providerHealth'
 import { transcriptAdjuster } from './transcription/TranscriptAdjuster'
-import { pendingDictationStore } from './transcription/PendingDictationStore'
+import {
+  pendingDictationStore,
+  type PendingDictationMeta,
+} from './transcription/PendingDictationStore'
 import { applyDictionaryCorrections } from './transcription/DictionaryCorrector'
+import { sanitizeTranscript } from './transcription/hallucinationFilter'
 import { interactionManager } from './interactions/InteractionManager'
 import { recordingStateNotifier } from './recordingStateNotifier'
-import { contextGrabber } from './context/ContextGrabber'
-import { getAdvancedSettings } from './store'
+import { contextGrabber, type ContextData } from './context/ContextGrabber'
+import { getAdvancedSettings, type AdvancedSettings } from './store'
 import { timingCollector, TimingEventName } from './timing/TimingCollector'
 
 const RETRYABLE_CODES = new Set(['RATE_LIMIT', 'NETWORK'])
@@ -58,6 +65,22 @@ const GROQ_RETRY: RetryPolicy = {
 // For the same reason a server-suggested delay of more than a second and a
 // half is declined: falling back is faster than honouring it.
 const OPENROUTER_RETRY: RetryPolicy = { attempts: 2, maxDelayMs: 1500 }
+
+const NO_RETRY: RetryPolicy = { attempts: 1, maxDelayMs: 0 }
+
+// Two minutes: long enough not to hammer a dead network, short enough that a
+// dictation is back in the history soon after the connection returns.
+const PENDING_BACKSTOP_MS = 2 * 60 * 1000
+
+/** Ce que le moteur vocal a besoin de savoir du contexte de la dictée. */
+type AsrContext = Pick<ContextData, 'vocabularyWords' | 'dictionaryEntries'>
+
+interface AsrOutcome {
+  rawTranscript: string
+  asrEngine: string
+  asrFallback?: AsrFallback
+  speakerSegments: SpeakerSegment[]
+}
 
 /**
  * Why a dictation that should have gone to the precise engine came back from
@@ -95,6 +118,19 @@ export interface LocalTranscriptionResult {
    * d'une paire d'exemple, et onglet « Original » de l'historique.
    */
   rawTranscript: string
+  /** Où est passé le temps, étape par étape, pour l'historique. */
+  latency: TranscriptionLatency
+}
+
+export interface TranscriptionLatency {
+  /** Préparation du WAV (silence, filtre, gain) — thread principal. */
+  prepareMs: number
+  /** Capture du contexte, en parallèle de l'ASR. */
+  contextMs: number
+  /** Appel(s) moteur vocal, repli compris. */
+  asrMs: number
+  /** Réécriture par le modèle texte du mode (0 sans LLM). */
+  adjustMs: number
 }
 
 /**
@@ -179,89 +215,78 @@ export class ItoStreamController {
   }
 
   /**
-   * Process the buffered audio through Groq and return the final transcript.
-   * The WAV is persisted to disk before the network call and removed after
-   * success, so a failure at any point never loses the dictation.
+   * Process the buffered audio through the mode's engines and return the
+   * final transcript. The WAV (plus its mode and context) is persisted to
+   * disk before the network call and removed after success, so a failure at
+   * any point never loses the dictation.
+   *
+   * Ordre des opérations, pensé pour la latence : l'upload ASR part dès que
+   * le WAV est prêt, avec le seul vocabulaire (une lecture SQLite). La
+   * capture du contexte — fenêtre active, sélection par Ctrl+C simulé après
+   * relâchement des touches — tourne en parallèle et n'est attendue qu'au
+   * moment de la réécriture LLM, la seule étape qui s'en sert.
    */
   public async processLocalTranscription(): Promise<LocalTranscriptionResult> {
+    const startedAt = performance.now()
     const rawAudio = this.audioStreamManager.getAllAudio()
     const sampleRate = this.audioStreamManager.getCurrentSampleRate()
 
     const { wavAudio, durationMs } =
       localAudioProcessor.prepareAudioForTranscription(rawAudio, { sampleRate })
-
-    let pendingPath: string | null = null
-    try {
-      pendingPath = pendingDictationStore.save(wavAudio)
-    } catch (error) {
-      console.warn(
-        '[ItoStreamController] Could not persist dictation audio:',
-        error,
-      )
-    }
+    const prepareMs = Math.round(performance.now() - startedAt)
 
     const mode = this.currentMode
     if (!mode) throw new Error('No mode set on the stream controller')
 
-    const context = await contextGrabber.gatherContext(mode)
+    // Écriture disque en arrière-plan : elle n'est nécessaire qu'en cas
+    // d'échec, où elle est attendue avant de lier la ligne d'historique.
+    const pendingReady: Promise<string | null> = pendingDictationStore
+      .saveAsync(wavAudio)
+      .catch(error => {
+        console.warn(
+          '[ItoStreamController] Could not persist dictation audio:',
+          error,
+        )
+        return null
+      })
+
+    const contextStartedAt = performance.now()
+    const contextReady = contextGrabber.gatherContext(mode)
+    let contextMs = 0
+    const metaReady = Promise.all([pendingReady, contextReady])
+      .then(([pendingPath, context]) => {
+        contextMs = Math.round(performance.now() - contextStartedAt)
+        // Le sidecar permet à la reprise de rejouer la dictée avec le même
+        // mode et le même contexte que maintenant.
+        if (!pendingPath) return
+        pendingDictationStore.writeMeta(pendingPath, {
+          modeId: mode.id,
+          modeName: mode.name,
+          durationMs,
+          context: {
+            vocabularyWords: context.vocabularyWords,
+            dictionaryEntries: context.dictionaryEntries,
+            windowTitle: context.windowTitle,
+            appName: context.appName,
+            contextText: context.contextText,
+            clipboardText: context.clipboardText,
+          },
+        })
+      })
+      .catch(() => {})
+
     const advancedSettings = getAdvancedSettings()
-    const timingEvent = mode.useLlm
-      ? TimingEventName.LOCAL_EDIT
-      : TimingEventName.LOCAL_TRANSCRIBE
+    this.initializeGroq(advancedSettings.groqApiKey)
 
+    let asr: AsrOutcome
+    let asrMs = 0
     try {
-      localTranscriptionService.initialize(advancedSettings.groqApiKey || '')
-    } catch (error) {
-      if (error instanceof LocalTranscriptionError) {
-        throw error
-      }
-      throw new Error(
-        error instanceof Error ? error.message : 'Groq API key missing',
+      const decision = this.decidePath(
+        mode,
+        wavAudio,
+        durationMs,
+        advancedSettings,
       )
-    }
-
-    const voiceModel = resolveModel(
-      mode.voiceModelKey ?? undefined,
-      DEFAULT_SHORT_VOICE_KEY,
-    )
-    const languageHint = asrLanguageHint(mode.language)
-    // Le repli Groq garde un modèle Groq : le slug d'un modèle OpenRouter
-    // envoyé à Groq est un 404 garanti.
-    const groqModel =
-      voiceModel.provider === 'groq'
-        ? voiceModel
-        : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
-
-    const groqOptions: TranscriptionOptions = {
-      asrModel: groqModel.slug,
-      vocabulary: context.vocabularyWords,
-      noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-      fileType: 'wav',
-      language: languageHint,
-      customPrompt: mode.asrPrompt,
-    }
-
-    // Décide une fois, avant toute tentative réseau, quel transport prend
-    // l'audio — pas de sondage inline comme avant : la durée, la taille et la
-    // diarisation demandée sont déjà connues.
-    const decision = chooseTranscriptionPath({
-      voiceModelProvider: voiceModel.provider,
-      durationMs,
-      wavBytes: wavAudio.length,
-      identifySpeakers: mode.identifySpeakers,
-      hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
-      hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
-      hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
-      hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
-    })
-
-    let transcript: string
-    // Groq is the default attribution; overwritten when Deepgram or
-    // OpenRouter answers.
-    let asrEngine = groqModel.slug
-    let asrFallback: AsrFallback | undefined
-    let speakerSegments: SpeakerSegment[] = []
-    try {
       // This throw must stay inside the try: the catch right below is what
       // links the WAV (`error.pendingDictationPath`), carries the duration
       // (`error.audioDurationMs`) and shows the "dictée sauvegardée"
@@ -274,160 +299,19 @@ export class ItoStreamController {
       if (decision.path === null) {
         throw new LocalTranscriptionError(decision.reason, 'MODEL_ERROR')
       }
-      transcript = await timingCollector.timeAsync(timingEvent, async () => {
-        if (decision.path === 'deepgram') {
-          const apiKey = advancedSettings.deepgramApiKey || ''
-          const deepgramModel = 'deepgram/nova-3'
-          const rejected = getRejectedKeyFailure('deepgram', apiKey)
-
-          if (rejected) {
-            // Same fast-skip as OpenRouter below: this key already came back
-            // refused, so trying again would upload the whole dictation for
-            // another certain 401. Go straight to Groq — and still say so,
-            // rather than passing the downgrade off as a normal dictation.
-            console.warn(
-              `[ItoStreamController] Skipping Deepgram: the stored key was refused on ${rejected.at}`,
-            )
-            asrFallback = {
-              from: deepgramModel,
-              code: rejected.code,
-              message: rejected.message,
-            }
-          } else {
-            try {
-              const result = await this.withRetry(
-                `Deepgram (${voiceModel.slug})`,
-                OPENROUTER_RETRY,
-                () =>
-                  deepgramTranscriptionService.transcribeAudio(wavAudio, {
-                    apiKey,
-                    model: 'nova-3',
-                    language: languageHint,
-                    diarize: mode.identifySpeakers,
-                  }),
-              )
-              asrEngine = deepgramModel
-              speakerSegments = result.segments
-              clearProviderFailure('deepgram')
-              return result.text
-            } catch (error: any) {
-              // Same guarantee as OpenRouter below: a failed precise engine
-              // falls through to Groq rather than losing the dictation.
-              asrFallback = this.recordProviderFallback(
-                error,
-                deepgramModel,
-                apiKey,
-                'deepgram',
-              )
-            }
-          }
-        } else if (decision.path === 'openrouter') {
-          const apiKey = advancedSettings.openRouterApiKey || ''
-          const openRouterModel = voiceModel.slug
-          const rejected = getRejectedKeyFailure('openrouter', apiKey)
-
-          if (rejected) {
-            // This key already came back refused. Trying again would upload
-            // the whole dictation for another certain 401, so go straight to
-            // Groq — and still say so, rather than passing the downgrade off
-            // as a normal dictation.
-            console.warn(
-              `[ItoStreamController] Skipping OpenRouter: the stored key was refused on ${rejected.at}`,
-            )
-            asrFallback = {
-              from: openRouterModel,
-              code: rejected.code,
-              message: rejected.message,
-            }
-          } else {
-            try {
-              const text = await this.withRetry(
-                `OpenRouter (${openRouterModel})`,
-                OPENROUTER_RETRY,
-                () =>
-                  openRouterTranscriptionService.transcribeAudio(wavAudio, {
-                    apiKey,
-                    model: openRouterModel,
-                    vocabulary: context.vocabularyWords,
-                    language: languageHint,
-                    customPrompt: mode.asrPrompt,
-                  }),
-              )
-              asrEngine = openRouterModel
-              clearProviderFailure('openrouter')
-              return text
-            } catch (error: any) {
-              // The precise engine must never lose or block a dictation:
-              // whatever went wrong, the Groq path (and its retry/persistence
-              // layer) takes over.
-              asrFallback = this.recordProviderFallback(
-                error,
-                openRouterModel,
-                apiKey,
-                'openrouter',
-              )
-            }
-          }
-        } else if (decision.path === 'openai' || decision.path === 'google') {
-          // Même contrat que les deux branches au-dessus : le moteur précis
-          // ne perd jamais une dictée — clé refusée connue → saut direct,
-          // échec → repli Groq enregistré et annoncé.
-          const provider = decision.path
-          const apiKey =
-            (provider === 'openai'
-              ? advancedSettings.openaiApiKey
-              : advancedSettings.googleApiKey) || ''
-          const chosenModel = voiceModel.slug
-          const rejected = getRejectedKeyFailure(provider, apiKey)
-
-          if (rejected) {
-            console.warn(
-              `[ItoStreamController] Skipping ${provider}: the stored key was refused on ${rejected.at}`,
-            )
-            asrFallback = {
-              from: chosenModel,
-              code: rejected.code,
-              message: rejected.message,
-            }
-          } else {
-            try {
-              const result = await this.withRetry(
-                `${provider} (${chosenModel})`,
-                OPENROUTER_RETRY,
-                () =>
-                  provider === 'openai'
-                    ? openaiTranscriptionService.transcribeAudio(wavAudio, {
-                        apiKey,
-                        model: chosenModel,
-                        language: languageHint,
-                        contentType: 'audio/wav',
-                        fileName: 'dictation.wav',
-                      })
-                    : googleTranscriptionService.transcribeAudio(wavAudio, {
-                        apiKey,
-                        model: chosenModel,
-                        language: languageHint,
-                        contentType: 'audio/wav',
-                      }),
-              )
-              asrEngine = chosenModel
-              clearProviderFailure(provider)
-              return result.text
-            } catch (error: any) {
-              asrFallback = this.recordProviderFallback(
-                error,
-                chosenModel,
-                apiKey,
-                provider,
-              )
-            }
-          }
-        }
-        return await this.withRetry('Groq', GROQ_RETRY, () =>
-          localTranscriptionService.transcribeAudio(wavAudio, groqOptions),
-        )
-      })
+      const path = decision.path
+      const vocabulary = await contextGrabber.getVocabulary()
+      const timingEvent = mode.useLlm
+        ? TimingEventName.LOCAL_EDIT
+        : TimingEventName.LOCAL_TRANSCRIBE
+      const asrStartedAt = performance.now()
+      asr = await timingCollector.timeAsync(timingEvent, () =>
+        this.runAsr(path, wavAudio, mode, vocabulary, advancedSettings),
+      )
+      asrMs = Math.round(performance.now() - asrStartedAt)
     } catch (error: any) {
+      const pendingPath = await pendingReady
+      await metaReady
       if (pendingPath) {
         if (UNRECOVERABLE_CODES.has(error?.code)) {
           pendingDictationStore.delete(pendingPath)
@@ -446,18 +330,9 @@ export class ItoStreamController {
       throw error
     }
 
-    // The dictionary is authoritative: fix near-miss spellings of user terms
-    // that Whisper mangled (deterministic, local, no added latency).
-    transcript = applyDictionaryCorrections(
-      transcript,
-      context.dictionaryEntries,
-    )
-
-    // Ce que le moteur vocal a réellement rendu. C'est la moitié gauche d'une
-    // paire d'exemple, et l'onglet « Original » de l'historique : sans elle,
-    // corriger un mode à partir de ses échecs est impossible.
-    const rawTranscript = transcript
-
+    const context = await contextReady
+    await metaReady
+    const pendingPath = await pendingReady
     if (pendingPath) {
       pendingDictationStore.delete(pendingPath)
       this.notifyPendingCount()
@@ -469,25 +344,242 @@ export class ItoStreamController {
       )
     }, 5000)
 
+    const adjustStartedAt = performance.now()
     const adjusted = await transcriptAdjuster.adjust(
-      transcript,
+      asr.rawTranscript,
       mode,
       context,
       advancedSettings,
     )
+    const adjustMs = Math.round(performance.now() - adjustStartedAt)
 
     return {
       transcript: adjusted,
       audioBuffer: Buffer.alloc(0), // We intentionally avoid persisting audio
       sampleRate,
       durationMs,
-      asrEngine,
-      asrFallback,
-      speakerSegments,
+      asrEngine: asr.asrEngine,
+      asrFallback: asr.asrFallback,
+      speakerSegments: asr.speakerSegments,
       modeId: mode.id,
       modeName: mode.name,
-      rawTranscript,
+      rawTranscript: asr.rawTranscript,
+      latency: { prepareMs, contextMs, asrMs, adjustMs },
     }
+  }
+
+  private initializeGroq(groqApiKey: string | undefined) {
+    try {
+      localTranscriptionService.initialize(groqApiKey || '')
+    } catch (error) {
+      if (error instanceof LocalTranscriptionError) {
+        throw error
+      }
+      throw new Error(
+        error instanceof Error ? error.message : 'Groq API key missing',
+      )
+    }
+  }
+
+  /**
+   * Le modèle vocal du mode et son repli Groq. Le repli garde un modèle
+   * Groq : le slug d'un modèle OpenRouter envoyé à Groq est un 404 garanti.
+   */
+  private resolveVoiceModels(mode: Mode) {
+    const voiceModel = resolveModel(
+      mode.voiceModelKey ?? undefined,
+      DEFAULT_SHORT_VOICE_KEY,
+    )
+    const groqModel =
+      voiceModel.provider === 'groq'
+        ? voiceModel
+        : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
+    return { voiceModel, groqModel }
+  }
+
+  // Décide une fois, avant toute tentative réseau, quel transport prend
+  // l'audio : la durée, la taille et la diarisation demandée sont connues.
+  private decidePath(
+    mode: Mode,
+    wavAudio: Buffer,
+    durationMs: number,
+    advancedSettings: AdvancedSettings,
+  ) {
+    const { voiceModel } = this.resolveVoiceModels(mode)
+    return chooseTranscriptionPath({
+      voiceModelProvider: voiceModel.provider,
+      durationMs,
+      wavBytes: wavAudio.length,
+      identifySpeakers: mode.identifySpeakers,
+      hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
+      hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
+      hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
+      hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
+    })
+  }
+
+  /**
+   * Le cœur partagé par la dictée en direct et la reprise d'une dictée en
+   * attente : moteur précis du mode (avec saut de clé refusée et repli
+   * Groq), puis correction dictionnaire. Rend le transcript brut ; la
+   * réécriture LLM du mode reste à l'appelant.
+   */
+  private async runAsr(
+    path: TranscriptionPath,
+    wavAudio: Buffer,
+    mode: Mode,
+    context: AsrContext,
+    advancedSettings: AdvancedSettings,
+    options: { retry: boolean } = { retry: true },
+  ): Promise<AsrOutcome> {
+    const { voiceModel, groqModel } = this.resolveVoiceModels(mode)
+    const languageHint = asrLanguageHint(mode.language)
+    // La reprise tourne déjà en boucle à chaque passe : pas de réessai
+    // interne en plus, un échec la remet simplement à plus tard.
+    const groqRetry = options.retry ? GROQ_RETRY : NO_RETRY
+    const preciseRetry = options.retry ? OPENROUTER_RETRY : NO_RETRY
+
+    const groqOptions: TranscriptionOptions = {
+      asrModel: groqModel.slug,
+      vocabulary: context.vocabularyWords,
+      noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
+      fileType: 'wav',
+      language: languageHint,
+      customPrompt: mode.asrPrompt,
+    }
+
+    // Groq is the default attribution; overwritten when a precise engine
+    // answers.
+    let asrEngine = groqModel.slug
+    let asrFallback: AsrFallback | undefined
+    let speakerSegments: SpeakerSegment[] = []
+
+    // Le moteur précis du mode. `undefined` = à Groq de prendre le relais :
+    // clé déjà refusée (saut direct, sans ré-uploader la dictée pour un 401
+    // certain) ou échec (enregistré et annoncé). Dans les deux cas la
+    // dictée n'est jamais perdue ni bloquée, et le repli n'est jamais
+    // maquillé en dictée normale.
+    const precise = async (): Promise<string | undefined> => {
+      if (path === 'groq') return undefined
+
+      const provider: Provider = path
+      const model = path === 'deepgram' ? 'deepgram/nova-3' : voiceModel.slug
+      const apiKey =
+        (path === 'deepgram'
+          ? advancedSettings.deepgramApiKey
+          : path === 'openrouter'
+            ? advancedSettings.openRouterApiKey
+            : path === 'openai'
+              ? advancedSettings.openaiApiKey
+              : advancedSettings.googleApiKey) || ''
+
+      const rejected = getRejectedKeyFailure(provider, apiKey)
+      if (rejected) {
+        console.warn(
+          `[ItoStreamController] Skipping ${provider}: the stored key was refused on ${rejected.at}`,
+        )
+        asrFallback = {
+          from: model,
+          code: rejected.code,
+          message: rejected.message,
+        }
+        return undefined
+      }
+
+      try {
+        const text = await this.withRetry(
+          `${provider} (${model})`,
+          preciseRetry,
+          async () => {
+            if (path === 'deepgram') {
+              const result = await deepgramTranscriptionService.transcribeAudio(
+                wavAudio,
+                {
+                  apiKey,
+                  model: 'nova-3',
+                  language: languageHint,
+                  diarize: mode.identifySpeakers,
+                },
+              )
+              speakerSegments = result.segments
+              return result.text
+            }
+            if (path === 'openrouter') {
+              return openRouterTranscriptionService.transcribeAudio(wavAudio, {
+                apiKey,
+                model,
+                vocabulary: context.vocabularyWords,
+                language: languageHint,
+                customPrompt: mode.asrPrompt,
+              })
+            }
+            if (path === 'openai') {
+              const result = await openaiTranscriptionService.transcribeAudio(
+                wavAudio,
+                {
+                  apiKey,
+                  model,
+                  language: languageHint,
+                  contentType: 'audio/wav',
+                  fileName: 'dictation.wav',
+                },
+              )
+              return result.text
+            }
+            const result = await googleTranscriptionService.transcribeAudio(
+              wavAudio,
+              {
+                apiKey,
+                model,
+                language: languageHint,
+                contentType: 'audio/wav',
+              },
+            )
+            return result.text
+          },
+        )
+        asrEngine = model
+        clearProviderFailure(provider)
+        return text
+      } catch (error: any) {
+        speakerSegments = []
+        asrFallback = this.recordProviderFallback(
+          error,
+          model,
+          apiKey,
+          provider,
+        )
+        return undefined
+      }
+    }
+
+    const engineText =
+      (await precise()) ??
+      (await this.withRetry('Groq', groqRetry, () =>
+        localTranscriptionService.transcribeAudio(wavAudio, groqOptions),
+      ))
+
+    // Filet commun à tous les moteurs : Groq filtre déjà par segment, les
+    // autres n'ont rien. Un texte qui n'est qu'une hallucination classique
+    // vaut un silence, et une phrase bouclée est ramenée à une occurrence.
+    const transcript = sanitizeTranscript(engineText)
+    if (!transcript.trim() && engineText.trim()) {
+      throw new LocalTranscriptionError(
+        'Transcript was only a known hallucination',
+        'NO_SPEECH',
+      )
+    }
+
+    // The dictionary is authoritative: fix near-miss spellings of user terms
+    // that Whisper mangled (deterministic, local, no added latency). What
+    // comes out is what the voice engine really rendered — the "Original"
+    // tab of the history and the left half of an example pair.
+    const rawTranscript = applyDictionaryCorrections(
+      transcript,
+      context.dictionaryEntries,
+    )
+
+    return { rawTranscript, asrEngine, asrFallback, speakerSegments }
   }
 
   /**
@@ -548,14 +640,36 @@ export class ItoStreamController {
   }
 
   private flushingPending = false
+  private pendingBackstop: NodeJS.Timeout | null = null
+
+  /**
+   * Tant que des dictées attendent, réessaie périodiquement : la reprise
+   * n'est sinon déclenchée qu'au démarrage et après une dictée réussie, et
+   * un réseau revenu sans nouvelle dictée laisserait la file en l'état.
+   */
+  private schedulePendingBackstop(pendingCount: number) {
+    if (pendingCount === 0) {
+      if (this.pendingBackstop) clearTimeout(this.pendingBackstop)
+      this.pendingBackstop = null
+      return
+    }
+    if (this.pendingBackstop) return
+    this.pendingBackstop = setTimeout(() => {
+      this.pendingBackstop = null
+      this.flushPendingDictations().catch(error =>
+        console.warn('[ItoStreamController] Backstop flush failed:', error),
+      )
+    }, PENDING_BACKSTOP_MS)
+    this.pendingBackstop.unref?.()
+  }
 
   // Keeps the dashboard's "pending dictations" banner in sync with the disk
   // queue whenever it changes.
   private notifyPendingCount() {
     try {
-      recordingStateNotifier.notifyPendingDictations(
-        pendingDictationStore.list().length,
-      )
+      const count = pendingDictationStore.list().length
+      recordingStateNotifier.notifyPendingDictations(count)
+      this.schedulePendingBackstop(count)
     } catch (error) {
       console.warn('[ItoStreamController] Pending count notify failed:', error)
     }
@@ -564,7 +678,9 @@ export class ItoStreamController {
   /**
    * Transcribes dictations that previously failed and stores them in the
    * interaction history (no text insertion: the original cursor context is
-   * long gone). Called at startup and after each successful transcription.
+   * long gone). Each WAV is replayed with the mode and context saved next to
+   * it, through the same engines and the same rewrite as a live dictation.
+   * Called at startup and after each successful transcription.
    */
   public async flushPendingDictations(): Promise<number> {
     if (this.flushingPending) return 0
@@ -582,54 +698,32 @@ export class ItoStreamController {
         return 0
       }
 
-      // Une dictée en attente n'a plus son mode : le WAV a survécu, pas le
-      // contexte. Le mode actif est la meilleure approximation disponible, et
-      // il ne sert ici qu'à la langue, à l'amorce de style et — nouveau — à
-      // la décision de routage.
-      const mode = await resolveActiveMode()
-      const voiceModel = resolveModel(
-        mode.voiceModelKey ?? undefined,
-        DEFAULT_SHORT_VOICE_KEY,
-      )
-      // Le repli Groq garde un modèle Groq, comme dans processLocalTranscription.
-      const groqModel =
-        voiceModel.provider === 'groq'
-          ? voiceModel
-          : resolveModel(undefined, DEFAULT_SHORT_VOICE_KEY)
-      const asrModel = groqModel.slug
-
       for (const filePath of pending) {
         // A live recording takes priority over recovery work.
         if (this.audioStreamManager.isCurrentlyStreaming()) break
 
         try {
           const wavAudio = pendingDictationStore.read(filePath)
+          const meta = pendingDictationStore.readMeta(filePath)
+          const mode = await resolveModeOrActive(meta?.modeId)
+          const context = await this.recoveryContext(meta, advancedSettings)
 
-          // La durée d'origine n'a pas survécu à la persistance sur disque
-          // (seul le WAV est écrit) — mais un WAV porte sa propre durée dans
-          // son en-tête, donc pas besoin de deviner. La recalculer est
-          // nécessaire : repasser 0 comme avant fait lire un enregistrement
-          // long comme s'il était court, ce qui l'envoie silencieusement vers
-          // Groq alors que le routeur l'aurait réservé au chemin fichier
-          // (Deepgram) — et cet échec ne se corrige jamais tout seul, à
-          // chaque passe de flush. Un en-tête illisible (fichier
-          // tronqué/corrompu) ne doit pas faire échouer tout le flush : on
-          // retombe alors sur 0, le comportement d'avant, pour ce seul
-          // fichier.
-          const recoveredDurationMs =
-            localAudioProcessor.getWavDurationMs(wavAudio) ?? 0
+          // La durée d'origine vient du sidecar, sinon de l'en-tête du WAV :
+          // repasser 0 ferait lire un enregistrement long comme s'il était
+          // court, et l'enverrait vers Groq alors que le routeur l'aurait
+          // réservé au chemin fichier (Deepgram). Un en-tête illisible ne
+          // doit pas faire échouer tout le flush : 0 pour ce seul fichier.
+          const durationMs =
+            meta?.durationMs ??
+            localAudioProcessor.getWavDurationMs(wavAudio) ??
+            0
 
-          const decision = chooseTranscriptionPath({
-            voiceModelProvider: voiceModel.provider,
-            durationMs: recoveredDurationMs,
-            wavBytes: wavAudio.length,
-            identifySpeakers: mode.identifySpeakers,
-            hasOpenRouterKey: !!advancedSettings.openRouterApiKey?.trim(),
-            hasDeepgramKey: !!advancedSettings.deepgramApiKey?.trim(),
-            hasOpenAIKey: !!advancedSettings.openaiApiKey?.trim(),
-            hasGoogleKey: !!advancedSettings.googleApiKey?.trim(),
-          })
-
+          const decision = this.decidePath(
+            mode,
+            wavAudio,
+            durationMs,
+            advancedSettings,
+          )
           if (decision.path === null) {
             // Toujours rien pour le transporter (pas de clé Deepgram) : on
             // laisse le WAV sur disque pour la prochaine passe, sans le
@@ -637,44 +731,34 @@ export class ItoStreamController {
             continue
           }
 
-          let transcript: string
-          let engineUsed = asrModel
-          if (decision.path === 'deepgram') {
-            const result = await deepgramTranscriptionService.transcribeAudio(
-              wavAudio,
-              {
-                apiKey: advancedSettings.deepgramApiKey || '',
-                model: 'nova-3',
-                language: asrLanguageHint(mode.language),
-                diarize: mode.identifySpeakers,
-              },
-            )
-            transcript = result.text
-            engineUsed = 'deepgram/nova-3'
-          } else {
-            // Tout autre chemin ('groq', 'openrouter', 'openai', 'google') :
-            // la récupération passe par Groq, comme avant — seul le chemin
-            // fichier (Deepgram) avait besoin d'un routage propre, car Groq
-            // seul ne peut pas le porter.
-            transcript = await localTranscriptionService.transcribeAudio(
-              wavAudio,
-              {
-                asrModel,
-                noSpeechThreshold: advancedSettings.llm.noSpeechThreshold,
-                fileType: 'wav',
-                language: asrLanguageHint(mode.language),
-                customPrompt: mode.asrPrompt,
-              },
-            )
-          }
+          const asr = await this.runAsr(
+            decision.path,
+            wavAudio,
+            mode,
+            context,
+            advancedSettings,
+            { retry: false },
+          )
+          const transcript = await transcriptAdjuster.adjust(
+            asr.rawTranscript,
+            mode,
+            context,
+            advancedSettings,
+          )
 
           if (transcript) {
             await interactionManager.createRecoveredInteraction(
               transcript,
               16000,
               filePath,
-              undefined,
-              engineUsed,
+              durationMs || undefined,
+              asr.asrEngine,
+              {
+                rawTranscript: asr.rawTranscript,
+                modeId: mode.id,
+                modeName: mode.name,
+                speakers: asr.speakerSegments,
+              },
             )
             recovered++
           }
@@ -699,6 +783,29 @@ export class ItoStreamController {
     } finally {
       this.flushingPending = false
       this.notifyPendingCount()
+    }
+  }
+
+  /**
+   * Le contexte d'une dictée en attente : celui figé dans le sidecar, ou —
+   * pour un WAV d'avant les sidecars — le dictionnaire courant seul, sans
+   * fenêtre ni sélection, qui n'ont plus de sens des heures plus tard.
+   */
+  private async recoveryContext(
+    meta: PendingDictationMeta | null,
+    advancedSettings: AdvancedSettings,
+  ): Promise<ContextData> {
+    if (meta) return { ...meta.context, advancedSettings }
+    const { vocabularyWords, dictionaryEntries } =
+      await contextGrabber.getVocabulary()
+    return {
+      vocabularyWords,
+      dictionaryEntries,
+      windowTitle: '',
+      appName: '',
+      contextText: '',
+      clipboardText: '',
+      advancedSettings,
     }
   }
 }

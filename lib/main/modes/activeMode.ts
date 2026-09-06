@@ -41,6 +41,22 @@ export function resolveActiveMode(): Promise<Mode> {
   return resolveMode(getActiveModeId())
 }
 
+/**
+ * Le mode d'une dictée en attente de reprise : celui enregistré à côté du
+ * WAV, ou — s'il a été supprimé entre-temps, ou si le WAV date d'avant les
+ * sidecars — le mode actif, meilleure approximation disponible.
+ */
+export async function resolveModeOrActive(
+  modeId: string | undefined,
+): Promise<Mode> {
+  if (modeId) {
+    const mode = await ModesTable.findById(modeId)
+    if (mode) return mode
+    console.warn(`[activeMode] Mode "${modeId}" is gone, using the active mode`)
+  }
+  return resolveActiveMode()
+}
+
 export async function cycleActiveMode(direction: 1 | -1 = 1): Promise<Mode> {
   const modes = await ModesTable.findAll(userId())
   if (modes.length === 0) {

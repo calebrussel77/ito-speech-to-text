@@ -131,6 +131,22 @@ export class InteractionsTable {
     return rows.map(parseInteractionJsonFields)
   }
 
+  /**
+   * La ligne d'historique liée à un WAV en attente de reprise, sans charger
+   * tout l'historique en mémoire pour la trouver.
+   */
+  static async findByPendingPath(
+    pendingPath: string,
+    user_id?: string,
+  ): Promise<Interaction | undefined> {
+    const query = user_id
+      ? "SELECT * FROM interactions WHERE json_extract(asr_output, '$.pendingPath') = ? AND (user_id = ? OR user_id IS NULL) AND deleted_at IS NULL LIMIT 1"
+      : "SELECT * FROM interactions WHERE json_extract(asr_output, '$.pendingPath') = ? AND deleted_at IS NULL LIMIT 1"
+    const params = user_id ? [pendingPath, user_id] : [pendingPath]
+    const row = await get<Interaction>(query, params)
+    return row ? parseInteractionJsonFields(row) : undefined
+  }
+
   static async softDelete(id: string): Promise<void> {
     const query =
       'UPDATE interactions SET deleted_at = ?, updated_at = ? WHERE id = ?'

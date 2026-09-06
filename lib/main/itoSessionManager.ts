@@ -34,6 +34,9 @@ export class ItoSessionManager {
   private state: SessionState = 'idle'
   private startPromise: Promise<string | null> | null = null
   private currentMode: Mode | null = null
+  /** Instant du relâchement du raccourci, base de la latence totale. */
+  private stoppedAt = 0
+  private drainTruncated = false
 
   public getState(): SessionState {
     return this.state
@@ -193,10 +196,12 @@ export class ItoSessionManager {
       return
     }
     this.state = 'processing'
+    this.stoppedAt = performance.now()
 
     try {
       timingCollector.endTiming(TimingEventName.INTERACTION_ACTIVE)
-      await voiceInputService.stopAudioRecording()
+      const stop = await voiceInputService.stopAudioRecording()
+      this.drainTruncated = stop?.drainTruncated === true
 
       const audioDurationMs = itoStreamController.getAudioDurationMs()
       if (audioDurationMs < this.MINIMUM_AUDIO_DURATION_MS) {
@@ -260,8 +265,9 @@ export class ItoSessionManager {
 
       // Auto-paste off : le presse-papier plutôt que le curseur, avec une
       // notification — aucune fenêtre supplémentaire (décision D13).
+      const pasteStartedAt = performance.now()
       if (mode?.autoPaste !== false) {
-        this.textInserter.insertText(textToInsert)
+        await this.textInserter.insertText(textToInsert)
       } else {
         clipboard.writeText(textToInsert)
         showNotification(
@@ -270,6 +276,8 @@ export class ItoSessionManager {
         )
       }
       rememberInsertedText(textToInsert)
+      const pasteMs = Math.round(performance.now() - pasteStartedAt)
+      const totalMs = Math.round(performance.now() - this.stoppedAt)
 
       await interactionManager.createInteraction(
         transcript,
@@ -285,6 +293,8 @@ export class ItoSessionManager {
           modeName: result.modeName,
           rawTranscript: result.rawTranscript,
           speakers: result.speakerSegments,
+          latency: { ...result.latency, pasteMs, totalMs },
+          drainTruncated: this.drainTruncated,
         },
       )
       this.playInteractionCompletionSoundIfEnabled()

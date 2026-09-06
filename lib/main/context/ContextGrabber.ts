@@ -76,7 +76,7 @@ export class ContextGrabber {
     }
   }
 
-  private async getVocabulary(): Promise<{
+  public async getVocabulary(): Promise<{
     vocabularyWords: string[]
     dictionaryEntries: DictionaryTerm[]
   }> {
