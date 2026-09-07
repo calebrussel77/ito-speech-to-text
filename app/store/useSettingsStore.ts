@@ -39,6 +39,9 @@ interface SettingsState {
   /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
   cycleModeShortcut: KeyName[]
   setCycleModeShortcut: (keys: KeyName[]) => void
+  /** Tenir le raccourci pour parler, ou un appui pour démarrer et un pour arrêter. */
+  recordingMode: 'push-to-talk' | 'toggle'
+  setRecordingMode: (mode: 'push-to-talk' | 'toggle') => void
   setShareAnalytics: (share: boolean) => void
   setLaunchAtLogin: (launch: boolean) => void
   setShowItoBarAlways: (show: boolean) => void
@@ -94,6 +97,7 @@ const getInitialState = () => {
     ],
     // Ships unbound — see the matching default in lib/main/store.ts.
     cycleModeShortcut: storedSettings?.cycleModeShortcut ?? [],
+    recordingMode: storedSettings?.recordingMode ?? 'push-to-talk',
     firstName: storedSettings?.firstName ?? '',
     lastName: storedSettings?.lastName ?? '',
     email: storedSettings?.email ?? '',
@@ -228,6 +232,7 @@ export const useSettingsStore = create<SettingsState>(set => {
     },
     setRunInBackground: createSetter('runInBackground', 'general'),
     setInteractionSounds: createSetter('interactionSounds', 'audio&mic'),
+    setRecordingMode: createSetter('recordingMode', 'keyboard'),
     setInteractionSoundTheme: createSetter(
       'interactionSoundTheme',
       'audio&mic',

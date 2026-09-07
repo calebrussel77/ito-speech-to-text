@@ -11,7 +11,15 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsNote,
+  CONTROL_WIDTH,
 } from '@/app/components/ui/settings'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select'
 import KeyboardShortcutEditor from '@/app/components/ui/keyboard-shortcut-editor'
 import { Kbd } from '@/app/components/ui/kbd'
 import { ACTIVE_MODE_SHORTCUT_ID } from '@/lib/constants/keyboard-defaults'
@@ -28,6 +36,8 @@ export default function KeyboardSettingsContent() {
     keyboardShortcuts,
     cycleModeShortcut,
     setCycleModeShortcut,
+    recordingMode,
+    setRecordingMode,
     setActiveModeShortcut,
   } = useSettingsStore()
   const { modes, activeModeId, loaded, load } = useModesStore()
@@ -72,6 +82,32 @@ export default function KeyboardSettingsContent() {
   return (
     <div className="px-1.5">
       <SettingsGroup title="Global">
+        <SettingsRow
+          title="Recording mode"
+          description={
+            recordingMode === 'toggle'
+              ? 'Press a shortcut once to start, press it again to stop. Your hands are free in between.'
+              : 'Hold a shortcut to dictate, release it to stop.'
+          }
+        >
+          <Select
+            value={recordingMode}
+            onValueChange={value =>
+              setRecordingMode(value as 'push-to-talk' | 'toggle')
+            }
+          >
+            <SelectTrigger id="recordingMode" className={CONTROL_WIDTH}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="push-to-talk">Hold to talk</SelectItem>
+              <SelectItem value="toggle">
+                Press to start, press to stop
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+
         {/* Le raccourci que l'app promettait sans l'offrir : jusqu'ici tout
             raccourci imposait son mode, et le mode actif ne pilotait que le
             clic sur la pill. */}

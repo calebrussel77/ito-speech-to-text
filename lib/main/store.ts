@@ -14,6 +14,8 @@ import { KeyValueStore } from './sqlite/repo'
 import type { Provider, ProviderFailure } from './transcription/providerHealth'
 import * as electron from 'electron'
 
+export type RecordingMode = 'push-to-talk' | 'toggle'
+
 const safeStorageApi: any = (electron as any).safeStorage
 
 // API keys stored inside advancedSettings that are encrypted at rest via
@@ -63,6 +65,12 @@ export interface SettingsStore {
   microphoneDeviceId: string
   microphoneName: string
   isShortcutGloballyEnabled: boolean
+  /**
+   * Comment le raccourci pilote l'enregistrement. `push-to-talk` : on parle
+   * tant qu'on le tient. `toggle` : un appui démarre, l'appui suivant
+   * arrête — les mains sont libres entre les deux.
+   */
+  recordingMode: RecordingMode
   keyboardShortcuts: KeyboardShortcutConfig[]
   /** Fait défiler le mode actif sans ouvrir la fenêtre principale. */
   cycleModeShortcut: KeyName[]
@@ -186,6 +194,7 @@ export const defaultValues: AppStore = {
     microphoneDeviceId: 'default',
     microphoneName: 'Auto-detect',
     isShortcutGloballyEnabled: false,
+    recordingMode: 'push-to-talk',
     keyboardShortcuts: [
       {
         id: crypto.randomUUID(),

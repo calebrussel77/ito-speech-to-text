@@ -44,6 +44,7 @@ export const resetForTesting = () => {
   if (process.env.NODE_ENV !== 'production') {
     KeyListenerProcess = null
     activeShortcutId = null
+    chordLatched = false
     pressedKeys.clear()
     keyPressTimestamps.clear()
     stopStuckKeyChecker()
@@ -191,9 +192,68 @@ export function matchesCycleShortcut(
   return shortcut.every(key => pressed.has(normalizeLegacyKey(key)))
 }
 
+/**
+ * En mode « toggle », un accord tenu ne doit compter qu'une fois : la
+ * répétition automatique du clavier renvoie des `keydown` tant que les
+ * touches restent enfoncées, et sans ce verrou chacun d'eux ferait
+ * démarrer puis arrêter la dictée. Le verrou tombe quand l'accord est
+ * relâché.
+ */
+let chordLatched = false
+
+/**
+ * Le raccourci en mode « toggle » : un appui démarre la dictée, l'appui
+ * suivant la termine. L'état de la session fait foi, pas la mémoire du
+ * clavier : une dictée arrêtée depuis la pill (ou finie d'elle-même) laisse
+ * l'appui suivant en démarrer une nouvelle au lieu de tenter d'en arrêter
+ * une qui n'existe plus. Un autre accord pendant la dictée change de mode,
+ * comme en push-to-talk. Pendant la transcription, l'appui est ignoré.
+ */
+async function handleToggleShortcut(
+  event: KeyEvent,
+  currentlyHeldShortcut: { id: string; modeId: string | null } | undefined,
+) {
+  if (!currentlyHeldShortcut) {
+    chordLatched = false
+    return
+  }
+  if (event.type !== 'keydown' || chordLatched) return
+  chordLatched = true
+
+  const state = itoSessionManager.getState()
+  if (state === 'idle') {
+    activeShortcutId = currentlyHeldShortcut.id
+    console.info('lib Shortcut TOGGLED ON, starting recording...')
+    await itoSessionManager.startSession(
+      currentlyHeldShortcut.modeId ?? undefined,
+    )
+    return
+  }
+  if (state === 'starting' || state === 'recording') {
+    if (
+      activeShortcutId !== null &&
+      activeShortcutId !== currentlyHeldShortcut.id
+    ) {
+      activeShortcutId = currentlyHeldShortcut.id
+      console.info(
+        `lib Shortcut mode CHANGED to ${currentlyHeldShortcut.modeId}, updating session...`,
+      )
+      void itoSessionManager.setMode(currentlyHeldShortcut.modeId ?? undefined)
+      return
+    }
+    activeShortcutId = null
+    console.info('lib Shortcut TOGGLED OFF, stopping recording...')
+    itoSessionManager.completeSession()
+  }
+}
+
 async function handleKeyEventInMain(event: KeyEvent) {
-  const { isShortcutGloballyEnabled, keyboardShortcuts, cycleModeShortcut } =
-    store.get(STORE_KEYS.SETTINGS)
+  const {
+    isShortcutGloballyEnabled,
+    keyboardShortcuts,
+    cycleModeShortcut,
+    recordingMode,
+  } = store.get(STORE_KEYS.SETTINGS)
 
   if (!isShortcutGloballyEnabled) {
     // check to see if we should stop an in-progress recording
@@ -259,6 +319,11 @@ async function handleKeyEventInMain(event: KeyEvent) {
 
       return exactMatch
     })
+
+  if (recordingMode === 'toggle') {
+    await handleToggleShortcut(event, currentlyHeldShortcut)
+    return
+  }
 
   // Handle shortcut activation and mode changes
   if (currentlyHeldShortcut) {

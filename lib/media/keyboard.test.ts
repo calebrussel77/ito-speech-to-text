@@ -131,6 +131,7 @@ const mockitoSessionManager = {
   completeSession: mock(),
   setMode: mock(),
   cancelSession: mock(),
+  getState: mock((): string => 'idle'),
 }
 mock.module('../main/itoSessionManager', () => ({
   itoSessionManager: mockitoSessionManager,
@@ -173,6 +174,9 @@ describe('Keyboard Module', () => {
     mockAudioRecorderService.stopRecording.mockClear()
     mockitoSessionManager.startSession.mockClear()
     mockitoSessionManager.completeSession.mockClear()
+    mockitoSessionManager.setMode.mockClear()
+    mockitoSessionManager.getState.mockClear()
+    mockitoSessionManager.getState.mockReturnValue('idle')
     mockitoSessionManager.setMode.mockClear()
     mockitoSessionManager.cancelSession.mockClear()
     Object.values(mockInteractionManager).forEach(mockFn => mockFn.mockClear())
@@ -1675,6 +1679,181 @@ describe('Keyboard Module', () => {
       expect(console.warn).toHaveBeenCalledWith(
         expect.stringContaining('Removing stuck key: a'),
       )
+    })
+  })
+
+  describe('Toggle recording mode (press to start, press to stop)', () => {
+    const chord = () => {
+      for (const key of ['MetaLeft', 'Space']) {
+        mockChildProcess.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              type: 'keydown',
+              key,
+              timestamp: '2024-01-01T00:00:00.000Z',
+              raw_code: 0,
+            }) + '\n',
+          ),
+        )
+      }
+    }
+    const release = () => {
+      for (const key of ['Space', 'MetaLeft']) {
+        mockChildProcess.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              type: 'keyup',
+              key,
+              timestamp: '2024-01-01T00:00:00.000Z',
+              raw_code: 0,
+            }) + '\n',
+          ),
+        )
+      }
+    }
+    const toggleSettings = () =>
+      mockMainStore.get.mockReturnValue({
+        isShortcutGloballyEnabled: true,
+        recordingMode: 'toggle',
+        keyboardShortcuts: [
+          {
+            id: 'mock-shortcut-1',
+            keys: ['command', 'space'],
+            modeId: 'voice-to-text',
+          },
+          {
+            id: 'mock-shortcut-2',
+            keys: ['command', 'shift'],
+            modeId: 'mail',
+          },
+        ],
+      } as any)
+
+    test('one press starts, releasing the keys does not stop', async () => {
+      toggleSettings()
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      await Promise.resolve()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledTimes(1)
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledWith(
+        'voice-to-text',
+      )
+
+      release()
+      await Promise.resolve()
+      expect(mockitoSessionManager.completeSession).not.toHaveBeenCalled()
+    })
+
+    test('the next press stops the running dictation', async () => {
+      toggleSettings()
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      release()
+      await Promise.resolve()
+      mockitoSessionManager.getState.mockReturnValue('recording')
+
+      chord()
+      await Promise.resolve()
+      expect(mockitoSessionManager.completeSession).toHaveBeenCalledTimes(1)
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledTimes(1)
+    })
+
+    test('keyboard auto-repeat while the chord is held counts once', async () => {
+      toggleSettings()
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      chord()
+      chord()
+      await Promise.resolve()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledTimes(1)
+      expect(mockitoSessionManager.completeSession).not.toHaveBeenCalled()
+    })
+
+    test('a dictation stopped from the pill lets the next press start a new one', async () => {
+      toggleSettings()
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      release()
+      await Promise.resolve()
+      // The pill's stop button ended the session in the meantime.
+      mockitoSessionManager.getState.mockReturnValue('idle')
+
+      chord()
+      await Promise.resolve()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledTimes(2)
+      expect(mockitoSessionManager.completeSession).not.toHaveBeenCalled()
+    })
+
+    test('a press during transcription is ignored', async () => {
+      toggleSettings()
+      mockitoSessionManager.getState.mockReturnValue('processing')
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      await Promise.resolve()
+      expect(mockitoSessionManager.startSession).not.toHaveBeenCalled()
+      expect(mockitoSessionManager.completeSession).not.toHaveBeenCalled()
+    })
+
+    test('another shortcut during the dictation switches the mode instead of stopping', async () => {
+      toggleSettings()
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      release()
+      await Promise.resolve()
+      mockitoSessionManager.getState.mockReturnValue('recording')
+
+      for (const key of ['MetaLeft', 'ShiftLeft']) {
+        mockChildProcess.stdout.emit(
+          'data',
+          Buffer.from(
+            JSON.stringify({
+              type: 'keydown',
+              key,
+              timestamp: '2024-01-01T00:00:00.000Z',
+              raw_code: 0,
+            }) + '\n',
+          ),
+        )
+      }
+      await Promise.resolve()
+      expect(mockitoSessionManager.setMode).toHaveBeenCalledWith('mail')
+      expect(mockitoSessionManager.completeSession).not.toHaveBeenCalled()
+    })
+
+    test('push-to-talk is untouched: releasing still stops', async () => {
+      mockMainStore.get.mockReturnValue({
+        isShortcutGloballyEnabled: true,
+        recordingMode: 'push-to-talk',
+        keyboardShortcuts: [
+          {
+            id: 'mock-shortcut-1',
+            keys: ['command', 'space'],
+            modeId: 'voice-to-text',
+          },
+        ],
+      } as any)
+      const { startKeyListener } = await import('./keyboard')
+      startKeyListener()
+
+      chord()
+      release()
+      await Promise.resolve()
+      expect(mockitoSessionManager.startSession).toHaveBeenCalledTimes(1)
+      expect(mockitoSessionManager.completeSession).toHaveBeenCalledTimes(1)
     })
   })
 })
