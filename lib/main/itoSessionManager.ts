@@ -263,6 +263,12 @@ export class ItoSessionManager {
           this.grammarRulesService.addLeadingSpaceIfNeeded(textToInsert)
       }
 
+      // Le son signale que le texte est prêt, pas que la comptabilité est
+      // faite : il part avant le collage, que le curseur soit dans un champ
+      // ou non. Après, il attendait la simulation clavier puis l'écriture en
+      // base, et arrivait plusieurs secondes après le texte.
+      this.playInteractionCompletionSoundIfEnabled()
+
       // Auto-paste off : le presse-papier plutôt que le curseur, avec une
       // notification — aucune fenêtre supplémentaire (décision D13).
       const pasteStartedAt = performance.now()
@@ -297,7 +303,6 @@ export class ItoSessionManager {
           drainTruncated: this.drainTruncated,
         },
       )
-      this.playInteractionCompletionSoundIfEnabled()
       console.log(
         '[itoSessionManager] Interaction stored (audio omitted) duration:',
         durationMs,

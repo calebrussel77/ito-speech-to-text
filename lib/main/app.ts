@@ -152,6 +152,9 @@ export function createPillWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       sandbox: false,
+      // La pill joue le son de fin de dictée : un rendu ralenti le
+      // retarderait de plusieurs secondes.
+      backgroundThrottling: false,
     },
     hiddenInMissionControl: true,
   })

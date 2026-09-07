@@ -9,6 +9,7 @@ import {
 } from '@mynaui/icons-react'
 import { EXTERNAL_LINKS } from '@/lib/constants/external-links'
 import { useSettingsStore } from '../../../store/useSettingsStore'
+import { useModesStore } from '../../../store/useModesStore'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../../ui/tooltip'
 import { useAuthStore } from '@/app/store/useAuthStore'
 import { Interaction } from '@/lib/main/sqlite/models'
@@ -96,8 +97,24 @@ interface HomeContentProps {
 export default function HomeContent({
   isStartingTrial = false,
 }: HomeContentProps) {
-  const { getModeShortcuts } = useSettingsStore()
-  const keyboardShortcut = getModeShortcuts('voice-to-text')[0]?.keys ?? []
+  const { keyboardShortcuts, recordingMode } = useSettingsStore()
+  const { activeModeId, loaded: modesLoaded, load: loadModes } = useModesStore()
+  useEffect(() => {
+    if (!modesLoaded) void loadModes()
+  }, [modesLoaded, loadModes])
+  // Le raccourci qui dicte vraiment : celui du mode actif, sinon celui qui
+  // suit le mode actif, sinon le premier lié. L'ancien code cherchait le
+  // mode « voice-to-text » par son id et n'affichait rien dès que le
+  // raccourci était porté par un autre mode.
+  const keyboardShortcut = (
+    keyboardShortcuts.find(
+      shortcut => shortcut.modeId === activeModeId && shortcut.keys.length,
+    ) ??
+    keyboardShortcuts.find(
+      shortcut => shortcut.modeId === null && shortcut.keys.length,
+    ) ??
+    keyboardShortcuts.find(shortcut => shortcut.keys.length)
+  )?.keys as KeyName[] | undefined
   const { user } = useAuthStore()
   const firstName = user?.name?.split(' ')[0]
   const platform = usePlatform()
@@ -727,17 +744,22 @@ export default function HomeContent({
               Voice dictation in any app
             </div>
             <div className="text-sm text-muted-foreground">
-              <span key="hold-down">Hold down the trigger key </span>
-              <Kbd
-                className="mx-0.5 align-middle"
-                title={formatChordDetailed(
-                  keyboardShortcut as KeyName[],
-                  platform,
-                )}
-              >
-                {formatChord(keyboardShortcut as KeyName[], platform)}
-              </Kbd>
-              <span key="and"> and speak into any textbox</span>
+              {keyboardShortcut ? (
+                <>
+                  {recordingMode === 'toggle' ? 'Press ' : 'Hold down '}
+                  <Kbd
+                    className="mx-0.5 align-middle"
+                    title={formatChordDetailed(keyboardShortcut, platform)}
+                  >
+                    {formatChord(keyboardShortcut, platform)}
+                  </Kbd>
+                  {recordingMode === 'toggle'
+                    ? ' to start, speak, then press it again to stop'
+                    : ' and speak into any textbox'}
+                </>
+              ) : (
+                'Set a dictation shortcut in Settings › Keyboard'
+              )}
             </div>
           </div>
           <button
@@ -809,8 +831,9 @@ export default function HomeContent({
           <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             <p className="text-sm">No interactions yet</p>
             <p className="text-xs mt-1 opacity-70">
-              Try using voice dictation by pressing{' '}
-              {keyboardShortcut.join(' + ')}
+              {keyboardShortcut
+                ? `Try using voice dictation by pressing ${formatChordDetailed(keyboardShortcut, platform)}`
+                : 'Set a dictation shortcut in Settings › Keyboard to start'}
             </p>
           </div>
         ) : (

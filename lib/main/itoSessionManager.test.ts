@@ -364,6 +364,33 @@ describe('itoSessionManager (local mode)', () => {
     ).toHaveBeenCalledTimes(1)
   })
 
+  test('the completion sound plays before the paste, not after the bookkeeping', async () => {
+    mockStore.get.mockReturnValue({ interactionSounds: true })
+    const order: string[] = []
+    mockSoundFeedback.playInteractionCompletionSound.mockImplementation(() => {
+      order.push('sound')
+    })
+    mockTextInserter.insertText.mockImplementation(async () => {
+      order.push('paste')
+      return true
+    })
+    mockInteractionManager.createInteraction.mockImplementation(async () => {
+      order.push('store')
+    })
+    const { ItoSessionManager } = await import('./itoSessionManager')
+    const session = new ItoSessionManager()
+
+    await session.startSession('voice-to-text')
+    await session.completeSession()
+
+    expect(order).toEqual(['sound', 'paste', 'store'])
+    mockSoundFeedback.playInteractionCompletionSound.mockImplementation(
+      () => {},
+    )
+    mockTextInserter.insertText.mockImplementation(async () => true)
+    mockInteractionManager.createInteraction.mockImplementation(async () => {})
+  })
+
   test('does not play completion sound when no transcript is returned', async () => {
     mockStore.get.mockReturnValue({ interactionSounds: true })
     mockItoStreamController.processLocalTranscription.mockResolvedValue({

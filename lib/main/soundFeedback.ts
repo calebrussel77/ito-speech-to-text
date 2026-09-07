@@ -41,6 +41,26 @@ type PlaybackResult =
     }
   | { success: false; message: string }
 
+// Le fichier ne change qu'avec le thème ou une installation : le relire à
+// chaque dictée ne coûte que du temps entre le texte prêt et le son.
+let cachedSound: { path: string; mtimeMs: number; bytes: Buffer } | null = null
+
+const readSoundBytes = (soundPath: string) => {
+  const { mtimeMs } = fs.statSync(soundPath)
+  if (
+    !cachedSound ||
+    cachedSound.path !== soundPath ||
+    cachedSound.mtimeMs !== mtimeMs
+  ) {
+    cachedSound = {
+      path: soundPath,
+      mtimeMs,
+      bytes: fs.readFileSync(soundPath),
+    }
+  }
+  return cachedSound.bytes
+}
+
 const getThemeFromSettings = (): InteractionSoundTheme => {
   const settings = store.get(STORE_KEYS.SETTINGS)
   const theme = settings?.interactionSoundTheme
@@ -141,7 +161,7 @@ const buildActivePayload = (): PlaybackResult => {
     }
   }
 
-  const bytes = fs.readFileSync(soundPath)
+  const bytes = readSoundBytes(soundPath)
   const payload: InteractionSoundPlayPayload = {
     audioData: Uint8Array.from(bytes),
     mimeType: getMimeTypeFromPath(soundPath),
@@ -149,16 +169,19 @@ const buildActivePayload = (): PlaybackResult => {
     theme: resolved.theme,
   }
 
-  const targetMain = mainWindow
-  if (targetMain && !targetMain.isDestroyed()) {
-    targetMain.webContents.send(IPC_EVENTS.INTERACTION_SOUND_PLAY, payload)
-    return { success: true, target: 'main', payload }
-  }
-
+  // La pill d'abord : toujours affichée, jamais mise en veille. La fenêtre
+  // principale, cachée dès qu'on la ferme, est ralentie par Chromium et
+  // jouait le son plusieurs secondes après le collage.
   const targetPill = getPillWindow()
   if (targetPill && !targetPill.isDestroyed()) {
     targetPill.webContents.send(IPC_EVENTS.INTERACTION_SOUND_PLAY, payload)
     return { success: true, target: 'pill', payload }
+  }
+
+  const targetMain = mainWindow
+  if (targetMain && !targetMain.isDestroyed()) {
+    targetMain.webContents.send(IPC_EVENTS.INTERACTION_SOUND_PLAY, payload)
+    return { success: true, target: 'main', payload }
   }
 
   return {
