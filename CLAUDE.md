@@ -18,7 +18,7 @@ Main development branch: `dev`
 ## Development Commands
 
 - Dev: `bun dev` (starts electron-vite dev with watch)
-- CLI: `ito-transcribe <folder|file>...` transcribes recordings with Ito's engines without the app running (`cli/`, registered on PATH with `bun link`; skill in `skills/ito-transcribe`, copied to `~/.claude/skills`)
+- CLI: `ito-transcribe <folder|file>...` transcribes recordings with Ito's engines without the app running (`cli/`, registered on PATH with `bun link`; skill in `skills/ito-transcribe`, junction-linked from `~/.agents/skills` and `~/.claude/skills`)
 - Server: `docker compose up --build` (run from server directory)
 - Build: `bun build:app:mac` or `bun build:app:windows`
 - Test: `bun runAllTests` (runs lib, server, and native tests)
