@@ -226,7 +226,9 @@ export async function transcribeExistingFile(
         : undefined,
     }
     const elapsed = `${Math.round((performance.now() - startedAt) / 1000)} s`
-    const voices = isConversation ? `${speakerCount} speakers` : 'single speaker'
+    const voices = isConversation
+      ? `${speakerCount} speakers`
+      : 'single speaker'
 
     if (options.history === false) {
       console.log(
