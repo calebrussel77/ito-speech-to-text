@@ -377,6 +377,41 @@ describe('InteractionManager', () => {
     })
   })
 
+  describe('Imported files', () => {
+    test('an imported file keeps its name on the row, a dictation has no source', async () => {
+      mockFindAll.mockResolvedValueOnce([])
+      await interactionManager.createRecoveredInteraction(
+        'réunion',
+        16000,
+        null,
+        undefined,
+        'nova-3',
+        {
+          source: {
+            kind: 'file',
+            fileName: '09-02-2026 10.02.m4a',
+            filePath: 'C:/Users/me/Downloads/09-02-2026 10.02.m4a',
+          },
+        },
+      )
+      const file = mockUpsert.mock.calls.at(-1)![0] as any
+      expect(file.asr_output.source).toEqual({
+        kind: 'file',
+        fileName: '09-02-2026 10.02.m4a',
+        filePath: 'C:/Users/me/Downloads/09-02-2026 10.02.m4a',
+      })
+
+      mockFindAll.mockResolvedValueOnce([])
+      await interactionManager.createRecoveredInteraction(
+        'dictée reprise',
+        16000,
+        'C:/tmp/dictation-1.wav',
+      )
+      const dictation = mockUpsert.mock.calls.at(-1)![0] as any
+      expect(dictation.asr_output.source).toBeNull()
+    })
+  })
+
   describe('Raw transcript', () => {
     test('stores the raw transcript alongside the rewritten one', async () => {
       interactionManager.initialize()

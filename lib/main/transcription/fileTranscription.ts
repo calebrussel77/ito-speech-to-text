@@ -202,6 +202,11 @@ export async function transcribeExistingFile(filePath: string): Promise<{
         // remonter dans l'historique une ligne « dictée en mode X » qui n'a
         // jamais eu lieu.
         speakers: isConversation ? polishedSegments : undefined,
+        source: {
+          kind: 'file',
+          fileName: filePath.split(/[\\/]/).pop() || 'recording',
+          filePath,
+        },
         latency: {
           asrMs,
           adjustMs: polishMs,

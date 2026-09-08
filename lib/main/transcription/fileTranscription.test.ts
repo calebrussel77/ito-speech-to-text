@@ -218,6 +218,17 @@ describe('transcribeExistingFile', () => {
     )
   })
 
+  test('the row remembers which file it came from', async () => {
+    await transcribeExistingFile('C:/Users/me/Downloads/09-02-2026 10.02.m4a')
+
+    const extra = (mockCreateRecovered.mock.calls[0] as any[])[5]
+    expect(extra.source).toEqual({
+      kind: 'file',
+      fileName: '09-02-2026 10.02.m4a',
+      filePath: 'C:/Users/me/Downloads/09-02-2026 10.02.m4a',
+    })
+  })
+
   test('attributes the import to no mode at all', async () => {
     await transcribeExistingFile('C:/meeting.wav')
 

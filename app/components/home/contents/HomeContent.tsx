@@ -5,6 +5,7 @@ import {
   Copy,
   Check,
   Download,
+  FileText,
   Trash,
 } from '@mynaui/icons-react'
 import { EXTERNAL_LINKS } from '@/lib/constants/external-links'
@@ -94,6 +95,42 @@ interface HomeContentProps {
   isStartingTrial?: boolean
 }
 
+type HistoryFilter = 'all' | 'dictation' | 'file'
+const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'dictation', label: 'Dictations' },
+  { value: 'file', label: 'Files' },
+]
+
+/**
+ * Le fichier dont vient une ligne, ou null pour une dictée.
+ *
+ * Les lignes écrites depuis la 0.1.10 portent `asr_output.source`. Celles
+ * d'avant n'ont rien : un import y est reconnaissable à ce qu'il est
+ * « recovered » sans mode et avec une taille d'envoi — une dictée reprise
+ * après une panne réseau garde toujours son mode.
+ */
+function fileSourceOf(
+  interaction: Interaction,
+): { fileName: string; filePath: string | null } | null {
+  const asr = interaction.asr_output
+  if (asr?.source?.kind === 'file') {
+    return {
+      fileName: asr.source.fileName || 'recording',
+      filePath: asr.source.filePath ?? null,
+    }
+  }
+  if (
+    asr?.recovered &&
+    !asr.modeId &&
+    !asr.pending &&
+    asr.latency?.uploadBytes
+  ) {
+    return { fileName: 'Imported file', filePath: null }
+  }
+  return null
+}
+
 export default function HomeContent({
   isStartingTrial = false,
 }: HomeContentProps) {
@@ -131,6 +168,7 @@ export default function HomeContent({
   const [views, setViews] = useState<Record<string, HistoryView>>({})
   const [exampleFor, setExampleFor] = useState<ExampleDraft | null>(null)
   const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null)
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
   const [stats, setStats] = useState<InteractionStats>({
     streakDays: 0,
     totalWords: 0,
@@ -613,7 +651,14 @@ export default function HomeContent({
     }
   }
 
-  const groupedInteractions = groupInteractionsByDate(interactions)
+  const visibleInteractions =
+    historyFilter === 'all'
+      ? interactions
+      : interactions.filter(
+          interaction =>
+            (fileSourceOf(interaction) !== null) === (historyFilter === 'file'),
+        )
+  const groupedInteractions = groupInteractionsByDate(visibleInteractions)
 
   const copyToClipboard = async (text: string, interactionId: string) => {
     try {
@@ -798,8 +843,29 @@ export default function HomeContent({
 
         {/* Recent Activity Header */}
         <div className="mb-4 pl-1 flex items-center justify-between">
-          <div className="text-sm font-medium text-muted-foreground">
-            Recent activity
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-medium text-muted-foreground">
+              Recent activity
+            </div>
+            {/* Dictées ou fichiers importés : deux origines, un seul fil.
+                Même sobriété que le reste : le filtre actif est plein, les
+                autres en retrait, sans teinte. */}
+            <div className="flex items-center rounded-lg border border-[var(--border)] p-0.5">
+              {HISTORY_FILTERS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setHistoryFilter(value)}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
+                    historyFilter === value
+                      ? 'bg-[var(--surface-3)] text-foreground'
+                      : 'text-muted-foreground/70 hover:text-foreground'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <Tooltip
             open={openTooltipKey === 'clear-all'}
@@ -826,6 +892,19 @@ export default function HomeContent({
         {loading ? (
           <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
             Loading recent activity...
+          </div>
+        ) : interactions.length > 0 && visibleInteractions.length === 0 ? (
+          <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
+            <p className="text-sm">
+              {historyFilter === 'file'
+                ? 'No file transcriptions yet'
+                : 'No dictations yet'}
+            </p>
+            <p className="text-xs mt-1 opacity-70">
+              {historyFilter === 'file'
+                ? 'Use “Transcribe a file” on the Modes page to import a recording.'
+                : 'Dictate with your shortcut to see it here.'}
+            </p>
           </div>
         ) : interactions.length === 0 ? (
           <div className="glass-card rounded-lg p-8 text-center text-muted-foreground">
@@ -866,6 +945,7 @@ export default function HomeContent({
                       view !== 'speakers' &&
                       !displayInfo.isError &&
                       isClampable(shownText)
+                    const fileSource = fileSourceOf(interaction)
 
                     return (
                       <div
@@ -878,6 +958,23 @@ export default function HomeContent({
                             <span className="text-muted-foreground text-xs font-medium tabular-nums">
                               {formatTime(interaction.created_at)}
                             </span>
+                            {fileSource && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex max-w-[260px] items-center gap-1 rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[11px] text-foreground/90">
+                                    <FileText className="size-3 shrink-0" />
+                                    <span className="truncate">
+                                      {fileSource.fileName}
+                                    </span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {fileSource.filePath
+                                    ? `Transcribed from ${fileSource.filePath}`
+                                    : 'Transcribed from a file'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             <EngineBadge
                               engine={interaction.asr_output?.engine}
                             />

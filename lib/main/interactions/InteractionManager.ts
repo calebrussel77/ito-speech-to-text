@@ -279,6 +279,8 @@ export class InteractionManager {
       modeName?: string
       speakers?: SpeakerSegment[]
       latency?: Record<string, number>
+      /** Le fichier importé, pour le distinguer d'une dictée dans l'historique. */
+      source?: { kind: 'file'; fileName: string; filePath: string }
     },
   ): Promise<string | undefined> {
     try {
@@ -320,6 +322,7 @@ export class InteractionManager {
               : null,
           speakers: extra?.speakers?.length ? extra.speakers : null,
           latency: extra?.latency ?? null,
+          source: extra?.source ?? null,
         },
         llm_output: {},
         raw_audio: null,
