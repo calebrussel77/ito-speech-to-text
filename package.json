@@ -25,7 +25,7 @@
     "format:app": "prettier app lib --check",
     "format": "prettier . --check",
     "runAllTests": "bun runLibTests && bun runCliTests && bun runServerTests && bun runAppTests && bun runNativeTests",
-    "runCliTests": "bun test cli",
+    "runCliTests": "bun test ./cli",
     "runLibTests": "find lib -name \"*.test.ts\" | xargs -I {} sh -c 'bun test --preload lib/__tests__/setup.ts {} || exit 255'",
     "runServerTests": "find server/src -name \"*.test.ts\" | xargs -I {} sh -c 'bun test {} || exit 255'",
     "runAppTests": "find app -name \"*.test.ts\" | xargs -I {} sh -c 'bun test --preload lib/__tests__/setup.ts {} || exit 255'",
