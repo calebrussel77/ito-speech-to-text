@@ -218,6 +218,29 @@ describe('transcribeExistingFile', () => {
     )
   })
 
+  test('returns the transcript itself, so a caller can write it elsewhere', async () => {
+    const result = await transcribeExistingFile('C:/meeting.wav')
+
+    expect(result.text).toBe('polished transcript')
+    expect(result.segments).toEqual([])
+    expect(result.engine).toBe('deepgram/nova-3')
+  })
+
+  test('history can be skipped, settings and language overridden', async () => {
+    const result = await transcribeExistingFile('C:/meeting.wav', {
+      history: false,
+      language: 'en',
+      settings: { deepgramApiKey: 'dg-override' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.interactionId).toBeUndefined()
+    expect(mockCreateRecovered).not.toHaveBeenCalled()
+    const options = (mockDeepgram.mock.calls[0] as any[])[1]
+    expect(options.apiKey).toBe('dg-override')
+    expect(options.language).toBe('en')
+  })
+
   test('the row remembers which file it came from', async () => {
     await transcribeExistingFile('C:/Users/me/Downloads/09-02-2026 10.02.m4a')
 

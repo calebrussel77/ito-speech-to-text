@@ -64,17 +64,41 @@ const DEFAULT_OPENROUTER_AUDIO_KEY = 'gemini-3-7-flash-openrouter-audio'
  * sinon Google, sinon OpenAI — dans l'ordre de ce que l'utilisateur a le
  * plus probablement configuré.
  */
-export async function transcribeExistingFile(filePath: string): Promise<{
+export type FileTranscriptionOptions = {
+  /** Réglages qui priment sur ceux d'Ito : clés API, modèle fichier. */
+  settings?: Partial<AdvancedSettings>
+  /** Langue parlée (« fr », « en ») ; sinon celle du mode actif. */
+  language?: string
+  /** `false` : ne pas écrire la ligne d'historique (usage en ligne de commande). */
+  history?: boolean
+}
+
+export type FileTranscriptionResult = {
   ok: boolean
   interactionId?: string
   speakerCount?: number
+  /** Le transcript final : dialogue horodaté ou texte simple. */
+  text?: string
+  /** Les tours de parole, vides pour un monologue. */
+  segments?: SpeakerSegment[]
+  engine?: string
+  /** Fin du dernier tour, quand le moteur horodate. */
+  durationMs?: number
   error?: string
-}> {
+}
+
+export async function transcribeExistingFile(
+  filePath: string,
+  options: FileTranscriptionOptions = {},
+): Promise<FileTranscriptionResult> {
   if (!fs.existsSync(filePath)) {
     return { ok: false, error: 'File not found' }
   }
 
-  const advancedSettings = getAdvancedSettings()
+  const advancedSettings: AdvancedSettings = {
+    ...getAdvancedSettings(),
+    ...options.settings,
+  }
   const route = chooseFileProvider(advancedSettings)
   if ('error' in route) return { ok: false, error: route.error }
   const { provider, model } = route
@@ -82,7 +106,8 @@ export async function transcribeExistingFile(filePath: string): Promise<{
   const startedAt = performance.now()
   try {
     const activeMode = await resolveActiveMode()
-    const language = asrLanguageHint(activeMode.language)
+    const language =
+      options.language?.trim() || asrLanguageHint(activeMode.language)
     const original = fs.readFileSync(filePath)
     // Le dictionnaire est la seule chose que l'utilisateur ait dite sur son
     // vocabulaire : noms de produits, de clients, d'outils. Il vaut pour un
@@ -190,6 +215,26 @@ export async function transcribeExistingFile(filePath: string): Promise<{
       isConversation && !inferred ? formatSpeakerTranscript(segments) : text
 
     const engine = engineName(provider, model)
+    const outcome: FileTranscriptionResult = {
+      ok: true,
+      speakerCount,
+      text: finalText,
+      segments: isConversation ? polishedSegments : [],
+      engine,
+      durationMs: polishedSegments.length
+        ? Math.max(...polishedSegments.map(s => s.endMs))
+        : undefined,
+    }
+    const elapsed = `${Math.round((performance.now() - startedAt) / 1000)} s`
+    const voices = isConversation ? `${speakerCount} speakers` : 'single speaker'
+
+    if (options.history === false) {
+      console.log(
+        `[fileTranscription] Transcribed ${filePath} with ${engine} in ${elapsed} — ${voices}`,
+      )
+      return outcome
+    }
+
     const interactionId = await interactionManager.createRecoveredInteraction(
       finalText,
       16000,
@@ -231,11 +276,9 @@ export async function transcribeExistingFile(filePath: string): Promise<{
     }
 
     console.log(
-      `[fileTranscription] Transcribed ${filePath} with ${engine} in ${Math.round((performance.now() - startedAt) / 1000)} s — ${
-        isConversation ? `${speakerCount} speakers` : 'single speaker'
-      }`,
+      `[fileTranscription] Transcribed ${filePath} with ${engine} in ${elapsed} — ${voices}`,
     )
-    return { ok: true, interactionId, speakerCount }
+    return { ...outcome, interactionId }
   } catch (error: any) {
     console.error('[fileTranscription] Failed:', error?.message || error)
     return { ok: false, error: error?.message || 'Transcription failed' }

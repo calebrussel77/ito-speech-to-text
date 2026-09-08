@@ -5,6 +5,7 @@
     "vite-env.d.ts",
     "electron.vite.config.*",
     "lib/**/*",
+    "cli/**/*",
     "resources/**/*",
     "app/**/*"
   ],

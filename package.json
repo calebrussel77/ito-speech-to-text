@@ -3,6 +3,9 @@
   "version": "0.1.10",
   "description": "Ito, a smart voice assistant",
   "main": "./out/main/main.js",
+  "bin": {
+    "ito-transcribe": "./cli/ito-transcribe.ts"
+  },
   "license": "MIT",
   "author": {
     "name": "Demox Labs",
@@ -10,6 +13,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev -w",
+    "transcribe": "bun cli/ito-transcribe.ts",
     "dev:rust": "bun run build:rust && bun run dev",
     "format:fix:app": "prettier --write app lib",
     "format:fix": "prettier --write .",
@@ -20,7 +24,8 @@
     "type-check": "tsc --noEmit --project tsconfig.node.json",
     "format:app": "prettier app lib --check",
     "format": "prettier . --check",
-    "runAllTests": "bun runLibTests && bun runServerTests && bun runAppTests && bun runNativeTests",
+    "runAllTests": "bun runLibTests && bun runCliTests && bun runServerTests && bun runAppTests && bun runNativeTests",
+    "runCliTests": "bun test cli",
     "runLibTests": "find lib -name \"*.test.ts\" | xargs -I {} sh -c 'bun test --preload lib/__tests__/setup.ts {} || exit 255'",
     "runServerTests": "find server/src -name \"*.test.ts\" | xargs -I {} sh -c 'bun test {} || exit 255'",
     "runAppTests": "find app -name \"*.test.ts\" | xargs -I {} sh -c 'bun test --preload lib/__tests__/setup.ts {} || exit 255'",
